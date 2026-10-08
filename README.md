@@ -30,6 +30,7 @@ Le jeu se joue uniquement entre joueurs humains (minimum 2, idéal 4 à 6). Pour
 | `EHAS_DB` | `data/ehas.sqlite` | Fichier SQLite (`:memory:` possible) |
 | `EHAS_TIME_SCALE` | `1` | < 1 accélère toute la nuit (ex. `0.2` pour tester une partie en ~3 min) |
 | `EHAS_TRANSITION_MS` | `20000` | Durée de la cinématique d'arrivée avant la villa (15–25 s conseillé) |
+| `EHAS_LOAD_TIMEOUT_MS` | `30000` | Attente maximale du chargement de tous les joueurs avant la cinématique |
 
 ### Scripts
 

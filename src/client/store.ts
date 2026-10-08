@@ -65,8 +65,10 @@ interface AppState {
   inGame: boolean;
   game: GameSelfView | null;
   /** cinématique d'arrivée : plan serveur, décalage d'horloge (serveur − local), état courant */
-  intro: { plan: IntroPlan; offset: number; state: GameIntroState } | null;
+  intro: { plan: IntroPlan; offset: number; state: GameIntroState; loading: boolean } | null;
   endIntro: () => void;
+  /** la vue 3D de la partie a rendu sa première image (fin du fondu de la cinématique) */
+  gameViewReady: boolean;
   notifications: AppNotification[];
   toasts: Toast[];
   friends: FriendEntry[];
@@ -96,6 +98,7 @@ export const useStore = create<AppState>((set, get) => ({
   inGame: false,
   game: null,
   intro: null,
+  gameViewReady: false,
   endIntro: () => set({ intro: null }),
   notifications: [],
   toasts: [],
@@ -146,9 +149,9 @@ export const useStore = create<AppState>((set, get) => ({
       if (!lobby && st.screen === 'lobby') set({ screen: 'menu' });
       if (!lobby && st.intro) set({ intro: null });
     });
-    s.on('lobby:intro', ({ plan, serverNow }) => {
+    s.on('lobby:intro', ({ plan, serverNow, loading }) => {
       const offset = serverNow - Date.now();
-      set({ intro: { plan, offset, state: introStateAt(plan.durationMs, serverNow - plan.startedAt) } });
+      set({ intro: { plan, offset, loading, state: loading ? 'INTRO_START' : introStateAt(plan.durationMs, serverNow - plan.startedAt) } });
     });
     s.on('lobby:intro-state', ({ planId, state, serverNow }) => {
       const cur = get().intro;

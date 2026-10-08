@@ -29,6 +29,8 @@ import { GAME_CONFIG, META_CONFIG, formatClock } from '@shared/config';
 import {
   PLAYER_SPAWNS,
   adjacentRooms,
+  applyPortal,
+  stepAllowed,
   buildWorldGrid,
   doorAt,
   roomAt,
@@ -150,6 +152,7 @@ export class GameInstance {
         connected: true,
         pos: { ...spawn },
         input: { x: 0, y: 0 },
+        running: false,
         facing: 0,
         roomId: roomAt(this.grid, spawn.x, spawn.y)?.id ?? 'hall',
         inventory: [],
@@ -453,11 +456,15 @@ export class GameInstance {
     if (!p.alive || !p.connected) return;
     const len = Math.hypot(p.input.x, p.input.y);
     if (len > 0.01) {
-      const vx = (p.input.x / len) * GAME_CONFIG.moveSpeed * dt;
-      const vy = (p.input.y / len) * GAME_CONFIG.moveSpeed * dt;
-      if (this.fits(p.pos.x + vx, p.pos.y)) p.pos.x += vx;
-      if (this.fits(p.pos.x, p.pos.y + vy)) p.pos.y += vy;
+      const speed = p.running ? GAME_CONFIG.runSpeed : GAME_CONFIG.walkSpeed;
+      const vx = (p.input.x / len) * speed * dt;
+      const vy = (p.input.y / len) * speed * dt;
+      if (this.fits(p.pos.x + vx, p.pos.y) && stepAllowed(p.pos.x, p.pos.y, p.pos.x + vx, p.pos.y)) p.pos.x += vx;
+      if (this.fits(p.pos.x, p.pos.y + vy) && stepAllowed(p.pos.x, p.pos.y, p.pos.x, p.pos.y + vy)) p.pos.y += vy;
       p.facing = Math.atan2(vy, vx);
+      // haut de l'escalier : passage au palier de l'étage (et retour)
+      const portal = applyPortal(p.pos.x, p.pos.y);
+      if (portal && this.fits(portal.x, portal.y)) p.pos = portal;
     }
     p.roomTime[p.roomId] = (p.roomTime[p.roomId] ?? 0) + dt;
     const room = roomAt(this.grid, p.pos.x, p.pos.y);
@@ -531,11 +538,12 @@ export class GameInstance {
 
   // ───────────────────────── entrées client ─────────────────────────
 
-  setInput(userId: string, dx: number, dy: number) {
+  setInput(userId: string, dx: number, dy: number, run = false) {
     const p = this.players.get(userId);
     if (!p || !p.alive) return;
     const clamp = (v: number) => (Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0);
     p.input = { x: clamp(dx), y: clamp(dy) };
+    p.running = run;
   }
 
   setConnected(userId: string, connected: boolean) {

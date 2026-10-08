@@ -10,18 +10,41 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { DOORS, FURNITURE, ROOMS, WORLD_H, WORLD_W, buildWorldGrid, type FurnitureDef, type RoomDef } from '@shared/content/villa';
+import { DOORS, GRID_W, LEVEL_HEIGHT, LEVEL_OFFSET_X, ROOMS, WORLD_H, WORLD_W, allFurniture, buildWorldGrid, levelOf, type FurnitureDef, type RoomDef } from '@shared/content/villa';
 import { MAT, fabricTex } from './materials';
+import { box, cyl, sphere } from './build';
+import { buildFurnishing } from './furnishing3d';
 
 export const WALL_H = 3;
 const grid = buildWorldGrid();
-const roomIdx = (x: number, y: number) => (x < 0 || y < 0 || x >= WORLD_W || y >= WORLD_H ? 0 : grid.rooms[y * WORLD_W + x]);
+const roomIdx = (x: number, y: number) => (x < 0 || y < 0 || x >= GRID_W || y >= WORLD_H ? 0 : grid.rooms[y * GRID_W + x]);
 const roomAtTile = (x: number, y: number): RoomDef | null => {
   const r = roomIdx(x, y);
   return r ? ROOMS[r - 1] : null;
 };
-const isDoor = (x: number, y: number) => x >= 0 && y >= 0 && x < WORLD_W && y < WORLD_H && !!grid.doors[y * WORLD_W + x];
+const isDoor = (x: number, y: number) => x >= 0 && y >= 0 && x < GRID_W && y < WORLD_H && !!grid.doors[y * GRID_W + x];
+/** Tuiles de l'étage sans plancher (trémie de l'escalier, entourée d'une rambarde). */
+const voidTiles = new Set<string>();
+for (const f of allFurniture())
+  if (f.kind === 'railing') for (let y = f.y; y < f.y + f.h; y++) for (let x = f.x; x < f.x + f.w; x++) voidTiles.add(`${x},${y}`);
+const isVoid = (x: number, y: number) => voidTiles.has(`${x},${y}`);
+/** Sous une trémie de l'étage : pas de plafond au rez-de-chaussée. */
+const underVoid = (x: number, y: number) => voidTiles.has(`${x + LEVEL_OFFSET_X},${y}`);
+/** Plan horizontal découpé par tuiles (trous possibles), UV continus sur la pièce. */
+function tiledPlane(r: RoomDef, skip: (x: number, y: number) => boolean, faceUp: boolean): THREE.BufferGeometry | null {
+  const geos: THREE.BufferGeometry[] = [];
+  for (let y = r.rect.y; y < r.rect.y + r.rect.h; y++)
+    for (let x = r.rect.x; x < r.rect.x + r.rect.w; x++) {
+      if (skip(x, y)) continue;
+      const p = new THREE.PlaneGeometry(1, 1);
+      const uv = p.getAttribute('uv') as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (x - r.rect.x + uv.getX(i)) / r.rect.w, (r.rect.y + r.rect.h - y - 1 + uv.getY(i)) / r.rect.h);
+      p.rotateX(faceUp ? -Math.PI / 2 : Math.PI / 2);
+      p.translate(x + 0.5, 0, y + 0.5);
+      geos.push(p);
+    }
+  return geos.length ? mergeGeometries(geos) : null;
+}
 
 // ───────────── style des pièces ─────────────
 
@@ -43,40 +66,19 @@ const STYLE: Record<string, RoomStyle> = {
   corridor: { floor: (w, h) => MAT.hardwood(w, h), wall: () => MAT.wallpaper('#c9b48f', '#a88f68', 'stripes', WALL_H), light: '#ffcf96', lamp: 'bulb', rug: { w: 12, h: 1.2, base: '#4a2a1e', border: '#b08a4a' } },
   bedroom1: { floor: (w, h) => MAT.hardwood(w, h), wall: () => MAT.wallpaper('#28375a', '#48618f', 'damask', WALL_H), light: '#ffd3a0', lamp: 'pendant', rug: { w: 3, h: 2, base: '#1e2a4a', border: '#c8b48a', dx: 1 } },
   bedroom2: { floor: (w, h) => MAT.hardwood(w, h, '#a27a5a'), wall: () => MAT.wallpaper('#4a1a24', '#7a2c3a', 'damask', WALL_H), light: '#ffc58a', lamp: 'chandelier', rug: { w: 3.5, h: 2.4, base: '#3a1018', border: '#d4b06a', dx: -0.5 } },
+  // ── Étage ──
+  library: { floor: (w, h) => MAT.hardwood(w, h, '#7a5a40'), wall: () => MAT.wallpaper('#2a3a2c', '#7a8a5a', 'stripes', WALL_H), light: '#ffc98a', lamp: 'chandelier', rug: { w: 4, h: 2.6, base: '#4a1a1e', border: '#c9a45c', dz: 0.4 } },
+  guestroom: { floor: (w, h) => MAT.hardwood(w, h, '#a27a5a'), wall: () => MAT.wallpaper('#5a4a3a', '#8a7458', 'damask', WALL_H), light: '#ffd3a0', lamp: 'pendant', rug: { w: 3, h: 2.2, base: '#3a2a1e', border: '#c8b48a' } },
+  musicroom: { floor: (w, h) => MAT.hardwood(w, h), wall: () => MAT.wallpaper('#3a1e2a', '#a07a5a', 'damask', WALL_H), light: '#ffc98a', lamp: 'chandelier', rug: { w: 5, h: 3.5, base: '#2a1a3a', border: '#c9a45c' } },
+  suite: { floor: (w, h) => MAT.hardwood(w, h, '#8a6a52'), wall: () => MAT.wallpaper('#2a2440', '#6a5a8a', 'damask', WALL_H), light: '#ffc58a', lamp: 'chandelier', rug: { w: 4, h: 3, base: '#3a1018', border: '#d4b06a' } },
+  bathroom2: { floor: (w, h) => MAT.tiles(w, h), wall: () => MAT.wallpaper('#e4e8e0', '#9fb0a0', 'tiles', WALL_H), light: '#f1f4ff', lamp: 'bulb' },
+  studio: { floor: (w, h) => MAT.hardwood(w, h, '#b0906a'), wall: () => MAT.wallpaper('#d8cfbe', '#b8ab92', 'stripes', WALL_H), light: '#fff0d8', lamp: 'pendant' },
+  landing: { floor: (w, h) => MAT.hardwood(w, h), wall: () => MAT.wallpaper('#c9b48f', '#a88f68', 'stripes', WALL_H), light: '#ffcf96', lamp: 'bulb', rug: { w: 14, h: 1.2, base: '#4a2a1e', border: '#b08a4a', dx: -3 } },
   garden: { floor: (w, h) => MAT.grass(w, h), wall: () => MAT.brick(1, 1.1 / 1.5), light: '', lamp: 'bulb' },
   exterior: { floor: (w, h) => MAT.gravel(w, h), wall: () => MAT.brick(1, 1.1 / 1.5), light: '', lamp: 'bulb' },
 };
 
 // ───────────── helpers de construction ─────────────
-
-type V3 = [number, number, number];
-function box(parent: THREE.Object3D, size: V3, m: THREE.Material, pos: V3, rot: V3 = [0, 0, 0], rounded = 0) {
-  const g = rounded ? new RoundedBoxGeometry(size[0], size[1], size[2], 3, Math.min(rounded, size[0] / 2.1, size[1] / 2.1, size[2] / 2.1)) : new THREE.BoxGeometry(...size);
-  const mesh = new THREE.Mesh(g, m);
-  mesh.position.set(...pos);
-  mesh.rotation.set(...rot);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-function cyl(parent: THREE.Object3D, rTop: number, rBot: number, h: number, m: THREE.Material, pos: V3, rot: V3 = [0, 0, 0], seg = 20) {
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, seg), m);
-  mesh.position.set(...pos);
-  mesh.rotation.set(...rot);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-function sphere(parent: THREE.Object3D, r: number, m: THREE.Material, pos: V3, scale: V3 = [1, 1, 1]) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12), m);
-  mesh.position.set(...pos);
-  mesh.scale.set(...scale);
-  mesh.castShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
 
 /** Côté du meuble adossé à un mur : 'n' (z−), 's' (z+), 'w' (x−), 'e' (x+). */
 function wallSide(f: FurnitureDef): 'n' | 's' | 'w' | 'e' | null {
@@ -91,7 +93,7 @@ function wallSide(f: FurnitureDef): 'n' | 's' | 'w' | 'e' | null {
 
 /** Repère local : dos du meuble vers −z (contre le mur), largeur W sur x, profondeur D sur z. */
 function oriented(f: FurnitureDef) {
-  const side = wallSide(f) ?? 'n';
+  const side = f.facing ?? wallSide(f) ?? 'n';
   const g = new THREE.Group();
   g.position.set(f.x + f.w / 2, 0, f.y + f.h / 2);
   let W = f.w;
@@ -374,22 +376,33 @@ function buildFurniture(f: FurnitureDef, fires: THREE.Object3D[], pendulums: THR
       break;
     }
     case 'stairs': {
-      // Escalier vers l'étage : il monte vers le mur du fond
-      const steps = 14;
-      const run = D / steps;
+      // Escalier vers l'étage : monte du nord (première marche) au sud (palier), praticable.
+      g.rotation.y = 0;
+      const SW = f.w;
+      const SD = f.h;
+      const steps = 20;
+      const run = SD / steps;
+      const tread = MAT.wood('#4a2e1c');
+      const riser = MAT.paint('#e8e2d4', 0.6);
       for (let i = 0; i < steps; i++) {
-        const h = ((i + 1) / steps) * (WALL_H - 0.15);
-        box(g, [W * 0.8, 0.06, run + 0.02], MAT.wood('#4a2e1c'), [0, h, D / 2 - run * (i + 0.5)]);
-        box(g, [W * 0.8, h, 0.02], MAT.paint('#e8e2d4', 0.6), [0, h / 2, D / 2 - run * i]);
+        const h = ((i + 1) / steps) * LEVEL_HEIGHT;
+        const z = -SD / 2 + run * (i + 0.5);
+        box(g, [SW - 0.1, 0.05, run + 0.03], tread, [0, h - 0.025, z]);
+        box(g, [SW - 0.1, LEVEL_HEIGHT / steps, 0.02], riser, [0, h - LEVEL_HEIGHT / steps / 2, z - run / 2]);
       }
+      // limons pleins de chaque côté + rampes
+      const len = Math.hypot(SD, LEVEL_HEIGHT);
+      const ang = -Math.atan2(LEVEL_HEIGHT, SD);
       const rail = MAT.wood('#2e1d12');
-      const len = Math.hypot(D, WALL_H);
-      box(g, [0.06, 0.06, len], rail, [W * 0.4, WALL_H / 2 + 0.9, 0], [Math.atan2(WALL_H, D), 0, 0]);
-      for (let i = 0; i < steps; i += 2) {
-        const h = ((i + 1) / steps) * (WALL_H - 0.15);
-        cyl(g, 0.02, 0.02, 0.9, MAT.paint('#f2eee6', 0.4), [W * 0.4, h + 0.45, D / 2 - run * (i + 0.5)]);
+      for (const sx of [-1, 1]) {
+        box(g, [0.08, 0.35, len], MAT.paint('#ece6da', 0.5), [sx * (SW / 2 - 0.04), LEVEL_HEIGHT / 2 - 0.1, 0], [ang, 0, 0]);
+        box(g, [0.07, 0.07, len], rail, [sx * (SW / 2 - 0.04), LEVEL_HEIGHT / 2 + 0.9, 0], [ang, 0, 0]);
+        for (let i = 1; i < steps; i += 2) {
+          const h = ((i + 1) / steps) * LEVEL_HEIGHT;
+          cyl(g, 0.018, 0.018, 0.9, MAT.paint('#f2eee6', 0.4), [sx * (SW / 2 - 0.04), h + 0.45, -SD / 2 + run * (i + 0.5)], [0, 0, 0], 8);
+        }
+        cyl(g, 0.06, 0.06, 1.15, rail, [sx * (SW / 2 - 0.04), 0.58, -SD / 2 + 0.06]);
       }
-      cyl(g, 0.06, 0.06, 1.15, rail, [W * 0.4, 0.58, D / 2 - 0.05]);
       break;
     }
     case 'fountain': {
@@ -440,6 +453,9 @@ function buildFurniture(f: FurnitureDef, fires: THREE.Object3D[], pendulums: THR
       box(car, [0.05, 0.12, Wd * 0.7], MAT.metal('#d8d8dc', 0.15), [L / 2 + 0.01, 0.45, 0]);
       break;
     }
+    default:
+      // ameublement et décoration (furnishing3d.ts)
+      buildFurnishing(f, g, W, D);
   }
   g.userData.furnitureId = f.id;
   return g;
@@ -485,7 +501,7 @@ export interface Villa3D {
   setUnlocked(ids: string[]): void;
   update(t: number): void;
   /** les lampes réelles sont attribuées aux sources les plus proches de ce point (joueur ou caméra) */
-  focus(x: number, z: number, roomId?: string): void;
+  focus(x: number, z: number, roomId?: string, y?: number): void;
   /** ombres de la lampe de la pièce courante (désactivables pour les machines modestes) */
   setShadows(on: boolean): void;
   /** vitres éclairées vues de l'extérieur (vue avec toit) : matériau propre à chacune */
@@ -554,11 +570,15 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   const inGame = !opts.roof;
 
   // ── Terrain autour de la propriété + forêt sombre ──
+  // (dans un sous-groupe : le terrain ne fait partie d'aucun niveau)
+  const terrain = new THREE.Group();
+  terrain.userData.placed = true;
+  group.add(terrain);
   const lawn = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), MAT.grass(220, 220));
   lawn.rotation.x = -Math.PI / 2;
   lawn.position.set(WORLD_W / 2, -0.03, WORLD_H / 2);
   lawn.receiveShadow = true;
-  group.add(lawn);
+  terrain.add(lawn);
   const treeMat = new THREE.MeshStandardMaterial({ color: '#13241a', roughness: 1, flatShading: true });
   const trunkMat = MAT.paint('#2a1e14', 1);
   for (let i = 0; i < 70; i++) {
@@ -568,18 +588,27 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     const z = WORLD_H / 2 + Math.sin(a) * r * 0.8;
     const s = 0.8 + ((i * 13) % 7) / 6;
     if (opts.driveway && Math.abs(x - DRIVEWAY_X) < 6 && z > WORLD_H) continue;
-    cyl(group, 0.25 * s, 0.35 * s, 3 * s, trunkMat, [x, 1.5 * s, z]);
+    cyl(terrain, 0.25 * s, 0.35 * s, 3 * s, trunkMat, [x, 1.5 * s, z]);
     const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4 * s, 1), treeMat);
     crown.position.set(x, 4.2 * s, z);
-    group.add(crown);
+    terrain.add(crown);
   }
 
   // ── Sols, tapis, seuils ──
   for (const r of ROOMS) {
     const st = STYLE[r.id];
-    const f = new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w, r.rect.h), st ? st.floor(r.rect.w, r.rect.h) : MAT.concrete(r.rect.w, r.rect.h));
-    f.rotation.x = -Math.PI / 2;
-    f.position.set(r.rect.x + r.rect.w / 2, 0, r.rect.y + r.rect.h / 2);
+    const floorMat = st ? st.floor(r.rect.w, r.rect.h) : MAT.concrete(r.rect.w, r.rect.h);
+    // sol découpé par tuiles quand la pièce contient une trémie, sinon un seul plan
+    const holed = [...voidTiles].some((k) => {
+      const [x, y] = k.split(',').map(Number);
+      return x >= r.rect.x && x < r.rect.x + r.rect.w && y >= r.rect.y && y < r.rect.y + r.rect.h;
+    });
+    const f = holed ? new THREE.Mesh(tiledPlane(r, isVoid, true)!, floorMat) : new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w, r.rect.h), floorMat);
+    if (holed) f.userData.level = r.level ?? 0;
+    else {
+      f.rotation.x = -Math.PI / 2;
+      f.position.set(r.rect.x + r.rect.w / 2, 0, r.rect.y + r.rect.h / 2);
+    }
     f.receiveShadow = true;
     group.add(f);
     if (st?.rug) {
@@ -603,8 +632,14 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   const heightAt = new Map<string, number>();
   // ouverture du muret d'enceinte face à l'allée d'accès (cinématique d'arrivée)
   const isOpening = (x: number, y: number) => !!opts.driveway && y === WORLD_H - 1 && Math.abs(x + 0.5 - DRIVEWAY_X) < 2.5;
+  // Un mur extérieur de la maison monte jusqu'au toit (rez-de-chaussée + étage)
+  const facadeH = WALL_H + LEVEL_HEIGHT;
+  const upstairsAbove = (x: number, y: number) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (roomAtTile(x + dx + LEVEL_OFFSET_X, y + dy)) return true;
+    return false;
+  };
   for (let y = -1; y <= WORLD_H; y++)
-    for (let x = -1; x <= WORLD_W; x++) {
+    for (let x = -1; x <= GRID_W; x++) {
       if (roomIdx(x, y) || isOpening(x, y)) continue;
       let indoor = false;
       let outdoor = false;
@@ -616,70 +651,102 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
           else indoor = true;
         }
       if (!indoor && !outdoor) continue;
-      const h = indoor ? WALL_H : 1.1;
+      const lvl = levelOf(x);
+      // au rez-de-chaussée, le mur plein remplit aussi l'épaisseur du plancher ; la façade monte d'un étage
+      const h = !indoor ? 1.1 : lvl ? WALL_H : outdoor && upstairsAbove(x, y) ? facadeH : LEVEL_HEIGHT;
       wallTiles.push({ x, y, h });
-      heightAt.set(`${x},${y}`, h);
+      heightAt.set(`${x},${y}`, indoor ? (outdoor && !lvl && upstairsAbove(x, y) ? facadeH : WALL_H) : 1.1);
     }
-  const core = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), MAT.paint('#2a2622', 0.9), wallTiles.length);
   const tmp = new THREE.Object3D();
-  wallTiles.forEach((w, i) => {
-    tmp.position.set(w.x + 0.5, w.h / 2, w.y + 0.5);
-    tmp.scale.set(0.998, w.h, 0.998);
-    tmp.updateMatrix();
-    core.setMatrixAt(i, tmp.matrix);
-  });
-  core.castShadow = true;
-  core.receiveShadow = true;
-  group.add(core);
-  colliders.push(core);
+  for (const lvl of [0, 1] as const) {
+    const tiles = wallTiles.filter((w) => levelOf(w.x) === lvl);
+    const core = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), MAT.paint('#2a2622', 0.9), tiles.length);
+    tiles.forEach((w, i) => {
+      tmp.position.set(w.x + 0.5, w.h / 2, w.y + 0.5);
+      tmp.scale.set(0.998, w.h, 0.998);
+      tmp.updateMatrix();
+      core.setMatrixAt(i, tmp.matrix);
+    });
+    core.castShadow = true;
+    core.receiveShadow = true;
+    core.userData.level = lvl;
+    group.add(core);
+    colliders.push(core);
+  }
 
-  const faces = new Map<THREE.Material, THREE.BufferGeometry[]>();
-  const trims: THREE.BufferGeometry[] = [];
-  const crowns: THREE.BufferGeometry[] = [];
-  const windowSpots: { x: number; z: number; ry: number; outdoor: boolean }[] = [];
+  const faces = new Map<string, { m: THREE.Material; lvl: 0 | 1; geos: THREE.BufferGeometry[] }>();
+  const trims: [THREE.BufferGeometry[], THREE.BufferGeometry[]] = [[], []];
+  const crowns: [THREE.BufferGeometry[], THREE.BufferGeometry[]] = [[], []];
+  const windowSpots: { x: number; z: number; ry: number; outdoor: boolean; lvl: 0 | 1; y?: number }[] = [];
   // [dx, dy, rotation de la face pour qu'elle regarde la pièce]
   const DIRS: [number, number, number][] = [[0, -1, 0], [0, 1, Math.PI], [-1, 0, Math.PI / 2], [1, 0, -Math.PI / 2]];
   for (let y = 0; y < WORLD_H; y++)
-    for (let x = 0; x < WORLD_W; x++) {
+    for (let x = 0; x < GRID_W; x++) {
       const room = roomAtTile(x, y);
       if (!room || isDoor(x, y)) continue;
+      const lvl = levelOf(x);
       for (const [dx, dy, ry] of DIRS) {
         const wx = x + dx;
         const wy = y + dy;
         if (roomIdx(wx, wy) || isOpening(wx, wy)) continue;
-        const h = heightAt.get(`${wx},${wy}`) ?? WALL_H;
+        // côté trémie : pas de mur, la rambarde suffit
+        if (isVoid(wx, wy)) continue;
+        // à l'intérieur, le papier peint s'arrête au plafond ; dehors, la façade monte jusqu'au toit
+        const wallH = heightAt.get(`${wx},${wy}`) ?? WALL_H;
+        const h = room.outdoor ? wallH : Math.min(wallH, WALL_H);
         const m = STYLE[room.id].wall();
         const plane = new THREE.PlaneGeometry(1, h);
+        if (room.outdoor && h > 1.2) {
+          // brique : le motif garde son échelle quelle que soit la hauteur du mur
+          const uv = plane.getAttribute('uv') as THREE.BufferAttribute;
+          for (let i = 0; i < uv.count; i++) uv.setY(i, (uv.getY(i) * h) / 1.1);
+        }
         plane.rotateY(ry);
         plane.translate(x + 0.5 + dx * 0.499, h / 2, y + 0.5 + dy * 0.499);
-        if (!faces.has(m)) faces.set(m, []);
-        faces.get(m)!.push(plane);
+        const key = `${lvl}|${m.uuid}`;
+        if (!faces.has(key)) faces.set(key, { m, lvl, geos: [] });
+        faces.get(key)!.geos.push(plane);
         if (!room.outdoor) {
           const base = new THREE.BoxGeometry(1, 0.12, 0.025);
           base.rotateY(ry);
           base.translate(x + 0.5 + dx * 0.487, 0.06, y + 0.5 + dy * 0.487);
-          trims.push(base);
+          trims[lvl].push(base);
           const crown = new THREE.BoxGeometry(1, 0.09, 0.06);
           crown.rotateY(ry);
           crown.translate(x + 0.5 + dx * 0.47, WALL_H - 0.045, y + 0.5 + dy * 0.47);
-          crowns.push(crown);
+          crowns[lvl].push(crown);
         }
+        const rhythm = dy !== 0 ? wx % 3 === 1 : wy % 3 === 1;
         const across = roomAtTile(wx + dx, wy + dy);
-        if (across && across.outdoor !== room.outdoor && h === WALL_H && (dy !== 0 ? wx % 3 === 1 : wy % 3 === 1))
-          windowSpots.push({ x: x + 0.5 + dx * 0.5, z: y + 0.5 + dy * 0.5, ry, outdoor: !!room.outdoor });
+        if (lvl === 0 && across && across.outdoor !== room.outdoor && h >= WALL_H && rhythm) {
+          windowSpots.push({ x: x + 0.5 + dx * 0.5, z: y + 0.5 + dy * 0.5, ry, outdoor: !!room.outdoor, lvl: 0 });
+          // façade : fenêtre de l'étage au-dessus (vue de l'extérieur)
+          if (room.outdoor && h > WALL_H) windowSpots.push({ x: x + 0.5 + dx * 0.5, z: y + 0.5 + dy * 0.5, ry, outdoor: true, lvl: 0, y: LEVEL_HEIGHT });
+        }
+        // étage : fenêtres sur les murs extérieurs (vers le dehors du rez-de-chaussée)
+        const below = roomAtTile(wx + dx - LEVEL_OFFSET_X, wy + dy);
+        if (lvl === 1 && !across && (!below || below.outdoor) && rhythm) windowSpots.push({ x: x + 0.5 + dx * 0.5, z: y + 0.5 + dy * 0.5, ry, outdoor: false, lvl: 1 });
       }
     }
-  for (const [m, geos] of faces) {
+  for (const { m, lvl, geos } of faces.values()) {
     const mesh = new THREE.Mesh(mergeGeometries(geos), m);
     mesh.receiveShadow = true;
+    mesh.userData.level = lvl;
     group.add(mesh);
   }
-  if (trims.length) {
-    const t = new THREE.Mesh(mergeGeometries(trims), MAT.paint('#ece6da', 0.5));
-    t.receiveShadow = true;
-    group.add(t);
+  for (const lvl of [0, 1] as const) {
+    if (trims[lvl].length) {
+      const t = new THREE.Mesh(mergeGeometries(trims[lvl]), MAT.paint('#ece6da', 0.5));
+      t.receiveShadow = true;
+      t.userData.level = lvl;
+      group.add(t);
+    }
+    if (crowns[lvl].length) {
+      const c = new THREE.Mesh(mergeGeometries(crowns[lvl]), MAT.paint('#f2ede2', 0.6));
+      c.userData.level = lvl;
+      group.add(c);
+    }
   }
-  if (crowns.length) group.add(new THREE.Mesh(mergeGeometries(crowns), MAT.paint('#f2ede2', 0.6)));
 
   // ── Fenêtres ──
   const glowMat = new THREE.MeshStandardMaterial({ color: '#2a1d10', emissive: '#ffb45c', emissiveIntensity: 1.1 });
@@ -688,8 +755,10 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   const exteriorWindows: Villa3D['exteriorWindows'] = [];
   windowSpots.forEach((w, i) => {
     const g = new THREE.Group();
-    g.position.set(w.x, 0, w.z);
+    g.position.set(w.x, w.y ?? 0, w.z);
     g.rotation.y = w.ry;
+    g.userData.level = w.lvl;
+    if (w.y) g.userData.placed = true;
     const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.2), w.outdoor ? (opts.roof ? glowMat.clone() : glowMat) : MAT.glass());
     if (w.outdoor && opts.roof) exteriorWindows.push({ mesh: pane, x: w.x, z: w.z, ry: w.ry });
     pane.position.set(0, 1.6, 0.003);
@@ -743,7 +812,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   const pendulums: THREE.Object3D[] = [];
   const waters: THREE.Mesh[] = [];
   const screens: THREE.Mesh[] = [];
-  for (const f of FURNITURE) {
+  for (const f of allFurniture()) {
     const fg = buildFurniture(f, fires, pendulums, waters);
     fg.traverse((o) => o.name === 'screen' && screens.push(o as THREE.Mesh));
     group.add(fg);
@@ -768,9 +837,20 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   if (inGame)
     for (const r of ROOMS) {
       if (r.outdoor) continue;
-      const c = new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w + 1, r.rect.h + 1), MAT.plaster());
-      c.rotation.x = Math.PI / 2;
-      c.position.set(r.rect.x + r.rect.w / 2, WALL_H, r.rect.y + r.rect.h / 2);
+      const holed = (r.level ?? 0) === 0 && [...voidTiles].some((k) => {
+        const [vx, vy] = k.split(',').map(Number);
+        const x = vx - LEVEL_OFFSET_X;
+        return x >= r.rect.x && x < r.rect.x + r.rect.w && vy >= r.rect.y && vy < r.rect.y + r.rect.h;
+      });
+      const c = holed ? new THREE.Mesh(tiledPlane(r, underVoid, false)!, MAT.plaster()) : new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w + 1, r.rect.h + 1), MAT.plaster());
+      if (holed) {
+        c.position.y = WALL_H;
+        c.userData.level = 0;
+        c.userData.placed = true;
+      } else {
+        c.rotation.x = Math.PI / 2;
+        c.position.set(r.rect.x + r.rect.w / 2, WALL_H, r.rect.y + r.rect.h / 2);
+      }
       c.receiveShadow = true;
       c.castShadow = true;
       group.add(c);
@@ -784,7 +864,9 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     const lamp = lampMesh(st.lamp, WALL_H, bulbMats);
     lamp.position.set(cx, 0, cz);
     group.add(lamp);
-    sources.push({ color: st.light, intensity: ROOM_LIGHT, distance: Math.max(r.rect.w, r.rect.h) * 1.5, decay: 1.5, pos: new THREE.Vector3(cx, WALL_H - 0.85, cz), room: r.id, shadowable: true });
+    const lvlY = r.level ? LEVEL_HEIGHT : 0;
+    const rx = r.level ? cx - LEVEL_OFFSET_X : cx;
+    sources.push({ color: st.light, intensity: ROOM_LIGHT, distance: Math.max(r.rect.w, r.rect.h) * 1.5, decay: 1.5, pos: new THREE.Vector3(rx, lvlY + WALL_H - 0.85, cz), room: r.id, shadowable: true });
   }
   // Éclairage à coût constant : un petit réservoir de lampes est attribué aux sources les plus proches
   // du joueur (ou de la caméra) ; la lampe de la pièce courante est un projecteur vers le bas qui
@@ -833,12 +915,22 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     shape.closePath();
     const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: WORLD_W + 1.2, bevelEnabled: false }), MAT.paint('#26282e', 0.75));
     roof.rotation.y = Math.PI / 2;
-    roof.position.set(-0.6, WALL_H, houseZ0 + depth / 2);
+    roof.position.set(-0.6, WALL_H + LEVEL_HEIGHT, houseZ0 + depth / 2);
+    roof.userData.placed = true;
     roof.castShadow = true;
     group.add(roof);
-    for (const x of [12.5, 35.5]) box(group, [1.2, 4, 1.2], MAT.brick(1, 2.6), [x, WALL_H + 3.5, 9]);
+    for (const x of [12.5, 35.5]) box(group, [1.2, 4, 1.2], MAT.brick(1, 2.6), [x, WALL_H + LEVEL_HEIGHT + 3.5, 9]).userData.placed = true;
   }
 
+  // Étage : tout ce qui a été construit dans les colonnes de l'étage est replacé au-dessus du rez-de-chaussée
+  for (const c of [...group.children]) {
+    if (c.userData.placed) continue;
+    const lvl = c.userData.level ?? (c.position.x >= LEVEL_OFFSET_X - 1 ? 1 : 0);
+    if (lvl === 1) {
+      c.position.x -= LEVEL_OFFSET_X;
+      c.position.y += LEVEL_HEIGHT;
+    }
+  }
   // sources déclarées par le mobilier (cheminées…)
   group.updateMatrixWorld(true);
   const keep = new Set<THREE.Object3D>([...colliders, ...exteriorWindows.map((w) => w.mesh)]);
@@ -848,14 +940,17 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     const def = o.userData.light as LightSourceDef | undefined;
     if (!def) return;
     const pos = o.getWorldPosition(new THREE.Vector3());
-    sources.push({ ...def, pos, room: roomAtTile(Math.floor(pos.x), Math.floor(pos.z))?.id });
+    const gx = pos.y > LEVEL_HEIGHT - 0.5 ? pos.x + LEVEL_OFFSET_X : pos.x;
+    sources.push({ ...def, pos, room: roomAtTile(Math.floor(gx), Math.floor(pos.z))?.id });
   });
   const level = (src: LightSource) => (src.fire ? src.intensity : blackout ? 0 : src.intensity);
+  let focusY = 0;
   const assign = (x: number, z: number) => {
     shadowSrc = sources.find((src) => src.shadowable && src.room === focused) ?? null;
     const ranked = sources
       .filter((src) => src !== shadowSrc)
-      .map((src) => ({ src, d: Math.hypot(src.pos.x - x, src.pos.z - z) - (src.room && src.room === focused ? 100 : 0) }))
+      // l'autre niveau compte triple : on éclaire d'abord son étage
+      .map((src) => ({ src, d: Math.hypot(src.pos.x - x, src.pos.z - z, (src.pos.y - focusY - 2) * 3) - (src.room && src.room === focused ? 100 : 0) }))
       .sort((p, q) => p.d - q.d);
     pool.forEach((p, i) => {
       const src = ranked[i]?.src ?? null;
@@ -872,7 +967,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     });
     if (shadowSrc) {
       shadowLamp.position.copy(shadowSrc.pos);
-      shadowLamp.target.position.set(shadowSrc.pos.x, 0, shadowSrc.pos.z);
+      shadowLamp.target.position.set(shadowSrc.pos.x, shadowSrc.pos.y - 3, shadowSrc.pos.z);
       shadowLamp.color.set(shadowSrc.color);
       shadowLamp.distance = shadowSrc.distance;
       shadowLamp.intensity = level(shadowSrc) * 1.6;
@@ -904,10 +999,11 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
         lockedDoors.delete(id);
       }
     },
-    focus(x, z, roomId) {
+    focus(x, z, roomId, y = 0) {
       // réattribution seulement quand on change de pièce ou qu'on a bougé d'au moins 1,5 m
-      if (roomId === focused && Math.hypot(x - lastFocus.x, z - lastFocus.y) < 1.5) return;
+      if (roomId === focused && Math.hypot(x - lastFocus.x, z - lastFocus.y) < 1.5 && Math.abs(y - focusY) < 1) return;
       focused = roomId;
+      focusY = y;
       lastFocus.set(x, z);
       assign(x, z);
     },

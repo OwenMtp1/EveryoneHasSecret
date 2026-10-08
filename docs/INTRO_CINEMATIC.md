@@ -6,6 +6,9 @@ d'introduction narrative et d'écran de chargement. Ton : 90 % soirée, 10 % mal
 ## Autorité serveur
 
 `LobbyManager.start()` :
+0. **chargement d'abord** : `lobby:intro { loading: true }` → chaque client charge personnages, villa de la partie,
+   textures et shaders puis répond `lobby:intro-ready` ; la cinématique démarre quand tous les joueurs connectés
+   sont prêts (ou après `EHAS_LOAD_TIMEOUT_MS`) ;
 1. **fige la composition** : les joueurs présents à cet instant sont ceux de la cinématique et de la partie ;
 2. construit un `IntroPlan` (`buildIntroPlan`, `src/shared/content/intro.ts`) : véhicule selon le nombre de joueurs,
    conducteur tiré au sort, une place par passager, une animation par passager, une graine commune ;

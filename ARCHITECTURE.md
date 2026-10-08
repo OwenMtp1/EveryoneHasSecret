@@ -31,7 +31,9 @@ src/
     protocol.ts               événements Socket.IO + GameAction (union typée)
     content/                  ★ CONTENU DATA-DRIVEN ★
       character.ts            teintes, coiffures, couleurs, tenues, validation
-      villa.ts                pièces, portes, mobilier, spawns → grille
+      villa.ts                pièces (rez-de-chaussée + étage décalé de LEVEL_OFFSET_X dans la grille), portes,
+                              mobilier, escalier (élévation, passage d’étage), spawns → grille
+      furnishing.ts           ameublement et décoration des pièces
       objects.ts              types d’objets (tags + useEffect)
       secrets.ts              secrets (cibles, objets confiés, mobiles, graines)
       roles.ts                rôles d’enquête (affinités, outils)
@@ -69,6 +71,9 @@ src/
       GameView3D.ts           scène de jeu : caméra 3e/1re personne avec collision murs, souris,
                               déplacements relatifs à la caméra, interpolation, pluie, éclairs, coupure + lampes torches
       sprites.ts              icônes d'objets et étiquettes de nom
+    three/furnishing3d.ts     modèles de l'ameublement et de la décoration (données : shared/content/furnishing.ts)
+    three/recolor.ts          peau / tenue / cheveux du créateur appliqués aux modèles réalistes
+    three/prebuilt.ts         villa de la partie construite pendant le chargement
     game/intro/               cinématique d'arrivée (scène, caméra, véhicule, personnages assis, son,
                               textes, chargement masqué) — voir docs/INTRO_CINEMATIC.md
     render/                   avatar SVG (portraits) + plan 2D (touche M)
@@ -76,6 +81,7 @@ src/
                               lobby, settings, game, investigation, common
 tests/
   engine.test.ts              règles du monde, boucle complète, relations, traces
+  villa.test.ts               ameublement : emprises, portes dégagées, toutes les pièces accessibles (deux étages)
   intro.test.ts               cinématique : véhicules, places, chronologie, synchro 2/4/5/8 joueurs, composition figée
   multiplayer.test.ts         4 clients réels : lobby, sync, chat privé, reconnexion, amis
 ```

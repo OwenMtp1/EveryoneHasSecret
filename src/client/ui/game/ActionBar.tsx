@@ -89,6 +89,7 @@ export function ActionBar() {
         </div>,
       );
 
-  if (!items.length) return <div className="action-bar empty">Approchez-vous d’un objet, d’un meuble ou de quelqu’un. <kbd>ZQSD</kbd>/<kbd>WASD</kbd> bouger · <kbd>E</kbd> interagir · <kbd>M</kbd> plan.</div>;
+  // rien à proximité : écran libre (les raccourcis restent rappelés en bas à gauche)
+  if (!items.length) return null;
   return <div className="action-bar">{items.slice(0, 6)}</div>;
 }

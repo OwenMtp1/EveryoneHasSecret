@@ -16,7 +16,6 @@ import { InventoryTab } from './InventoryTab';
 import { RelationsTab } from './RelationsTab';
 import { NotebookTab } from './NotebookTab';
 import { InvestigationTab } from '../investigation/InvestigationTab';
-import { Tutorial } from './Tutorial';
 import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker } from './Overlays';
 
 
@@ -43,8 +42,9 @@ export function GameScreen() {
     viewRef.current = v;
     const dbg = (window as unknown as { __ehas?: Record<string, unknown> }).__ehas;
     if (dbg) dbg.view3d = v; // accroche de test (?debug)
-    v.onInput = (dx, dy) => getSocket()?.emit('game:input', { dx, dy });
+    v.onInput = (dx, dy, run) => getSocket()?.emit('game:input', { dx, dy, run });
     v.onModeChange = setCamMode;
+    v.onFirstFrame = () => useStore.setState({ gameViewReady: true });
     const g0 = liveGame.current ?? useStore.getState().game;
     if (g0) v.setView(g0);
     const unsub = liveGame.subscribe((g) => v.setView(g));
@@ -65,6 +65,7 @@ export function GameScreen() {
       document.removeEventListener('pointerlockchange', onLock);
       v.dispose();
       viewRef.current = null;
+      useStore.setState({ gameViewReady: false });
       getSocket()?.emit('game:input', { dx: 0, dy: 0 });
     };
   }, [hasGame]);
@@ -159,12 +160,11 @@ export function GameScreen() {
       </header>
 
       <div className="cam-hint">
-        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'clic : orienter la caméra'} · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> menus · <kbd>M</kbd> plan
+        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'clic : orienter la caméra'} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> menus · <kbd>M</kbd> plan
       </div>
 
       <Notifications />
       {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
-      <Tutorial />
       <Announcement />
       <OpportunityPrompt />
       <ActionBar />

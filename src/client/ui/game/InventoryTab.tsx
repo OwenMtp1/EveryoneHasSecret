@@ -1,5 +1,5 @@
 import { objectTypeDef } from '@shared/content/objects';
-import { FURNITURE } from '@shared/content/villa';
+import { allFurniture } from '@shared/content/villa';
 import { useStore } from '../../store';
 import { GAME_CONFIG } from '@shared/config';
 import { act, computeNearby, usePicker } from './helpers';
@@ -77,7 +77,7 @@ export function InventoryTab() {
       )}
       <div className="field-label">Cachettes de la pièce</div>
       <div className="small muted">
-        {FURNITURE.filter((f) => f.hiding && f.roomId === n.me?.roomId).map((f) => f.name).join(' · ') || '—'}
+        {allFurniture().filter((f) => f.hiding && f.roomId === n.me?.roomId).map((f) => f.name).join(' · ') || '—'}
       </div>
     </div>
   );

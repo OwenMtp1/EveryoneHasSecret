@@ -29,6 +29,8 @@ export interface IntroTiming {
   elapsed: number;
   /** dernier état annoncé par le serveur */
   serverState: GameIntroState;
+  /** chargement en cours : la cinématique n'a pas commencé */
+  loading?: boolean;
 }
 
 /** Concilie l'horloge locale (fluide) et l'état serveur (autorité) : on n'est jamais en avance ni en retard d'un état. */
@@ -77,6 +79,7 @@ export class IntroSequence {
   private raf = 0;
   private disposed = false;
   private audio = new IntroAudio();
+  private audioStarted = false;
   readonly loader = new IntroLoader();
   private cleanup: (() => void)[] = [];
 
@@ -107,12 +110,15 @@ export class IntroSequence {
   }
 
   /** Charge (priorité 1 : personnages), construit la scène et lance la boucle. */
-  async start() {
+  async start(onLoaded?: () => void) {
     this.onFade(1);
-    this.audio.start();
     await this.loader.characters();
     if (this.disposed) return;
     this.build();
+    await this.loader.game();
+    if (this.disposed) return;
+    await this.loader.rest(this.renderer, this.scene, this.camera);
+    if (!this.disposed) onLoaded?.();
   }
 
   private build() {
@@ -272,7 +278,6 @@ export class IntroSequence {
 
     // Priorités 2 et 3 du chargement : textures/HDR déclenchées ci-dessus, puis shaders
     this.camera.position.set(LANE_X, 1.2, vehicleZ(0));
-    void this.loader.rest(this.renderer, scene, this.camera);
 
     // inspection en mode debug (?debug), comme la vue de jeu
     const dbg = (window as unknown as { __ehas?: Record<string, unknown> }).__ehas;
@@ -283,7 +288,12 @@ export class IntroSequence {
       if (this.disposed) return;
       this.raf = requestAnimationFrame(loop);
       const dt = Math.min(0.1, clock.getDelta());
-      const { state, elapsed: e, u } = reconcile(plan, this.timing());
+      const timing = this.timing();
+      if (!timing.loading && !this.audioStarted) {
+        this.audioStarted = true;
+        this.audio.start();
+      }
+      const { state, elapsed: e, u } = reconcile(plan, timing);
       // véhicule
       const z = vehicleZ(e);
       const speed = lastE < 0 ? 0 : Math.max(0, (vehicleZ(lastE) - z) / Math.max(1e-3, (e - lastE) / 1000));

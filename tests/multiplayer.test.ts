@@ -19,6 +19,7 @@ let base = '';
 before(async () => {
   ctx = createApp({ dbPath: ':memory:' });
   ctx.lobbies.transitionMs = 50;
+  ctx.lobbies.loadTimeoutMs = 50;
   await new Promise<void>((r) => ctx.http.listen(0, r));
   base = `http://127.0.0.1:${(ctx.http.address() as AddressInfo).port}`;
 });

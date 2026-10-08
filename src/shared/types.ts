@@ -3,6 +3,7 @@
  * Règle : tout ce qui transite vers le client est une VUE (filtrée par le serveur),
  * jamais la vérité complète.
  */
+import type { NightDuration } from './config';
 
 // ───────────────────────── META ─────────────────────────
 
@@ -96,7 +97,7 @@ export interface LobbyView {
   chat: LobbyChatMessage[];
   minPlayers: number;
   canStart: boolean;
-  duration: 'short' | 'normal';
+  duration: NightDuration;
 }
 
 export interface ServerListEntry {

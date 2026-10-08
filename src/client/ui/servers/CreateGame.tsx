@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { LobbyVisibility } from '@shared/types';
-import { META_CONFIG } from '@shared/config';
+import { META_CONFIG, NIGHT_DURATIONS, type NightDuration } from '@shared/config';
 import { call } from '../../net/socket';
 import { attempt, useStore } from '../../store';
 import { MenuScreen } from '../common/Screen';
@@ -11,7 +11,7 @@ export function CreateGame() {
   const [maxPlayers, setMax] = useState<number>(META_CONFIG.defaultMaxPlayers);
   const [visibility, setVis] = useState<LobbyVisibility>('PUBLIC');
   const [busy, setBusy] = useState(false);
-  const [duration, setDuration] = useState<'short' | 'normal'>('normal');
+  const [duration, setDuration] = useState<NightDuration>('normal');
 
   const create = async () => {
     setBusy(true);
@@ -44,8 +44,11 @@ export function CreateGame() {
         <p className="hint">{visibility === 'PRIVATE' ? 'Seules les personnes ayant le code pourront entrer.' : 'Visible dans la liste des serveurs.'}</p>
         <div className="field-label">Durée de la nuit</div>
         <div className="seg">
-          <button className={duration === 'short' ? 'active' : ''} onClick={() => setDuration('short')}>Courte (~8 min)</button>
-          <button className={duration === 'normal' ? 'active' : ''} onClick={() => setDuration('normal')}>Normale (~15 min)</button>
+          {(Object.keys(NIGHT_DURATIONS) as NightDuration[]).map((d) => (
+            <button key={d} className={duration === d ? 'active' : ''} onClick={() => setDuration(d)}>
+              {NIGHT_DURATIONS[d].label} ({NIGHT_DURATIONS[d].approx})
+            </button>
+          ))}
         </div>
         <button className="btn btn-primary btn-lg" onClick={create} disabled={busy}>
           OUVRIR LES PORTES

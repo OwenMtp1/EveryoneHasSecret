@@ -66,7 +66,9 @@ test('les joueurs ne voient que ce qui est dans leur pièce', () => {
   place(a, 'kitchen');
   place(b, 'office');
   const va = g.buildSnapshot(a);
-  assert.equal(va.players.find((p) => p.id === b.id)!.pos, undefined);
+  const seen = va.players.find((p) => p.id === b.id)!;
+  // seule une alliance (tirée au sort au début de la nuit) partage la position à distance
+  if (!seen.viaAlliance) assert.equal(seen.pos, undefined);
   assert.ok(va.objects.every((o) => o.roomId === 'kitchen'));
 });
 

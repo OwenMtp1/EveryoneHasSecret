@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { META_CONFIG } from '@shared/config';
+import { META_CONFIG, NIGHT_DURATIONS, type NightDuration } from '@shared/config';
 import { call } from '../../net/socket';
 import { attempt, useStore } from '../../store';
 import { Portrait } from '../common/Avatar';
@@ -100,7 +100,7 @@ export function LobbyScreen() {
         </div>
         <div className="panel lobby-actions">
           <div className="muted">
-            {lobby.players.length} / {lobby.maxPlayers} joueurs · {ready} prêts · minimum {lobby.minPlayers} · nuit {lobby.duration === 'short' ? 'courte' : 'normale'}
+            {lobby.players.length} / {lobby.maxPlayers} joueurs · {ready} prêts · minimum {lobby.minPlayers} · nuit {NIGHT_DURATIONS[lobby.duration].label.toLowerCase()}
           </div>
           {inGame && (
             <button className="btn btn-primary btn-lg" onClick={() => go('game')}>REVENIR À LA PARTIE</button>
@@ -152,8 +152,10 @@ function LobbySettings() {
         ))}
       </div>
       <div className="seg">
-        {(['short', 'normal'] as const).map((d) => (
-          <button key={d} className={lobby.duration === d ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { duration: d }))}>{d === 'short' ? 'Nuit courte' : 'Nuit normale'}</button>
+        {(Object.keys(NIGHT_DURATIONS) as NightDuration[]).map((d) => (
+          <button key={d} className={lobby.duration === d ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { duration: d }))}>
+            Nuit {NIGHT_DURATIONS[d].label.toLowerCase()} ({NIGHT_DURATIONS[d].approx})
+          </button>
         ))}
       </div>
       <div className="seg">

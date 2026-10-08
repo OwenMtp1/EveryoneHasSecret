@@ -16,10 +16,14 @@ import type { Appearance, Character } from '@shared/types';
 import { findHairColor, findOutfit, findSkinTone } from '@shared/content/character';
 import type { GestureKind } from '@shared/types';
 import { GesturePlayer, findRig, type PoseFn } from './gestures';
+import { applyRecolor, averageLuminance, classifyFeminine, computeMasks, type Region, type RegionMasks } from './recolor';
+import { buildHair } from './character3d';
 
 interface BaseModel {
   scene: THREE.Group;
   height: number;
+  /** données de recoloration calculées une fois : masques (texture unique) ou luminance par matériau */
+  paint: { masks?: RegionMasks; lum: Map<string, number> };
   clips: { idle: THREE.AnimationClip; walk: THREE.AnimationClip; run: THREE.AnimationClip };
 }
 
@@ -28,6 +32,9 @@ const MODELS: Record<Appearance, { url: string; height: number }> = {
   feminine: { url: '/models/Woman.glb', height: 1.7 },
 };
 const ANIMATIONS_URL = '/models/Animations.glb';
+/** Vitesse (m/s) à laquelle les cycles capturés ne glissent pas, à cadence 1. */
+const WALK_CLIP_SPEED = 1.45;
+const RUN_CLIP_SPEED = 3.7;
 
 let bases: Partial<Record<Appearance, BaseModel>> = {};
 let loading: Promise<boolean> | null = null;
@@ -55,8 +62,18 @@ export function preloadRealistic(): Promise<boolean> {
           });
           scene.updateMatrixWorld(true);
           const box = new THREE.Box3().setFromObject(scene);
+          // Zones à recolorer : maillages séparés (homme) ou texture unique classée par couleur (femme)
+          const paint: BaseModel['paint'] = { lum: new Map() };
+          scene.traverse((o) => {
+            const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+            const img = m?.map?.image as (CanvasImageSource & { width: number; height: number }) | undefined;
+            if (!m || !img || !(o as THREE.Mesh).isMesh) return;
+            if (MATERIAL_REGION[m.name]) paint.lum.set(m.name, averageLuminance(img));
+            else if (app === 'feminine' && !paint.masks) paint.masks = computeMasks(img, classifyFeminine);
+          });
           bases[app] = {
             scene,
+            paint,
             height: Math.max(0.1, box.max.y - box.min.y),
             clips: {
               idle: bakeRetarget(anim.scene, src.idle, scene),
@@ -81,6 +98,16 @@ export function realisticReady() {
 }
 
 const boneKey = (name: string) => name.replace(/^mixamorig:?/, '');
+
+/** Matériaux du modèle masculin (Ready Player Me) → zone du créateur. */
+const MATERIAL_REGION: Record<string, Region> = {
+  Wolf3D_Skin: 'skin',
+  Wolf3D_Body: 'skin',
+  Wolf3D_Outfit_Top: 'top',
+  Wolf3D_Outfit_Bottom: 'bottom',
+  Wolf3D_Outfit_Footwear: 'shoes',
+  Wolf3D_Beard: 'hair',
+};
 
 /** Os des membres → os enfant qui donne leur direction (pour aligner les poses de repos). */
 const LIMB_CHILD: Record<string, string> = {
@@ -177,10 +204,6 @@ function bakeRetarget(srcScene: THREE.Object3D, clip: THREE.AnimationClip, tgtSc
   return new THREE.AnimationClip(clip.name, clip.duration, tracks);
 }
 
-/** Applique une teinte multiplicative en conservant le détail de la texture. */
-function tint(m: THREE.MeshStandardMaterial, color: string, strength: number) {
-  m.color.set('#ffffff').lerp(new THREE.Color(color), strength);
-}
 
 export interface RealisticInstance {
   root: THREE.Group;
@@ -202,30 +225,20 @@ export function buildRealistic(c: Character): RealisticInstance | null {
   const skin = findSkinTone(c.skinTone).color;
   const hair = findHairColor(c.hairColor).color;
   const materials: THREE.Material[] = [];
+  const colors = { skin, top: outfit.top.color, bottom: outfit.bottom.color, shoes: outfit.shoes, hair };
+  let headMesh: THREE.Mesh | null = null;
   model.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
     mesh.material = mat;
     materials.push(mat);
-    switch (mat.name) {
-      case 'Wolf3D_Skin':
-      case 'Wolf3D_Body':
-        tint(mat, skin, 0.55);
-        break;
-      case 'Wolf3D_Outfit_Top':
-        tint(mat, outfit.top.color, 0.85);
-        break;
-      case 'Wolf3D_Outfit_Bottom':
-        tint(mat, outfit.bottom.color, 0.85);
-        break;
-      case 'Wolf3D_Outfit_Footwear':
-        tint(mat, outfit.shoes, 0.7);
-        break;
-      case 'Wolf3D_Beard':
-        tint(mat, hair, 0.8);
-        break;
-    }
+    // le chapeau fourni avec le modèle est remplacé par la coiffure choisie
+    if (mat.name === 'Wolf3D_Headwear') mesh.visible = false;
+    if (mesh.name === 'Wolf3D_Head') headMesh = mesh;
+    const region = MATERIAL_REGION[mat.name];
+    if (region && mat.map) applyRecolor(mat, colors, { whole: { region, lum: base.paint.lum.get(mat.name) ?? 0.2 } });
+    else if (base.paint.masks && mat.map) applyRecolor(mat, colors, { masks: base.paint.masks });
   });
   const scale = MODELS[c.appearance].height / base.height;
   model.scale.setScalar(scale);
@@ -258,6 +271,22 @@ export function buildRealistic(c: Character): RealisticInstance | null {
   model.traverse((o) => {
     if (/Head$/.test(o.name) && (o as THREE.Bone).isBone) head = o;
   });
+  // Coiffure du créateur sur les modèles chauves une fois le chapeau retiré (homme)
+  if (headMesh) {
+    root.updateMatrixWorld(true);
+    // boîte de la géométrie au repos (celle d'un maillage animé dépend d'os pas encore calculés)
+    const hm = headMesh as THREE.Mesh;
+    if (!hm.geometry.boundingBox) hm.geometry.computeBoundingBox();
+    const hb = hm.geometry.boundingBox!.clone().applyMatrix4(hm.matrixWorld);
+    const hair = buildHair(c);
+    // la coiffure est dessinée pour une tête de 0,25 m de large, centrée 0,145 m sous le sommet du crâne
+    const k = (hb.max.x - hb.min.x) / 0.25;
+    hb.getCenter(hair.position);
+    hair.position.y = hb.max.y - 0.145 * k;
+    hair.position.z -= 0.012 * k;
+    hair.scale.setScalar(k);
+    head.attach(hair);
+  }
   let dead = false;
   /** progression de la chute (1 = au sol) */
   let fall = 1;
@@ -277,16 +306,19 @@ export function buildRealistic(c: Character): RealisticInstance | null {
         }
         return;
       }
-      const tWalk = speed > 0.3 ? (speed > 2.6 ? 0 : 1) : 0;
-      const tRun = speed > 2.6 ? 1 : 0;
-      const k = Math.min(1, dt * 8);
-      wWalk += (tWalk - wWalk) * k;
-      wRun += (tRun - wRun) * k;
+      // Mélange continu marche ↔ course selon la vitesse ; la cadence des pas suit la vitesse
+      // réelle (pas de pieds qui glissent) et les deux cycles restent en phase.
+      const moving = THREE.MathUtils.smoothstep(speed, 0.15, 0.6);
+      const runK = THREE.MathUtils.smoothstep(speed, WALK_CLIP_SPEED * 1.25, RUN_CLIP_SPEED * 0.8);
+      const k = Math.min(1, dt * 10);
+      wWalk += (moving * (1 - runK) - wWalk) * k;
+      wRun += (moving * runK - wRun) * k;
       idle.setEffectiveWeight(Math.max(0, 1 - wWalk - wRun));
       walk.setEffectiveWeight(wWalk);
       run.setEffectiveWeight(wRun);
-      run.timeScale = THREE.MathUtils.clamp(speed / 4, 0.7, 1.3);
-      walk.timeScale = THREE.MathUtils.clamp(speed / 1.5, 0.6, 1.5);
+      walk.timeScale = THREE.MathUtils.clamp(speed / WALK_CLIP_SPEED, 0.5, 1.8);
+      run.timeScale = THREE.MathUtils.clamp(speed / RUN_CLIP_SPEED, 0.6, 1.4);
+      if (wRun > 0.01 && wWalk > 0.01) run.time = (walk.time / base.clips.walk.duration) * base.clips.run.duration;
       mixer.update(dt);
       gestures.apply(dt);
     },

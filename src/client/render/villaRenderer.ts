@@ -3,7 +3,7 @@
  * les pièces où le joueur n'est pas restent dans l'ombre.
  */
 import type { GameSelfView } from '@shared/types';
-import { DOORS, FURNITURE, ROOMS, WORLD_H, WORLD_W, buildWorldGrid, roomAt, type FurnitureDef } from '@shared/content/villa';
+import { DOORS, GRID_W, ROOMS, WORLD_H, WORLD_W, allFurniture, buildWorldGrid, roomAt, type FurnitureDef } from '@shared/content/villa';
 import { avatarImage } from './avatar';
 
 export const TILE = 32;
@@ -11,7 +11,7 @@ export const TILE = 32;
 export const camera = { overview: false };
 const grid = buildWorldGrid();
 
-const FURNITURE_STYLE: Record<FurnitureDef['kind'], { color: string; icon: string }> = {
+const FURNITURE_STYLE: Partial<Record<FurnitureDef['kind'], { color: string; icon: string }>> = {
   counter: { color: '#5a4a3c', icon: '🍽️' },
   sink: { color: '#6f7d86', icon: '🚰' },
   table: { color: '#6b4b32', icon: '' },
@@ -31,6 +31,28 @@ const FURNITURE_STYLE: Record<FurnitureDef['kind'], { color: string; icon: strin
   fireplace: { color: '#3b2016', icon: '🔥' },
   crate: { color: '#5d4630', icon: '📦' },
   stairs: { color: '#4a3322', icon: '🪜' },
+  railing: { color: '#3a2416', icon: '' },
+  armchair: { color: '#5b2730', icon: '💺' },
+  chair: { color: '#6b4b32', icon: '🪑' },
+  bookcase: { color: '#4a3524', icon: '📚' },
+  plant: { color: '#1f3a22', icon: '🪴' },
+  floor_lamp: { color: '#4a3a2a', icon: '💡' },
+  sideboard: { color: '#5c3f28', icon: '🏺' },
+  nightstand: { color: '#5c3f28', icon: '🕯️' },
+  dresser: { color: '#5c3f28', icon: '🗄️' },
+  fridge: { color: '#c9c5ba', icon: '🧊' },
+  stove: { color: '#8a8478', icon: '🍳' },
+  toilet: { color: '#c9d3d8', icon: '🚽' },
+  washbasin: { color: '#9aa8b0', icon: '🚰' },
+  tv: { color: '#3a2a1e', icon: '📺' },
+  workbench: { color: '#6a5032', icon: '🔧' },
+  barrel: { color: '#5a3a22', icon: '🛢️' },
+  bench: { color: '#5d4630', icon: '' },
+  coat_rack: { color: '#3a2a1e', icon: '🧥' },
+  easel: { color: '#8a6440', icon: '🎨' },
+  globe: { color: '#2d4f6e', icon: '🌍' },
+  harp: { color: '#9a7a3a', icon: '🎼' },
+  chest: { color: '#5a3a22', icon: '🧰' },
 };
 
 function hash(x: number, y: number) {
@@ -41,21 +63,21 @@ function hash(x: number, y: number) {
 /** Couche statique (sols, murs, mobilier) pré-rendue. */
 export function renderStatic(unlocked: Set<string>): HTMLCanvasElement {
   const c = document.createElement('canvas');
-  c.width = WORLD_W * TILE;
+  c.width = GRID_W * TILE;
   c.height = WORLD_H * TILE;
   const ctx = c.getContext('2d')!;
   ctx.fillStyle = '#040507';
   ctx.fillRect(0, 0, c.width, c.height);
 
   for (let y = 0; y < WORLD_H; y++)
-    for (let x = 0; x < WORLD_W; x++) {
-      const r = grid.rooms[y * WORLD_W + x];
+    for (let x = 0; x < GRID_W; x++) {
+      const r = grid.rooms[y * GRID_W + x];
       const px = x * TILE;
       const py = y * TILE;
       if (!r) {
         // mur seulement s'il borde une pièce
         let border = false;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (grid.rooms[(y + dy) * WORLD_W + (x + dx)]) border = true;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (x + dx >= 0 && x + dx < GRID_W && grid.rooms[(y + dy) * GRID_W + (x + dx)]) border = true;
         if (border) {
           ctx.fillStyle = '#1a1c22';
           ctx.fillRect(px, py, TILE, TILE);
@@ -139,8 +161,8 @@ export function renderStatic(unlocked: Set<string>): HTMLCanvasElement {
   }
 
   // Mobilier
-  for (const f of FURNITURE) {
-    const st = FURNITURE_STYLE[f.kind];
+  for (const f of allFurniture()) {
+    const st = FURNITURE_STYLE[f.kind] ?? { color: '#4a3a2c', icon: '' };
     const x = f.x * TILE + 3;
     const y = f.y * TILE + 3;
     const w = f.w * TILE - 6;
@@ -213,13 +235,14 @@ export function drawFrame(ctx: CanvasRenderingContext2D, view: GameSelfView, rs:
     rs.staticLayer = renderStatic(new Set(view.unlockedDoors));
     rs.staticKey = key;
   }
-  const worldW = WORLD_W * TILE;
+  // plan : rez-de-chaussée à gauche, étage à droite
+  const worldW = GRID_W * TILE;
   const worldH = WORLD_H * TILE;
   const meView = view.players.find((p) => p.id === view.you);
   const follow = !camera.overview && view.alive && !view.epilogue && meView?.pos;
   const fit = Math.min(cw / worldW, ch / worldH);
   const scale = follow ? Math.max(fit, Math.min(cw / (24 * TILE), ch / (13 * TILE))) : fit;
-  const focus = follow ? (rs.display.get(view.you) ?? meView!.pos!) : { x: WORLD_W / 2, y: WORLD_H / 2 };
+  const focus = follow ? (rs.display.get(view.you) ?? meView!.pos!) : { x: GRID_W / 2, y: WORLD_H / 2 };
   const place = (size: number, screen: number, center: number) =>
     size * scale <= screen ? (screen - size * scale) / 2 : Math.min(0, Math.max(screen - size * scale, screen / 2 - center * TILE * scale));
   const ox = place(worldW, cw, focus.x);

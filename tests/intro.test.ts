@@ -92,6 +92,9 @@ interface Client {
   states: GameIntroState[];
   full?: GameSelfView;
   lobby?: LobbyView | null;
+  loadings?: number;
+  loadingPlanId?: string;
+  holdReady?: boolean;
 }
 
 async function http<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
@@ -130,7 +133,14 @@ function waitFor<T>(fn: () => T | undefined | false | null, ms = 4000): Promise<
 function connect(c: Omit<Client, 'socket'> & { socket?: Socket }): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const s = ioc(base, { auth: { token: c.token }, transports: ['websocket'], forceNew: true });
-    s.on('lobby:intro', ({ plan }: { plan: IntroPlan }) => c.plans.push(plan));
+    s.on('lobby:intro', ({ plan, loading }: { plan: IntroPlan; loading: boolean }) => {
+      if (loading) {
+        // le client « charge » puis se déclare prêt (sauf si le test retarde ce joueur)
+        c.loadings = (c.loadings ?? 0) + 1;
+        c.loadingPlanId = plan.id;
+        if (!c.holdReady) s.emit('lobby:intro-ready', { planId: plan.id });
+      } else c.plans.push(plan);
+    });
     s.on('lobby:intro-state', ({ state }: { state: GameIntroState }) => c.states.push(state));
     s.on('game:full', (v: GameSelfView) => (c.full = v));
     s.on('lobby:state', (l: LobbyView | null) => (c.lobby = l));
@@ -208,4 +218,24 @@ test('composition figée : déconnexion conservée, arrivée tardive refusée, r
   assert.ok(!ids.includes(late.id));
   assert.equal(host.full!.players.find((p) => p.id === b.id)?.connected, false);
   for (const x of [...clients, late]) x.socket.disconnect();
+});
+
+test('chargement avant la cinématique : elle attend le joueur le plus lent', async () => {
+  ctx.lobbies.transitionMs = 250;
+  ctx.lobbies.loadTimeoutMs = 5000;
+  const { clients, host } = await lobbyOf(3);
+  const slow = clients[2];
+  slow.holdReady = true;
+  await call(host.socket, 'lobby:start');
+  await waitFor(() => clients.every((c) => c.loadings === 1));
+  await new Promise((r) => setTimeout(r, 400));
+  assert.ok(clients.every((c) => c.plans.length === 0), 'la cinématique ne démarre pas tant qu’un joueur charge');
+  slow.socket.emit('lobby:intro-ready', { planId: 'faux' });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(clients.every((c) => c.plans.length === 0), 'un identifiant inconnu est ignoré');
+  slow.socket.emit('lobby:intro-ready', { planId: slow.loadingPlanId });
+  await waitFor(() => clients.every((c) => c.plans.length === 1));
+  assert.ok(clients[0].plans[0].startedAt > 0);
+  await waitFor(() => clients.every((c) => c.full));
+  for (const c of clients) c.socket.disconnect();
 });

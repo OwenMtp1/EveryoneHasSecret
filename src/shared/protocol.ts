@@ -16,6 +16,7 @@ import type {
   ServerListEntry,
 } from './types';
 import type { GameIntroState, IntroPlan } from './content/intro';
+import type { NightDuration } from './config';
 
 export type Ack<T = unknown> = (res: AckResult<T>) => void;
 export type AckResult<T = unknown> = { ok: true; data: T } | { ok: false; error: string };
@@ -60,7 +61,7 @@ export interface ClientToServerEvents {
   // Serveurs & lobby
   'servers:list': (filters: ServerFilters, ack: Ack<ServerListEntry[]>) => void;
   'lobby:create': (
-    p: { name: string; maxPlayers: number; visibility: LobbyVisibility; duration?: 'short' | 'normal' },
+    p: { name: string; maxPlayers: number; visibility: LobbyVisibility; duration?: NightDuration },
     ack: Ack<LobbyView>,
   ) => void;
   'lobby:join': (p: { lobbyId?: string; code?: string }, ack: Ack<LobbyView>) => void;
@@ -68,7 +69,7 @@ export interface ClientToServerEvents {
   'lobby:ready': (ready: boolean, ack: Ack<null>) => void;
   'lobby:kick': (userId: string, ack: Ack<null>) => void;
   'lobby:settings': (
-    p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: 'short' | 'normal' },
+    p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration },
     ack: Ack<null>,
   ) => void;
   'lobby:close': (ack: Ack<null>) => void;
@@ -77,12 +78,14 @@ export interface ClientToServerEvents {
   'lobby:chat': (text: string, ack: Ack<null>) => void;
 
   // Jeu
-  'game:input': (p: { dx: number; dy: number }) => void;
+  'game:input': (p: { dx: number; dy: number; run?: boolean }) => void;
   'game:action': (a: GameAction, ack: Ack<{ message?: string }>) => void;
   'game:chat': (p: { channel: ChatChannel; text: string }, ack: Ack<null>) => void;
   'game:leave': (ack: Ack<null>) => void;
 
   // Chat vocal (WebRTC pair-à-pair, le serveur ne fait que relayer la signalisation)
+  /** fin du chargement (villa, personnages, partie) : la cinématique attend tous les joueurs */
+  'lobby:intro-ready': (p: { planId: string }) => void;
   'voice:join': (ack: Ack<{ peers: string[] }>) => void;
   'voice:leave': () => void;
   'voice:signal': (p: { to: string; data: VoiceSignal }) => void;
@@ -94,7 +97,7 @@ export interface ServerToClientEvents {
   'session:state': (s: { lobby: LobbyView | null; inGame: boolean }) => void;
   'lobby:state': (l: LobbyView | null) => void;
   /** début de la cinématique d'arrivée (aussi renvoyé à un joueur qui se reconnecte pendant celle-ci) */
-  'lobby:intro': (p: { plan: IntroPlan; serverNow: number }) => void;
+  'lobby:intro': (p: { plan: IntroPlan; serverNow: number; loading: boolean }) => void;
   /** changement d'état de la cinématique, cadencé par le serveur */
   'lobby:intro-state': (p: { planId: string; state: GameIntroState; serverNow: number }) => void;
   notification: (n: AppNotification) => void;

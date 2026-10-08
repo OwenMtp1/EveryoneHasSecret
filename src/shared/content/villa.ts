@@ -1,7 +1,13 @@
+import { FURNISHING } from './furnishing';
 /**
  * La Villa Beaumont — premier environnement.
  * Le plan est décrit en données (pièces rectangulaires, portes, mobilier) puis
  * converti en grille de tuiles par buildWorldGrid(). Ajouter une pièce = ajouter une entrée.
+ *
+ * Étages : la grille contient le rez-de-chaussée (x < LEVEL_OFFSET_X) et, à sa droite, l'étage
+ * (x ≥ LEVEL_OFFSET_X). Le serveur raisonne en 2D sur cette grille ; le rendu 3D replace l'étage
+ * au-dessus du rez-de-chaussée (x − LEVEL_OFFSET_X, hauteur LEVEL_HEIGHT). L'escalier du hall est
+ * une rampe praticable : en haut, une transition invisible fait passer d'un niveau à l'autre.
  */
 
 export interface RoomDef {
@@ -16,6 +22,8 @@ export interface RoomDef {
   /** Couverte par la caméra de sécurité. */
   camera?: boolean;
   hasSink?: boolean;
+  /** 0 = rez-de-chaussée, 1 = étage */
+  level?: 0 | 1;
 }
 
 export interface DoorDef {
@@ -51,17 +59,91 @@ export interface FurnitureDef {
     | 'car'
     | 'fireplace'
     | 'crate'
-    | 'stairs';
+    | 'stairs'
+    | 'railing'
+    | 'armchair'
+    | 'chair'
+    | 'bookcase'
+    | 'plant'
+    | 'floor_lamp'
+    | 'sideboard'
+    | 'nightstand'
+    | 'dresser'
+    | 'fridge'
+    | 'stove'
+    | 'toilet'
+    | 'washbasin'
+    | 'tv'
+    | 'workbench'
+    | 'barrel'
+    | 'bench'
+    | 'coat_rack'
+    | 'easel'
+    | 'globe'
+    | 'harp'
+    | 'chest';
   x: number;
   y: number;
   w: number;
   h: number;
   /** Peut servir de cachette. */
   hiding?: boolean;
+  /** On peut marcher dessus (escalier). */
+  walkable?: boolean;
+  /** Orientation forcée : côté du mur contre lequel le meuble est adossé (sinon : mur le plus proche). */
+  facing?: 'n' | 's' | 'e' | 'w';
 }
 
+/** Emprise de la maison et de son terrain (un niveau). */
 export const WORLD_W = 48;
 export const WORLD_H = 28;
+/** Décalage, dans la grille, des tuiles de l'étage. */
+export const LEVEL_OFFSET_X = 50;
+/** Largeur totale de la grille (rez-de-chaussée + étage). */
+export const GRID_W = LEVEL_OFFSET_X + WORLD_W;
+/** Hauteur d'un niveau (sol à sol), en mètres. */
+export const LEVEL_HEIGHT = 3.3;
+
+/** Coordonnées « étage » : on décrit l'étage dans le repère du rez-de-chaussée. */
+const up = <T extends { x: number }>(o: T): T => ({ ...o, x: o.x + LEVEL_OFFSET_X });
+const upRect = (x: number, y: number, w: number, h: number) => ({ x: x + LEVEL_OFFSET_X, y, w, h });
+
+/** Escalier du hall (rez-de-chaussée) : rampe praticable du nord (bas) vers le sud (haut). */
+export const STAIRS = { x: 26, y: 17, w: 3, h: 4 } as const;
+/** Seuils de transition (avec hystérésis) entre le haut de l'escalier et le palier de l'étage. */
+const STAIR_UP_Y = STAIRS.y + STAIRS.h - 0.3;
+const LANDING_ARRIVAL_Y = STAIRS.y + STAIRS.h + 0.6;
+const LANDING_DOWN_Y = STAIRS.y + STAIRS.h + 0.4;
+const STAIR_ARRIVAL_Y = STAIRS.y + STAIRS.h - 0.55;
+
+export const levelOf = (x: number): 0 | 1 => (x >= LEVEL_OFFSET_X - 1 ? 1 : 0);
+/** Abscisse dans le repère du rez-de-chaussée (pour le rendu). */
+export const localX = (x: number) => (levelOf(x) ? x - LEVEL_OFFSET_X : x);
+const inStairs = (x: number, y: number) => x >= STAIRS.x && x < STAIRS.x + STAIRS.w && y >= STAIRS.y && y < STAIRS.y + STAIRS.h;
+
+/** Hauteur du sol (m) sous une position de la grille : niveau + rampe de l'escalier. */
+export function elevationAt(x: number, y: number): number {
+  if (levelOf(x)) return LEVEL_HEIGHT;
+  if (!inStairs(x, y)) return 0;
+  return Math.min(1, Math.max(0, (y - STAIRS.y) / STAIRS.h)) * LEVEL_HEIGHT;
+}
+
+/** Transition d'étage : retourne la nouvelle position si l'on vient de franchir le haut de l'escalier. */
+export function applyPortal(x: number, y: number): { x: number; y: number } | null {
+  if (!levelOf(x) && x >= STAIRS.x && x < STAIRS.x + STAIRS.w && y > STAIR_UP_Y && y < STAIRS.y + STAIRS.h) return { x: x + LEVEL_OFFSET_X, y: LANDING_ARRIVAL_Y };
+  const lx = x - LEVEL_OFFSET_X;
+  if (levelOf(x) && lx >= STAIRS.x && lx < STAIRS.x + STAIRS.w && y < LANDING_DOWN_Y && y > STAIRS.y + STAIRS.h) return { x: lx, y: STAIR_ARRIVAL_Y };
+  return null;
+}
+
+/** Rampes de l'escalier : on n'y entre (et n'en sort) que par la première marche. */
+export function stepAllowed(ax: number, ay: number, bx: number, by: number): boolean {
+  if (levelOf(ax) || levelOf(bx)) return true;
+  const a = inStairs(ax, ay);
+  const b = inStairs(bx, by);
+  if (a === b) return true;
+  return Math.min(ay, by) < STAIRS.y + 0.6;
+}
 
 export const ROOMS: RoomDef[] = [
   { id: 'garden', name: 'Jardin', rect: { x: 1, y: 1, w: 46, h: 4 }, floor: 'grass', floorColor: '#1f3a26', outdoor: true, muddy: true },
@@ -75,6 +157,14 @@ export const ROOMS: RoomDef[] = [
   { id: 'bedroom1', name: 'Chambre bleue', rect: { x: 30, y: 17, w: 8, h: 5 }, floor: 'carpet', floorColor: '#243049' },
   { id: 'bedroom2', name: 'Chambre de maître', rect: { x: 39, y: 17, w: 8, h: 5 }, floor: 'carpet', floorColor: '#43242c' },
   { id: 'exterior', name: 'Allée extérieure', rect: { x: 1, y: 23, w: 46, h: 4 }, floor: 'gravel', floorColor: '#34332f', outdoor: true, camera: true },
+  // ── Étage ──
+  { id: 'library', name: 'Bibliothèque', rect: upRect(1, 6, 12, 7), floor: 'wood', floorColor: '#3e2a1e', level: 1 },
+  { id: 'guestroom', name: "Chambre d'amis", rect: upRect(1, 14, 12, 8), floor: 'carpet', floorColor: '#3a3226', level: 1 },
+  { id: 'musicroom', name: 'Salon de musique', rect: upRect(14, 6, 14, 12), floor: 'wood', floorColor: '#4a3426', level: 1 },
+  { id: 'suite', name: 'Suite parentale', rect: upRect(29, 6, 9, 12), floor: 'carpet', floorColor: '#3a2430', level: 1 },
+  { id: 'bathroom2', name: "Salle de bain de l'étage", rect: upRect(39, 6, 8, 6), floor: 'tile', floorColor: '#3b4c55', hasSink: true, level: 1 },
+  { id: 'studio', name: 'Atelier', rect: upRect(39, 13, 8, 9), floor: 'wood', floorColor: '#5a4632', level: 1 },
+  { id: 'landing', name: 'Palier', rect: upRect(14, 19, 24, 3), floor: 'wood', floorColor: '#3e2c20', level: 1 },
 ];
 
 export const DOORS: DoorDef[] = [
@@ -94,7 +184,22 @@ export const DOORS: DoorDef[] = [
   { id: 'd_hall_exterior_a', x: 20, y: 22, rooms: ['hall', 'exterior'] },
   { id: 'd_hall_exterior_b', x: 21, y: 22, rooms: ['hall', 'exterior'] },
   { id: 'd_cellar_exterior', x: 6, y: 22, rooms: ['cellar', 'exterior'], lockedBy: 'key_cellar', label: 'Porte du garage' },
+  // ── Étage ──
+  up({ id: 'd_library_guest', x: 6, y: 13, rooms: ['library', 'guestroom'] as [string, string] }),
+  up({ id: 'd_library_music', x: 13, y: 9, rooms: ['library', 'musicroom'] as [string, string] }),
+  up({ id: 'd_guest_landing', x: 13, y: 20, rooms: ['guestroom', 'landing'] as [string, string] }),
+  up({ id: 'd_music_landing_a', x: 19, y: 18, rooms: ['musicroom', 'landing'] as [string, string] }),
+  up({ id: 'd_music_landing_b', x: 20, y: 18, rooms: ['musicroom', 'landing'] as [string, string] }),
+  up({ id: 'd_suite_landing', x: 33, y: 18, rooms: ['suite', 'landing'] as [string, string] }),
+  up({ id: 'd_bath2_studio', x: 42, y: 12, rooms: ['bathroom2', 'studio'] as [string, string] }),
+  up({ id: 'd_studio_landing', x: 38, y: 20, rooms: ['studio', 'landing'] as [string, string] }),
 ];
+
+/** Mobilier principal (meubles nommés, cachettes) + ameublement/décoration (furnishing.ts). */
+let allCache: FurnitureDef[] | null = null;
+export function allFurniture(): FurnitureDef[] {
+  return (allCache ??= [...FURNITURE, ...FURNISHING]);
+}
 
 export const FURNITURE: FurnitureDef[] = [
   // Cuisine
@@ -119,7 +224,8 @@ export const FURNITURE: FurnitureDef[] = [
   // Hall
   { id: 'f_hall_clock', roomId: 'hall', name: 'Horloge de parquet', kind: 'clock', x: 12, y: 14, w: 1, h: 1 },
   { id: 'f_hall_console', roomId: 'hall', name: 'Console', kind: 'table', x: 25, y: 14, w: 2, h: 1, hiding: true },
-  { id: 'f_hall_stairs', roomId: 'hall', name: 'Escalier', kind: 'stairs', x: 26, y: 17, w: 3, h: 5, hiding: true },
+  { id: 'f_hall_stairs', roomId: 'hall', name: 'Escalier', kind: 'stairs', ...STAIRS, walkable: true },
+  up({ id: 'f_landing_railing', roomId: 'landing', name: "Rambarde de l'escalier", kind: 'railing' as const, x: STAIRS.x, y: 19, w: STAIRS.w, h: 2 }),
   // Chambres
   { id: 'f_bed1', roomId: 'bedroom1', name: 'Lit', kind: 'bed', x: 30, y: 19, w: 2, h: 3, hiding: true },
   { id: 'f_wardrobe1', roomId: 'bedroom1', name: 'Armoire', kind: 'wardrobe', x: 37, y: 19, w: 1, h: 2, hiding: true },
@@ -153,19 +259,22 @@ export interface WorldGrid {
 }
 
 export function buildWorldGrid(): WorldGrid {
-  const size = WORLD_W * WORLD_H;
-  const g: WorldGrid = { w: WORLD_W, h: WORLD_H, rooms: new Uint8Array(size), blocked: new Uint8Array(size), doors: new Uint8Array(size) };
+  const W = GRID_W;
+  const size = W * WORLD_H;
+  const g: WorldGrid = { w: W, h: WORLD_H, rooms: new Uint8Array(size), blocked: new Uint8Array(size), doors: new Uint8Array(size) };
   ROOMS.forEach((r, i) => {
     for (let y = r.rect.y; y < r.rect.y + r.rect.h; y++)
-      for (let x = r.rect.x; x < r.rect.x + r.rect.w; x++) g.rooms[y * WORLD_W + x] = i + 1;
+      for (let x = r.rect.x; x < r.rect.x + r.rect.w; x++) g.rooms[y * W + x] = i + 1;
   });
   DOORS.forEach((d, i) => {
-    const idx = d.y * WORLD_W + d.x;
+    const idx = d.y * W + d.x;
     g.rooms[idx] = ROOMS.findIndex((r) => r.id === d.rooms[0]) + 1;
     g.doors[idx] = i + 1;
   });
-  for (const f of FURNITURE)
-    for (let y = f.y; y < f.y + f.h; y++) for (let x = f.x; x < f.x + f.w; x++) g.blocked[y * WORLD_W + x] = 1;
+  for (const f of allFurniture()) {
+    if (f.walkable) continue;
+    for (let y = f.y; y < f.y + f.h; y++) for (let x = f.x; x < f.x + f.w; x++) g.blocked[y * W + x] = 1;
+  }
   return g;
 }
 
@@ -185,7 +294,7 @@ export function doorAt(g: WorldGrid, tx: number, ty: number): DoorDef | null {
 
 export const roomById = (id: string | undefined) => ROOMS.find((r) => r.id === id);
 export const roomName = (id: string | undefined) => roomById(id)?.name ?? 'un endroit inconnu';
-export const furnitureById = (id: string) => FURNITURE.find((f) => f.id === id);
+export const furnitureById = (id: string) => allFurniture().find((f) => f.id === id);
 
 /** Pièces adjacentes (reliées par une porte, même verrouillée : le son passe). */
 export function adjacentRooms(roomId: string): string[] {

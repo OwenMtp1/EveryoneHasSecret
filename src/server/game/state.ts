@@ -40,6 +40,8 @@ export interface PlayerState {
   connected: boolean;
   pos: Vec2;
   input: Vec2;
+  /** court (Maj) plutôt que marcher */
+  running: boolean;
   facing: number;
   roomId: string;
   inventory: string[];

@@ -3,7 +3,7 @@
  * Toutes les permissions (hôte, places, statut) sont vérifiées ici, côté serveur.
  */
 import type { LobbyView, LobbyVisibility, ServerFilters, ServerListEntry, EpilogueView } from '@shared/types';
-import { GAME_NAME, META_CONFIG } from '@shared/config';
+import { GAME_NAME, META_CONFIG, NIGHT_DURATIONS, isNightDuration, type NightDuration } from '@shared/config';
 import { buildIntroPlan, introSchedule, type IntroPlan } from '@shared/content/intro';
 import { GameInstance } from '../game/GameInstance';
 import type { AuthService } from './auth';
@@ -35,12 +35,10 @@ interface Lobby {
   /** joueurs encore « dans » la partie (avant retour au lobby) */
   inGame: Set<string>;
   /** cinématique en cours : composition figée, états cadencés par le serveur */
-  intro?: { plan: IntroPlan; timers: NodeJS.Timeout[] };
+  intro?: { plan: IntroPlan; timers: NodeJS.Timeout[]; loading: boolean; ready: Set<string> };
   duration: NightDuration;
 }
 
-export type NightDuration = 'short' | 'normal';
-const DURATION_SCALE: Record<NightDuration, number> = { short: 0.55, normal: 1 };
 
 
 export interface LobbyEmitter {
@@ -54,6 +52,8 @@ export class LobbyManager {
   /** Accélération (tests) : durée de la nuit et de la cinématique d'arrivée (15–25 s en jeu réel). */
   timeScale = Number(process.env.EHAS_TIME_SCALE ?? 1);
   transitionMs = Number(process.env.EHAS_TRANSITION_MS ?? 20000);
+  /** Attente maximale du chargement de tous les joueurs avant de lancer la cinématique quand même. */
+  loadTimeoutMs = Number(process.env.EHAS_LOAD_TIMEOUT_MS ?? 30000);
 
   constructor(
     private db: DB,
@@ -120,9 +120,9 @@ export class LobbyManager {
   }
 
   /** Plan de la cinématique en cours si ce joueur en fait partie. */
-  introOf(userId: string): IntroPlan | null {
-    const plan = this.lobbyOfUser(userId)?.intro?.plan;
-    return plan && plan.occupants.some((o) => o.userId === userId) ? plan : null;
+  introOf(userId: string): { plan: IntroPlan; loading: boolean } | null {
+    const intro = this.lobbyOfUser(userId)?.intro;
+    return intro && intro.plan.occupants.some((o) => o.userId === userId) ? { plan: intro.plan, loading: intro.loading } : null;
   }
 
   gameOf(userId: string): GameInstance | null {
@@ -214,7 +214,7 @@ export class LobbyManager {
       chat: [],
       game: null,
       inGame: new Set(),
-      duration: p.duration === 'short' ? 'short' : 'normal',
+      duration: isNightDuration(p.duration) ? p.duration : 'normal',
     };
     this.system(l, `${this.nameOf(userId)} a ouvert les portes de « ${l.name} ».`);
     this.lobbies.set(l.id, l);
@@ -278,6 +278,7 @@ export class LobbyManager {
       this.system(l, `${this.nameOf(l.hostId)} est maintenant l’hôte.`);
     }
     // Pendant la cinématique, la composition est figée : on ne l'interrompt pas pour un départ.
+    if (l.intro?.loading) this.introReadyCheck(l);
     this.system(l, `${this.nameOf(userId)} est parti·e.`);
     this.broadcast(l);
   }
@@ -318,7 +319,7 @@ export class LobbyManager {
     const l = this.requireHost(hostId);
     if (l.status !== 'WAITING') throw new UserError('Impossible maintenant.');
     Object.assign(l, this.validateSettings(p, l));
-    if (p.duration === 'short' || p.duration === 'normal') l.duration = p.duration;
+    if (isNightDuration(p.duration)) l.duration = p.duration;
     this.system(l, 'L’hôte a modifié les paramètres.');
     this.broadcast(l);
   }
@@ -378,13 +379,36 @@ export class LobbyManager {
     // Composition FIGÉE : ces joueurs (et eux seuls) sont dans le véhicule et dans la partie
     const plan = buildIntroPlan(
       l.players.map((p) => ({ userId: p.userId, name: this.nameOf(p.userId), character: this.profiles.getCharacter(p.userId)! })),
-      { id: shortId('intro_'), seed: Math.floor(Math.random() * 2 ** 31), startedAt: Date.now(), durationMs: this.transitionMs },
+      { id: shortId('intro_'), seed: Math.floor(Math.random() * 2 ** 31), startedAt: 0, durationMs: this.transitionMs },
     );
-    l.intro = { plan, timers: [] };
-    for (const p of l.players) this.emitter.toUser(p.userId, 'lobby:intro', { plan, serverNow: Date.now() });
+    // 1) Chargement : chaque client charge la villa, les personnages et la partie, puis le signale.
+    l.intro = { plan, timers: [], loading: true, ready: new Set() };
+    for (const p of l.players) this.emitter.toUser(p.userId, 'lobby:intro', { plan, serverNow: Date.now(), loading: true });
+    l.intro.timers.push(setTimeout(() => this.beginIntro(l, plan.id), this.loadTimeoutMs));
+  }
+
+  /** Un client a fini de charger ; la cinématique démarre quand tous les joueurs connectés sont prêts. */
+  introReady(userId: string, planId: string) {
+    const l = this.lobbyOfUser(userId);
+    if (!l?.intro || l.intro.plan.id !== planId || !l.intro.loading) return;
+    l.intro.ready.add(userId);
+    const waiting = l.players.filter((p) => p.connected && !l.intro!.ready.has(p.userId));
+    if (!waiting.length) this.beginIntro(l, planId);
+  }
+
+  /** 2) Cinématique : même horloge pour tous, états cadencés par le serveur, puis la partie. */
+  private beginIntro(l: Lobby, planId: string) {
+    const intro = l.intro;
+    if (!intro || intro.plan.id !== planId || !intro.loading || !this.lobbies.has(l.id)) return;
+    for (const t of intro.timers) clearTimeout(t);
+    intro.timers = [];
+    intro.loading = false;
+    const plan = intro.plan;
+    plan.startedAt = Date.now();
+    for (const p of l.players) this.emitter.toUser(p.userId, 'lobby:intro', { plan, serverNow: Date.now(), loading: false });
     for (const step of introSchedule(plan.durationMs)) {
       if (step.at === 0) continue;
-      l.intro.timers.push(
+      intro.timers.push(
         setTimeout(() => {
           if (l.intro?.plan.id !== plan.id) return;
           for (const id of plan.occupants.map((o) => o.userId))
@@ -393,6 +417,12 @@ export class LobbyManager {
         }, step.at),
       );
     }
+  }
+
+  private introReadyCheck(l: Lobby) {
+    const intro = l.intro;
+    if (!intro?.loading) return;
+    if (!l.players.some((p) => p.connected && !intro.ready.has(p.userId))) this.beginIntro(l, intro.plan.id);
   }
 
   private clearIntro(l: Lobby) {
@@ -420,7 +450,7 @@ export class LobbyManager {
       lobbyId: l.id,
       title: l.name,
       players,
-      timeScale: this.timeScale * DURATION_SCALE[l.duration],
+      timeScale: this.timeScale * NIGHT_DURATIONS[l.duration].scale,
       emit: (userId, event, payload) => {
         if (l.inGame.has(userId)) this.emitter.toUser(userId, event, payload);
       },
@@ -511,6 +541,7 @@ export class LobbyManager {
     if (!l) return;
     const p = l.players.find((x) => x.userId === userId);
     if (p) p.connected = false;
+    if (l.intro?.loading) this.introReadyCheck(l);
     if (l.game && l.inGame.has(userId)) {
       l.game.setConnected(userId, false);
     } else {

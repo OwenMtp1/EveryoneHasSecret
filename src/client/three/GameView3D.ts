@@ -9,7 +9,8 @@ import * as THREE from 'three';
 import type { BodyView, GamePlayerView, GameSelfView, ObjectView, TraceView } from '@shared/types';
 import { ROOMS, WORLD_H, WORLD_W } from '@shared/content/villa';
 import { buildCharacter, type Character3D } from './character3d';
-import { buildVilla, type Villa3D } from './villa3d';
+import type { Villa3D } from './villa3d';
+import { takeGameVilla } from './prebuilt';
 import { labelSprite, emojiSprite } from './sprites';
 import { realisticReady } from './realistic';
 import { objectModel } from './objects3d';
@@ -19,7 +20,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { roomAt as roomAtPos, buildWorldGrid, doorAt } from '@shared/content/villa';
+import { applyPortal, buildWorldGrid, doorAt, elevationAt, localX, stepAllowed } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
 
 type CamMode = 'third' | 'first';
@@ -34,6 +35,8 @@ interface Actor {
   key: string;
   /** objet personnage de la dernière vue (évite de recalculer la clé à chaque image) */
   charRef: unknown;
+  /** vitesse lissée (m/s) qui pilote l'animation de marche/course */
+  speed: number;
   light?: THREE.SpotLight;
 }
 
@@ -96,7 +99,14 @@ export class GameView3D {
   private pressed = new Set<string>();
   private lastSent = { x: 0, y: 0 };
   private dragging = false;
-  onInput: (dx: number, dy: number) => void = () => {};
+  private running = false;
+  /** positions reçues du serveur (horodatées à la réception) : les autres joueurs sont affichés
+   *  avec un léger différé et interpolés entre deux positions → mouvement continu, sans à-coups */
+  private samples = new Map<string, { t: number; x: number; y: number; z: number }[]>();
+  onInput: (dx: number, dy: number, run: boolean) => void = () => {};
+  /** appelé après la première image (shaders compilés, scène affichée) */
+  onFirstFrame: () => void = () => {};
+  private framesDrawn = 0;
   onModeChange: (m: CamMode) => void = () => {};
 
   constructor(private container: HTMLElement, opts: { reducedMotion?: boolean } = {}) {
@@ -138,7 +148,7 @@ export class GameView3D {
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
-    this.villa = buildVilla();
+    this.villa = takeGameVilla();
     this.scene.add(this.villa.group);
     this.rain = this.buildRain(opts.reducedMotion ? 0 : 2600);
     this.scene.add(this.rain);
@@ -146,6 +156,12 @@ export class GameView3D {
 
     this.bindInput();
     this.resize();
+    // compilation des shaders dès maintenant (masquée par la fin de la cinématique)
+    try {
+      this.renderer.compile(this.scene, this.camera);
+    } catch {
+      /* compilé au premier rendu */
+    }
     window.addEventListener('resize', this.resize);
     this.raf = requestAnimationFrame(this.loop);
   }
@@ -188,6 +204,11 @@ export class GameView3D {
       this.toggleMode();
       return true;
     }
+    if (code === 'ShiftLeft' || code === 'ShiftRight') {
+      this.running = down;
+      this.sendInput(true);
+      return true;
+    }
     if (!MOVE_KEYS[code]) return false;
     if (down) this.pressed.add(code);
     else this.pressed.delete(code);
@@ -197,6 +218,7 @@ export class GameView3D {
 
   releaseAll() {
     this.pressed.clear();
+    this.running = false;
     this.sendInput(true);
   }
 
@@ -230,7 +252,7 @@ export class GameView3D {
     dz = Math.round(dz * 100) / 100;
     if (force || Math.abs(dx - this.lastSent.x) > 0.06 || Math.abs(dz - this.lastSent.y) > 0.06) {
       this.lastSent = { x: dx, y: dz };
-      this.onInput(dx, dz);
+      this.onInput(dx, dz, this.running);
     }
   }
 
@@ -238,6 +260,35 @@ export class GameView3D {
 
   setView(v: GameSelfView) {
     this.view = v;
+    const t = performance.now();
+    for (const p of v.players) {
+      if (!p.pos) continue;
+      let buf = this.samples.get(p.id);
+      if (!buf) this.samples.set(p.id, (buf = []));
+      const last = buf[buf.length - 1];
+      toRender(p.pos.x, p.pos.y, _tmpR);
+      if (last && last.x === _tmpR.x && last.z === _tmpR.z && last.y === _tmpR.y && t - last.t < 400) continue;
+      buf.push({ t, x: _tmpR.x, y: _tmpR.y, z: _tmpR.z });
+      if (buf.length > 12) buf.shift();
+    }
+  }
+
+  /** Position interpolée d'un autre joueur, affichée ~150 ms dans le passé. */
+  private interpolated(id: string, fallback: THREE.Vector3): THREE.Vector3 {
+    const buf = this.samples.get(id);
+    if (!buf || !buf.length) return fallback;
+    const rt = performance.now() - 150;
+    if (rt <= buf[0].t) return _interp.set(buf[0].x, buf[0].y, buf[0].z);
+    for (let i = buf.length - 1; i >= 0; i--) {
+      const a = buf[i];
+      if (a.t <= rt) {
+        const b = buf[i + 1];
+        if (!b) return _interp.set(a.x, a.y, a.z);
+        const k = (rt - a.t) / Math.max(1, b.t - a.t);
+        return _interp.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+      }
+    }
+    return fallback;
   }
 
   private lastDt = 0;
@@ -271,7 +322,8 @@ export class GameView3D {
           this.allyMarkers.set(p.id, m);
           this.scene.add(m);
         }
-        m.position.set(p.pos.x, 2.3, p.pos.y);
+        toRender(p.pos.x, p.pos.y, m.position);
+        m.position.y += 2.3;
         continue;
       }
       seen.add(p.id);
@@ -289,21 +341,23 @@ export class GameView3D {
         const tag = labelSprite(p.name.split(' ')[0]);
         this.scene.add(c3d.root);
         this.scene.add(tag);
-        a = { c3d, pos: new THREE.Vector3(p.pos.x, 0, p.pos.y), rotY: p.id === this.view!.you ? this.yaw : 0, tag, key: `${JSON.stringify(p.character)}|${realisticReady()}`, charRef: p.character };
+        a = { c3d, pos: toRender(p.pos.x, p.pos.y, new THREE.Vector3()), rotY: p.id === this.view!.you ? this.yaw : 0, tag, key: `${JSON.stringify(p.character)}|${realisticReady()}`, charRef: p.character, speed: 0 };
         this.actors.set(p.id, a);
       }
       const isMe = p.id === this.view!.you;
-      _target.set(p.pos.x, 0, p.pos.y);
+      toRender(p.pos.x, p.pos.y, _target);
       _before.copy(a.pos);
-      if (isMe) a.pos.copy(this.predict(_target, dt));
-      else {
-        if (a.pos.distanceTo(_target) > 3) a.pos.copy(_target);
-        a.pos.lerp(_target, Math.min(1, dt * 12));
-      }
-      const delta = _delta.copy(a.pos).sub(_before);
-      const speed = delta.length() / Math.max(dt, 1e-3);
+      if (isMe) {
+        const g = this.predict(p.pos.x, p.pos.y, dt);
+        toRender(g.x, g.z, a.pos);
+      } else a.pos.copy(this.interpolated(p.id, _target));
+      const delta = _delta.copy(a.pos).sub(_before).setY(0);
+      const instant = delta.length() / Math.max(dt, 1e-3);
+      // téléportation (escalier, reconnexion) : pas d'animation de course
+      a.speed += ((instant > 8 ? a.speed : instant) - a.speed) * Math.min(1, dt * 10);
+      const speed = a.speed;
       if (isMe && this.mode === 'first') a.rotY = this.yaw;
-      else if (speed > 0.3) a.rotY = lerpAngle(a.rotY, Math.atan2(delta.x, delta.z), Math.min(1, dt * 12));
+      else if (instant > 0.3 && instant < 8) a.rotY = lerpAngle(a.rotY, Math.atan2(delta.x, delta.z), Math.min(1, dt * 10));
       a.c3d.root.position.copy(a.pos);
       a.c3d.root.rotation.y = a.rotY;
       if (p.gesture && p.gesture.seq !== a.gestureSeq) {
@@ -311,7 +365,7 @@ export class GameView3D {
         a.c3d.gesture(p.gesture.kind);
       }
       a.c3d.update(dt, speed);
-      a.tag.position.set(a.pos.x, 2.12, a.pos.z);
+      a.tag.position.set(a.pos.x, a.pos.y + 2.12, a.pos.z);
       // Indicateur de parole (chat vocal)
       const talking = voice.speaking.has(p.id) && !isMe;
       if (talking && !a.speak) {
@@ -320,7 +374,7 @@ export class GameView3D {
       }
       if (a.speak) {
         a.speak.visible = talking;
-        a.speak.position.set(a.pos.x, 2.38 + Math.sin(this.clock.elapsedTime * 8) * 0.02, a.pos.z);
+        a.speak.position.set(a.pos.x, a.pos.y + 2.38 + Math.sin(this.clock.elapsedTime * 8) * 0.02, a.pos.z);
       }
       a.tag.visible = !isMe;
       (a.tag.material as THREE.SpriteMaterial).color.set(p.stained ? '#ff9a9a' : '#ffffff');
@@ -377,23 +431,28 @@ export class GameView3D {
    * Notre personnage avance tout de suite (pas d'attente du serveur), puis se recale en douceur
    * sur la position officielle. Écart trop grand (téléportation, collision refusée) → recalage net.
    */
-  private predict(server: THREE.Vector3, dt: number): THREE.Vector3 {
-    if (!this.pred || !this.view?.alive) return (this.pred = server.clone());
+  private predict(sx: number, sy: number, dt: number): THREE.Vector3 {
+    // repère de la grille : x = colonne (étage décalé), z = ligne
+    _server.set(sx, 0, sy);
+    if (!this.pred || !this.view?.alive) return (this.pred = _server.clone());
     const p = this.pred;
     const { x: dx, y: dz } = this.lastSent;
     const moving = Math.hypot(dx, dz) > 0.01;
     if (moving) {
       const len = Math.hypot(dx, dz);
-      const vx = (dx / len) * GAME_CONFIG.moveSpeed * dt;
-      const vz = (dz / len) * GAME_CONFIG.moveSpeed * dt;
-      if (this.fits(p.x + vx, p.z)) p.x += vx;
-      if (this.fits(p.x, p.z + vz)) p.z += vz;
+      const sp = this.running ? GAME_CONFIG.runSpeed : GAME_CONFIG.walkSpeed;
+      const vx = (dx / len) * sp * dt;
+      const vz = (dz / len) * sp * dt;
+      if (this.fits(p.x + vx, p.z) && stepAllowed(p.x, p.z, p.x + vx, p.z)) p.x += vx;
+      if (this.fits(p.x, p.z + vz) && stepAllowed(p.x, p.z, p.x, p.z + vz)) p.z += vz;
+      const portal = applyPortal(p.x, p.z);
+      if (portal && this.fits(portal.x, portal.y)) p.set(portal.x, 0, portal.y);
     }
-    const err = server.distanceTo(p);
-    if (err > 2) p.copy(server);
-    else if (!moving) p.lerp(server, Math.min(1, dt * 6));
+    const err = _server.distanceTo(p);
+    if (err > 2) p.copy(_server);
+    else if (!moving) p.lerp(_server, Math.min(1, dt * 6));
     // en mouvement, le serveur a toujours un temps de retard : on ne corrige que les vrais écarts
-    else if (err > 0.9) p.lerp(server, Math.min(1, dt * 2));
+    else if (err > 0.9) p.lerp(_server, Math.min(1, dt * 2));
     return p;
   }
 
@@ -415,7 +474,7 @@ export class GameView3D {
       // Si on voyait la victime à l'instant, elle s'effondre sous nos yeux
       const witnessed = this.actors.get(b.playerId);
       c3d.setDead(true, !!witnessed);
-      c3d.root.position.set(b.pos.x, 0, b.pos.y);
+      toRender(b.pos.x, b.pos.y, c3d.root.position);
       c3d.root.rotation.y = witnessed ? witnessed.rotY : (b.pos.x * 7) % (Math.PI * 2);
       this.scene.add(c3d.root);
       this.bodies.set(b.id, c3d);
@@ -449,9 +508,11 @@ export class GameView3D {
         this.objects.set(o.id, e);
       }
       // Objet caché (connu) : posé dans le meuble, à mi-hauteur
-      e.base.set(o.pos.x, hidden ? 0.5 : e.modeled ? 0.012 : 0.75, o.pos.y);
-      e.ring.position.set(o.pos.x, 0.015, o.pos.y);
-      e.label.position.set(o.pos.x, (hidden ? 0.5 : 0) + 0.6, o.pos.y);
+      toRender(o.pos.x, o.pos.y, e.base);
+      const fy = e.base.y;
+      e.base.y += hidden ? 0.5 : e.modeled ? 0.012 : 0.75;
+      e.ring.position.set(e.base.x, fy + 0.015, e.base.z);
+      e.label.position.set(e.base.x, fy + (hidden ? 0.5 : 0) + 0.6, e.base.z);
       (e.ring.material as THREE.MeshBasicMaterial).color.set(o.bloody ? '#ff3344' : '#ffcf88');
     }
     for (const [id, e] of this.objects)
@@ -480,7 +541,8 @@ export class GameView3D {
       }
       mesh.rotation.x = -Math.PI / 2;
       mesh.rotation.z = (t.pos.x * 13) % 3;
-      mesh.position.set(t.pos.x, 0.012 + this.traces.size * 0.00001, t.pos.y);
+      toRender(t.pos.x, t.pos.y, mesh.position);
+      mesh.position.y += 0.012 + this.traces.size * 0.00001;
       this.scene.add(mesh);
       this.traces.set(t.id, mesh);
     }
@@ -569,7 +631,7 @@ export class GameView3D {
       o.visual.position.copy(o.base);
       if (!o.modeled) o.visual.position.y += Math.sin(t * 2 + o.base.x) * 0.05;
       (o.ring.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + o.base.x) * 0.2;
-      o.label.visible = !!mePos && Math.hypot(mePos.x - o.base.x, mePos.z - o.base.z) < 2.6;
+      o.label.visible = !!mePos && Math.hypot(mePos.x - o.base.x, mePos.z - o.base.z) < 2.6 && Math.abs(mePos.y - o.base.y) < 2;
     }
     // Étiquettes proches : empilées pour rester lisibles
     const shown = [...this.objects.values()].filter((o) => o.label.visible).sort((a, b) => a.base.x - b.base.x || a.base.z - b.base.z);
@@ -593,10 +655,12 @@ export class GameView3D {
     this.updateCamera();
     // Ombres de la lampe de la pièce où l'on se trouve
     const me = this.view ? this.actors.get(this.view.you) : undefined;
-    if (me) this.villa.focus(me.pos.x, me.pos.z, roomAtPos(this.grid, me.pos.x, me.pos.z)?.id);
+    const meView = this.view?.players.find((p) => p.id === this.view!.you);
+    if (me) this.villa.focus(me.pos.x, me.pos.z, meView?.roomId, me.pos.y);
     else this.villa.focus(this.camera.position.x, this.camera.position.z);
     if (QUALITY[this.quality].bloom) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+    if (++this.framesDrawn === 2) this.onFirstFrame();
   };
 
   // ───────────── qualité adaptative ─────────────
@@ -680,6 +744,14 @@ export class GameView3D {
 }
 
 const _target = new THREE.Vector3();
+const _tmpR = new THREE.Vector3();
+const _server = new THREE.Vector3();
+
+/** Position serveur (grille, étage décalé) → position 3D (étage replacé au-dessus, hauteur de l'escalier). */
+function toRender(x: number, y: number, out: THREE.Vector3): THREE.Vector3 {
+  return out.set(localX(x), elevationAt(x, y), y);
+}
+const _interp = new THREE.Vector3();
 const _before = new THREE.Vector3();
 const _delta = new THREE.Vector3();
 

@@ -134,7 +134,7 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
     socket.emit('session:state', lobbies.sessionState(userId));
     // Reconnexion pendant la cinématique : on reprend au bon moment
     const intro = lobbies.introOf(userId);
-    if (intro) socket.emit('lobby:intro', { plan: intro, serverNow: Date.now() });
+    if (intro) socket.emit('lobby:intro', { plan: intro.plan, serverNow: Date.now(), loading: intro.loading });
     if (first) {
       for (const f of friends.friendIds(userId)) {
         toUser(f, 'friends:changed');
@@ -216,6 +216,7 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
       lobbies.start(userId);
       return null;
     }));
+    socket.on('lobby:intro-ready', (p) => lobbies.introReady(userId, String(p?.planId ?? '')));
     socket.on('lobby:invite', handle((t: string) => {
       lobbies.invite(userId, String(t));
       return null;
@@ -227,7 +228,7 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
     }));
 
     socket.on('game:input', (p) => {
-      lobbies.gameOf(userId)?.setInput(userId, Number(p?.dx), Number(p?.dy));
+      lobbies.gameOf(userId)?.setInput(userId, Number(p?.dx), Number(p?.dy), !!p?.run);
     });
     socket.on('game:action', handle((a) => {
       const g = lobbies.gameOf(userId);
@@ -302,6 +303,8 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
         lobbies.shutdown();
         io.close();
         http.close(() => res());
+        // connexions encore ouvertes (keep-alive, clients qui se reconnectent) : fermées net
+        http.closeAllConnections();
         try {
           db.close();
         } catch {

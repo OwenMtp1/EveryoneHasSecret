@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { GameAction } from '@shared/protocol';
 import type { GamePlayerView, GameSelfView, ObjectView, Phase, RelationType, TraceView } from '@shared/types';
-import { FURNITURE, type FurnitureDef } from '@shared/content/villa';
+import { allFurniture, type FurnitureDef } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
 import { call } from '../../net/socket';
 import { attempt } from '../../store';
@@ -48,7 +48,7 @@ export function computeNearby(g: GameSelfView): Nearby {
   return {
     me,
     objects: g.objects.filter((o) => o.pos && o.roomId === me.roomId && d(o.pos) <= R + (o.name.endsWith('(caché)') ? 0.8 : 0)),
-    furniture: FURNITURE.filter((f) => {
+    furniture: allFurniture().filter((f) => {
       if (f.roomId !== me.roomId) return false;
       const cx = Math.max(f.x, Math.min(me.pos!.x, f.x + f.w));
       const cy = Math.max(f.y, Math.min(me.pos!.y, f.y + f.h));

@@ -41,6 +41,7 @@ Mettre un reverse proxy (Caddy, Nginx) devant pour le HTTPS, en laissant passer 
 | `EHAS_DB` | `data/ehas.sqlite` | Fichier de base de données |
 | `EHAS_TIME_SCALE` | `1` | Accélère la nuit (< 1) — tests uniquement |
 | `EHAS_TRANSITION_MS` | `20000` | Durée de la cinématique d'arrivée |
+| `EHAS_LOAD_TIMEOUT_MS` | `30000` | Attente maximale du chargement des joueurs |
 
 ## À savoir avant une ouverture publique
 - Les modèles 3D provisoires (`public/models`) viennent des exemples Three.js (origine Mixamo / Ready Player Me) : licence à valider avant une diffusion publique.

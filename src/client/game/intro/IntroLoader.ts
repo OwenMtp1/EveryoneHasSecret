@@ -1,16 +1,16 @@
 /**
- * Chargement masqué par la cinématique, par ordre de priorité :
- *   1. modèles des personnages + animations (nécessaires dès le premier plan)
- *   2. textures de la villa et de l'environnement HDR (déclenchées par la construction de la scène,
- *      mises en cache → la villa du jeu les retrouve déjà prêtes)
- *   3. compilation des shaders de la scène
- * La partie ne s'affiche qu'une fois ce chargement fini (ou après un délai de sécurité).
+ * Chargement AVANT la cinématique (le serveur attend que tous les joueurs aient fini), par priorité :
+ *   1. modèles des personnages + animations
+ *   2. villa de la partie, construite à l'avance (la partie s'affichera sans attente)
+ *   3. textures de la villa et environnement HDR (mis en cache, partagés avec la partie)
+ *   4. compilation des shaders de la scène de la cinématique
  */
 import * as THREE from 'three';
 import { preloadRealistic } from '../../three/realistic';
+import { prebuildGameVilla } from '../../three/prebuilt';
 
 export interface LoadStep {
-  id: 'characters' | 'textures' | 'shaders';
+  id: 'characters' | 'game' | 'textures' | 'shaders';
   label: string;
   done: boolean;
 }
@@ -20,7 +20,8 @@ const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export class IntroLoader {
   readonly steps: LoadStep[] = [
     { id: 'characters', label: 'Personnages', done: false },
-    { id: 'textures', label: 'Villa', done: false },
+    { id: 'game', label: 'Villa et partie', done: false },
+    { id: 'textures', label: 'Textures', done: false },
     { id: 'shaders', label: 'Rendu', done: false },
   ];
   private pending = 0;
@@ -56,12 +57,19 @@ export class IntroLoader {
   }
 
   /** Priorité 1 : les personnages (délai max avant repli procédural). */
-  async characters(maxMs = 5000) {
+  async characters(maxMs = 20000) {
     await Promise.race([preloadRealistic(), wait(maxMs)]);
     this.mark('characters');
   }
 
-  /** Priorités 2 et 3, une fois la scène construite. */
+  /** Priorité 2 : la villa de la partie, construite maintenant pour être affichée sans attente ensuite. */
+  async game() {
+    await wait(30); // laisse l'écran de chargement se peindre
+    prebuildGameVilla();
+    this.mark('game');
+  }
+
+  /** Priorités 3 et 4, une fois les scènes construites. */
   async rest(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, maxMs = 12000) {
     const textures = (async () => {
       // rien en cours → déjà en cache

@@ -22,13 +22,24 @@ export const META_CONFIG = {
   chatMaxLength: 280,
 } as const;
 
+/** Durées de nuit proposées à l'hôte : facteur d'échelle de tous les délais du moteur d'événements. */
+export const NIGHT_DURATIONS = {
+  short: { scale: 0.55, label: 'Courte', approx: '~10 min' },
+  normal: { scale: 1.6, label: 'Normale', approx: '~25 min' },
+  long: { scale: 2.8, label: 'Longue', approx: '~45 min' },
+} as const;
+export type NightDuration = keyof typeof NIGHT_DURATIONS;
+export const isNightDuration = (d: unknown): d is NightDuration => typeof d === 'string' && d in NIGHT_DURATIONS;
+
 export const GAME_CONFIG = {
   /** Fréquence de simulation du serveur (Hz). */
   tickRate: 20,
   /** Fréquence d'envoi des snapshots aux clients (Hz). */
   snapshotRate: 12,
-  /** Vitesse de déplacement en tuiles / seconde. */
-  moveSpeed: 4.2,
+  /** Vitesse de marche en tuiles (mètres) / seconde — une marche humaine posée. */
+  walkSpeed: 1.9,
+  /** Vitesse de course (touche Maj). */
+  runSpeed: 3.9,
   playerRadius: 0.32,
   /** Distance d'interaction en tuiles. */
   interactRange: 1.6,

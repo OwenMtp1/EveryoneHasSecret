@@ -61,6 +61,14 @@ Scène 3D temps réel de 20 s (réglable) qui masque le chargement : les **vrais
 - **Déplacement prédit** côté client (mêmes collisions que le serveur), recalage en douceur → plus de latence ressentie.
 - **Interface** : la 3D reçoit chaque mise à jour réseau, React seulement les changements utiles (≤ 4/s pour les positions) au lieu de 12 re-rendus complets par seconde.
 
+### V0.12 — étage, ameublement, vêtements, démarche, chargement
+- **Étage** : 7 pièces (bibliothèque, chambre d'amis, salon de musique, suite parentale, salle de bain, atelier, palier), escalier du hall praticable (rampe, rambardes, trémie), passage invisible en haut des marches ; même logique côté serveur et prédiction client. Objets répartis aussi à l'étage. Plan 2D : rez-de-chaussée à gauche, étage à droite.
+- **Ameublement** : ~180 meubles et éléments de décor (22 nouveaux types : fauteuils, bibliothèques remplies, plantes, lampadaires, buffets, chevets, commodes, frigo, cuisinière, WC, lavabos, télé, établi, tonneaux, bancs, portemanteaux, chevalets, globe, harpe, coffres, rambarde) avec petits objets posés dessus ; tous bloquants côté serveur, grandes pièces servant de cachettes ; test de circulation (toutes les pièces accessibles).
+- **Vêtements et couleurs** : peau, haut, bas, chaussures et cheveux du créateur appliqués aux modèles réalistes (recoloration par zones qui garde le détail des textures) ; coiffure du créateur sur les modèles masculins (chapeau d'origine retiré).
+- **Démarche** : marche à 1,9 m/s (Maj : course 3,9 m/s), cadence des pas calée sur la vitesse réelle, mélange marche/course continu ; autres joueurs interpolés sur les positions serveur (≈150 ms de différé) → mouvement continu.
+- **Chargement avant la cinématique** : personnages, villa de la partie (pré-construite), textures et shaders chargés d'abord ; le serveur attend que tous les joueurs soient prêts (30 s max) ; la cinématique ne se termine qu'après la première image de la partie.
+- **Durées** : courte ~10 min, normale ~25 min, longue ~45 min. Panneau « Première nuit » retiré.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
@@ -158,7 +166,7 @@ Scène 3D temps réel de 20 s (réglable) qui masque le chargement : les **vrais
 - ✅ [P1] Brouillard : seules la pièce courante et ce qui s’y trouve sont visibles
 - ✅ [P1] Météo : pluie sur l’extérieur, coupure de courant (blackout)
 - ✅ [P1] Cinématique d'arrivée data-driven (véhicules, places, cadrages) · ⬜ [P2] Vrais modèles de véhicules (glTF via `assets.model`) · ⬜ [P2] Animations assises capturées · ⬜ [P3] Lieux d'arrivée variés (`IntroConfig`)
-- ⬜ [P1] Étage (chambres à l’étage, escalier) · ⬜ [P2] Fenêtres (voir dans le jardin) · ⬜ [P2] Portes qu’on ferme à clé de l’intérieur
+- ✅ [P1] Étage (7 pièces, escalier praticable) · ⬜ [P2] Fenêtres (voir dans le jardin) · ⬜ [P2] Portes qu’on ferme à clé de l’intérieur
 - ⬜ [P2] Pièces secrètes / passages · ⬜ [P2] Variantes de villa (agencements tirés au sort)
 - ⬜ [P3] Jardin étendu → quartier → village → ville → autres bâtiments → véhicules
 

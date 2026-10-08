@@ -8,7 +8,7 @@
  */
 import type { CaseView, EpilogueView, RoleView } from '@shared/types';
 import { ROLES, roleById, type RoleMetric } from '@shared/content/roles';
-import { FURNITURE, ROOMS, roomById, roomName } from '@shared/content/villa';
+import { FURNITURE, ROOMS, allFurniture, roomById, roomName } from '@shared/content/villa';
 import { findOutfit } from '@shared/content/character';
 import { VOTE_DURATION_SEC } from '@shared/content/events';
 import { GAME_CONFIG, formatClock } from '@shared/config';
@@ -277,7 +277,7 @@ export class InvestigationSystem {
         }
         const footCount = found.filter((f) => f.startsWith('empreinte')).length;
         const condensed = footCount > 4 ? [...found.filter((f) => !f.startsWith('empreinte')), ...this.summarizeFootprints(room)] : found;
-        for (const f of FURNITURE.filter((x) => x.roomId === room)) {
+        for (const f of allFurniture().filter((x) => x.roomId === room && x.hiding)) {
           const hidden = [...g.objects.values()].filter((o) => o.location.kind === 'hidden' && o.location.furnitureId === f.id);
           if (hidden.length) {
             hidden.forEach((o) => o.knownBy.add(p.id));

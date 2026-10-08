@@ -81,6 +81,28 @@ export function buildCharacter(c: Character): Character3D {
   };
 }
 
+/**
+ * Coiffure du créateur (données `parts3d`), dans le repère d'une tête centrée en 0 de rayon ~0,13 m.
+ * Utilisée par le personnage procédural et posée sur la tête des modèles réalistes.
+ */
+export function buildHair(c: Character): THREE.Group {
+  const g = new THREE.Group();
+  const color = findHairColor(c.hairColor).color;
+  const hairMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05 });
+  const shade = new THREE.MeshStandardMaterial({ color, roughness: 0.8, transparent: true, opacity: 0.5 });
+  for (const part of findHairStyle(c.hairStyleId).parts3d as HairPart3D[]) {
+    const geo = part.kind === 'cap' ? capGeo() : part.kind === 'sphere' ? sphereGeo() : part.kind === 'box' ? boxGeo() : capsuleGeo(1, 1);
+    const m = new THREE.Mesh(geo, part.shade ? shade : hairMat);
+    m.position.set(...part.p);
+    if (part.kind === 'capsule') m.scale.set(part.s[0], part.s[1] / 3, part.s[2]);
+    else m.scale.set(...part.s);
+    m.rotation.set(...(part.r ?? (part.kind === 'cap' ? [-0.42, 0, 0] : [0, 0, 0])));
+    m.castShadow = true;
+    g.add(m);
+  }
+  return g;
+}
+
 export function buildProcedural(c: Character): Character3D {
   const fem = c.appearance === 'feminine';
   const skinColor = findSkinTone(c.skinTone).color;
