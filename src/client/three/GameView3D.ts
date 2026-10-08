@@ -13,11 +13,13 @@ import { buildVilla, type Villa3D } from './villa3d';
 import { labelSprite, emojiSprite } from './sprites';
 import { realisticReady } from './realistic';
 import { objectModel } from './objects3d';
+import { voice } from '../voice';
 
 type CamMode = 'third' | 'first';
 
 interface Actor {
   c3d: Character3D;
+  speak?: THREE.Sprite;
   gestureSeq?: number;
   pos: THREE.Vector3;
   rotY: number;
@@ -253,6 +255,16 @@ export class GameView3D {
       }
       a.c3d.update(dt, speed);
       a.tag.position.set(a.pos.x, 2.12, a.pos.z);
+      // Indicateur de parole (chat vocal)
+      const talking = voice.speaking.has(p.id) && !isMe;
+      if (talking && !a.speak) {
+        a.speak = emojiSprite('🔊', 0.3);
+        this.scene.add(a.speak);
+      }
+      if (a.speak) {
+        a.speak.visible = talking;
+        a.speak.position.set(a.pos.x, 2.38 + Math.sin(this.clock.elapsedTime * 8) * 0.02, a.pos.z);
+      }
       a.tag.visible = !isMe;
       (a.tag.material as THREE.SpriteMaterial).color.set(p.stained ? '#ff9a9a' : '#ffffff');
       // Lampe torche
@@ -289,6 +301,7 @@ export class GameView3D {
     const a = this.actors.get(id);
     if (!a) return;
     this.scene.remove(a.c3d.root, a.tag);
+    if (a.speak) this.scene.remove(a.speak);
     a.c3d.dispose();
     this.actors.delete(id);
   }
@@ -328,7 +341,7 @@ export class GameView3D {
         const visual: THREE.Object3D = model ?? emojiSprite(o.icon);
         if (model) model.scale.setScalar(1.6); // lisibilité en jeu
         const label = labelSprite(`${o.icon} ${o.name}`, '#ffe2b0');
-        label.scale.multiplyScalar(0.75);
+        label.scale.multiplyScalar(0.8);
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.25, 32), new THREE.MeshBasicMaterial({ color: '#ffcf88', transparent: true, opacity: 0.5, depthWrite: false }));
         ring.rotation.x = -Math.PI / 2;
         this.scene.add(visual, ring, label);

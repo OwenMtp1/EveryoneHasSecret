@@ -39,6 +39,11 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 ### V0.7 — prêt pour la mise en ligne
 `render.yaml`, `Dockerfile`, `DEPLOY.md` ; `tsx` passe en dépendance de production ; démarrage compatible Node 22.x.
 
+### V0.8 — interface plein écran + chat vocal
+- **Plein écran** : plus de colonnes latérales. Événements, perceptions et messages arrivent en **notifications** éphémères ; chat en surimpression (Entrée) ; Inventaire / Relations / Carnet / Enquête dans un **tiroir** (1–4, dock d'icônes avec badges) ; HUD supérieur translucide.
+- **Chat vocal de proximité** (WebRTC pair-à-pair, signalisation relayée par le serveur) : on n'entend que ceux qu'on voit, volume selon la distance ; morts inaudibles pour les vivants ; micro coupable (N) ; indicateur 🔊 au-dessus des personnes qui parlent.
+- Étiquettes de nom à taille constante à l'écran.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
@@ -226,7 +231,8 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 ## COMMUNICATION
 - ✅ [P0] Chat général · ✅ [P0] Chat privé (et les témoins vous voient « murmurer ») · ✅ [P1] Canaux d’alliance/pacte · ✅ [P1] Canal des morts
 - ✅ [P1] Chat de lobby
-- ⬜ [P2] Chat de proximité (même pièce) en option · ⬜ [P2] Chat vocal · ⬜ [P2] Communications coupées (orage, téléphone)
+- ✅ [P1] Chat vocal de proximité (WebRTC)
+- ⬜ [P1] Serveur TURN pour les réseaux stricts (sans TURN, certaines connexions vocales échouent) · ⬜ [P2] SFU (le filtrage de proximité est aujourd'hui côté client : un client modifié pourrait tout entendre) · ⬜ [P2] Vocal dans le lobby · ⬜ [P2] Communications coupées (orage, téléphone)
 - ⬜ [P2] Modération (filtre, signalement, mute)
 
 ## REPLAYABILITY

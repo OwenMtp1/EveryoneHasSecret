@@ -49,7 +49,9 @@ Voir [DEPLOY.md](DEPLOY.md) : Render en quelques clics (`render.yaml`), Docker (
 
 Le jeu est en **3D** dans le navigateur (Three.js).
 
-`ZQSD` / `WASD` / flèches : se déplacer (relatif à la caméra) · **souris** : cliquer dans la vue pour orienter la caméra (`Échap` libère le pointeur), molette pour la distance · **`V`** : troisième ↔ première personne · `E` : interagir · `Entrée` : chat · `1`–`4` : onglets · `M` : plan 2D de la villa · maintenir **Mon secret** pour le relire.
+**Chat vocal** : bouton 🎙 en haut (micro coupé/ouvert avec `N`) — on n’entend que les joueurs qu’on voit.
+
+`ZQSD` / `WASD` / flèches : se déplacer (relatif à la caméra) · **souris** : cliquer dans la vue pour orienter la caméra (`Échap` libère le pointeur), molette pour la distance · **`V`** : troisième ↔ première personne · `E` : interagir · `Entrée` : chat · `1`–`4` : menus (tiroir) · `Échap` : fermer · `M` : plan 2D de la villa · maintenir **Mon secret** pour le relire.
 
 ## Documentation
 

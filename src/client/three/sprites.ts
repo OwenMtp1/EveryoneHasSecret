@@ -48,9 +48,10 @@ export function labelSprite(text: string, color = '#efe6d2'): THREE.Sprite {
   x.fillText(text, w / 2, 29);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }));
+  // Taille constante à l'écran (lisible de près comme de loin)
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false }));
   s.renderOrder = 10;
-  const h = 0.2;
+  const h = 0.032;
   s.scale.set((h * w) / 56, h, 1);
   return s;
 }

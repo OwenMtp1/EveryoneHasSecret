@@ -72,10 +72,22 @@ export const usePicker = create<PickerState>((set) => ({
   close: () => set({ open: null }),
 }));
 
-/** Ouvre une conversation privée dans le chat. */
-export const useChatFocus = create<{ channel: string; setChannel: (c: string) => void; tab: number; setTab: (t: number) => void }>((set) => ({
+/** État de l'interface de jeu : tiroir (onglets 1–4) et chat (Entrée). */
+export const useChatFocus = create<{
+  channel: string;
+  setChannel: (c: string) => void;
+  /** onglet du tiroir ouvert, ou null si fermé */
+  tab: number | null;
+  setTab: (t: number | null) => void;
+  toggleTab: (t: number) => void;
+  chatOpen: boolean;
+  setChatOpen: (o: boolean) => void;
+}>((set, get) => ({
   channel: 'general',
-  setChannel: (channel) => set({ channel }),
-  tab: 0,
+  setChannel: (channel) => set({ channel, chatOpen: true }),
+  tab: null,
   setTab: (tab) => set({ tab }),
+  toggleTab: (t) => set({ tab: get().tab === t ? null : t }),
+  chatOpen: false,
+  setChatOpen: (chatOpen) => set({ chatOpen }),
 }));

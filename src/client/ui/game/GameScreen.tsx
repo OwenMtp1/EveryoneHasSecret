@@ -9,7 +9,9 @@ import { audio } from '../../audio';
 import { PHASE_LABEL, useChatFocus, usePicker } from './helpers';
 import { ActionBar } from './ActionBar';
 import { ChatPanel } from './ChatPanel';
-import { FeedPanel, Announcement } from './FeedPanel';
+import { Announcement } from './FeedPanel';
+import { Notifications } from './Notifications';
+import { VoiceControls } from './VoiceControls';
 import { InventoryTab } from './InventoryTab';
 import { RelationsTab } from './RelationsTab';
 import { NotebookTab } from './NotebookTab';
@@ -29,6 +31,7 @@ export function GameScreen() {
   const [locked, setLocked] = useState(false);
   const tab = useChatFocus((s) => s.tab);
   const setTab = useChatFocus((s) => s.setTab);
+  const toggleTab = useChatFocus((s) => s.toggleTab);
   const [showSecret, setShowSecret] = useState(false);
   const hasGame = !!game;
 
@@ -85,14 +88,17 @@ export function GameScreen() {
       } else if (e.code === 'Enter') {
         e.preventDefault();
         if (document.pointerLockElement) document.exitPointerLock();
-        (document.querySelector('.chat-panel input') as HTMLInputElement | null)?.focus();
+        viewRef.current?.releaseAll();
+        useChatFocus.getState().setChatOpen(true);
       } else if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
-        setTab(Number(e.code.slice(-1)) - 1);
+        if (document.pointerLockElement) document.exitPointerLock();
+        toggleTab(Number(e.code.slice(-1)) - 1);
       } else if (e.code === 'KeyM') {
         setShowMap((m) => !m);
       } else if (e.code === 'Escape') {
         usePicker.getState().close();
         setShowMap(false);
+        setTab(null);
       }
     };
     const up = (e: KeyboardEvent) => {
@@ -107,7 +113,7 @@ export function GameScreen() {
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
     };
-  }, [setTab]);
+  }, [setTab, toggleTab]);
 
   if (!game) return <div className="center-message">Connexion à la villa…</div>;
   const me = game.players.find((p) => p.id === game.you);
@@ -123,9 +129,19 @@ export function GameScreen() {
     useStore.setState({ game: null, inGame: false, lobby: null, screen: 'menu' });
   };
 
+  const pendingRelations = game.relations.filter((r) => r.status === 'pending' && r.to === game.you).length;
+  const DOCK = [
+    { icon: '🎒', label: 'Inventaire', badge: game.inventory.length || null },
+    { icon: '👥', label: 'Relations', badge: pendingRelations || null, alert: pendingRelations > 0 },
+    { icon: '📓', label: 'Carnet', badge: null },
+    { icon: '🔎', label: 'Enquête', badge: null, alert: investigation },
+  ];
+
   return (
-    <div className={`game ${game.alive ? '' : 'is-dead'} ${game.blackout ? 'is-blackout' : ''} ${reduced ? 'reduced' : ''}`}>
-      <header className="game-top">
+    <div className={`game game-full ${game.alive ? '' : 'is-dead'} ${game.blackout ? 'is-blackout' : ''} ${reduced ? 'reduced' : ''}`}>
+      <div className="view3d" ref={wrapRef} />
+
+      <header className="hud-top">
         <div className="game-title">{game.title}</div>
         <div className="game-clock">{formatClock(game.clock)}</div>
         <div className={`phase phase-${game.phase.toLowerCase()}`}>{PHASE_LABEL[game.phase]}</div>
@@ -134,6 +150,7 @@ export function GameScreen() {
         {game.muddy && <div className="chip">🥾 Chaussures boueuses</div>}
         {me?.stained && <div className="chip chip-danger">🩸 Vêtements tachés</div>}
         <div className="spacer" />
+        <VoiceControls />
         <button className="btn btn-ghost btn-sm secret-btn" onMouseDown={() => setShowSecret(true)} onMouseUp={() => setShowSecret(false)} onMouseLeave={() => setShowSecret(false)} onTouchStart={() => setShowSecret(true)} onTouchEnd={() => setShowSecret(false)}>
           🤫 Mon secret
         </button>
@@ -141,40 +158,47 @@ export function GameScreen() {
         {showSecret && <div className="secret-pop">{game.secret}</div>}
       </header>
 
-      <aside className="game-left">
-        <FeedPanel />
-        <ChatPanel />
-      </aside>
+      <div className="cam-hint">
+        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'clic : orienter la caméra'} · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> menus · <kbd>M</kbd> plan
+      </div>
 
-      <main className="game-center">
-        <div className="view3d" ref={wrapRef} />
-        <div className="cam-hint">
-          {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> changer · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'cliquer pour orienter la caméra'} · <kbd>M</kbd> plan
-        </div>
-        {showMap && <MapOverlay onClose={() => setShowMap(false)} />}
-        {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
-        <Tutorial />
-        <Announcement />
-        <OpportunityPrompt />
-        <ActionBar />
-      </main>
+      <Notifications />
+      {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
+      <Tutorial />
+      <Announcement />
+      <OpportunityPrompt />
+      <ActionBar />
+      <ChatPanel />
+      {showMap && <MapOverlay onClose={() => setShowMap(false)} />}
 
-      <aside className="game-right">
-        <div className="tabs tabs-game">
-          {['Inventaire', 'Relations', 'Carnet', 'Enquête'].map((t, i) => (
-            <button key={t} className={`${tab === i ? 'active' : ''} ${i === 3 && investigation ? 'pulse' : ''}`} onClick={() => setTab(i)}>
-              <kbd>{i + 1}</kbd> {t}
-              {i === 1 && game.relations.some((r) => r.status === 'pending' && r.to === game.you) && <span className="badge">!</span>}
-            </button>
-          ))}
-        </div>
-        <div className="tab-body">
-          {tab === 0 && <InventoryTab />}
-          {tab === 1 && <RelationsTab />}
-          {tab === 2 && <NotebookTab />}
-          {tab === 3 && <InvestigationTab />}
-        </div>
-      </aside>
+      <nav className="dock">
+        {DOCK.map((d, i) => (
+          <button key={d.label} className={`dock-btn ${tab === i ? 'active' : ''} ${d.alert ? 'alert' : ''}`} onClick={() => toggleTab(i)} title={`${d.label} (${i + 1})`}>
+            <span className="dock-icon">{d.icon}</span>
+            <kbd>{i + 1}</kbd>
+            {d.badge !== null && <span className="badge">{d.badge}</span>}
+          </button>
+        ))}
+        <button className="dock-btn" onClick={() => useChatFocus.getState().setChatOpen(true)} title="Chat (Entrée)">
+          <span className="dock-icon">💬</span>
+          <kbd>↵</kbd>
+        </button>
+      </nav>
+
+      {tab !== null && (
+        <aside className="drawer">
+          <div className="drawer-head">
+            <strong>{DOCK[tab].icon} {DOCK[tab].label}</strong>
+            <button className="drawer-close" onClick={() => setTab(null)} aria-label="Fermer">×</button>
+          </div>
+          <div className="tab-body">
+            {tab === 0 && <InventoryTab />}
+            {tab === 1 && <RelationsTab />}
+            {tab === 2 && <NotebookTab />}
+            {tab === 3 && <InvestigationTab />}
+          </div>
+        </aside>
+      )}
 
       <VoteModal />
       <TestimonyModal />

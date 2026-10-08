@@ -123,6 +123,9 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
     next();
   });
 
+  /** Membres du vocal par partie (pair-à-pair : le serveur ne voit jamais l'audio). */
+  const voiceMembers = new Map<string, Set<string>>();
+
   io.on('connection', (socket) => {
     const userId: string = socket.data.userId;
     socket.join(`user:${userId}`);
@@ -240,7 +243,41 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
       return null;
     }));
 
+    // ───────────── chat vocal : relais de signalisation entre joueurs d'une même partie ─────────────
+    const voiceRoom = (gameId: string) => `voice:${gameId}`;
+    let voiceGame: string | null = null;
+    const leaveVoice = () => {
+      if (!voiceGame) return;
+      const members = voiceMembers.get(voiceGame);
+      members?.delete(userId);
+      socket.to(voiceRoom(voiceGame)).emit('voice:peer-left', userId);
+      socket.leave(voiceRoom(voiceGame));
+      if (members && members.size === 0) voiceMembers.delete(voiceGame);
+      voiceGame = null;
+    };
+    socket.on('voice:join', handle(() => {
+      const g = lobbies.gameOf(userId);
+      if (!g) throw new UserError('Aucune partie en cours.');
+      leaveVoice();
+      voiceGame = g.id;
+      let members = voiceMembers.get(g.id);
+      if (!members) voiceMembers.set(g.id, (members = new Set()));
+      const peers = [...members].filter((id) => id !== userId);
+      members.add(userId);
+      socket.join(voiceRoom(g.id));
+      socket.to(voiceRoom(g.id)).emit('voice:peer-joined', userId);
+      return { peers };
+    }));
+    socket.on('voice:leave', leaveVoice);
+    socket.on('voice:signal', (p) => {
+      if (!voiceGame || typeof p?.to !== 'string' || !voiceMembers.get(voiceGame)?.has(p.to)) return;
+      const size = JSON.stringify(p.data ?? '').length;
+      if (size > 20_000) return;
+      toUser(p.to, 'voice:signal', { from: userId, data: p.data });
+    });
+
     socket.on('disconnect', () => {
+      leaveVoice();
       const last = presence.disconnect(userId, socket.id);
       if (last) {
         lobbies.onDisconnect(userId);

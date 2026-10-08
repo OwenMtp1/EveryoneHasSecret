@@ -9,6 +9,9 @@ export function ChatPanel() {
   const game = useStore((s) => s.game)!;
   const channel = useChatFocus((s) => s.channel);
   const setChannel = useChatFocus((s) => s.setChannel);
+  const open = useChatFocus((s) => s.chatOpen);
+  const setOpen = useChatFocus((s) => s.setChatOpen);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -31,23 +34,34 @@ export function ChatPanel() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [messages.length, channel]);
   useEffect(() => {
-    if (!channels.some((c) => c.id === channel)) setChannel('general');
-  }, [channels, channel, setChannel]);
+    if (!channels.some((c) => c.id === channel)) useChatFocus.setState({ channel: 'general' });
+  }, [channels, channel]);
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open, channel]);
 
   const send = async (e: FormEvent) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      setOpen(false);
+      (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
     const ok = await attempt(call('game:chat', { channel: channel as ChatChannel, text }).then(() => true));
     if (ok) setText('');
+    // Entrée envoie et referme : on retourne au jeu
+    setOpen(false);
     (document.activeElement as HTMLElement | null)?.blur();
   };
 
+  if (!open) return null;
+
   const disabled = !game.alive && channel !== 'dead' && !game.epilogue;
   return (
-    <div className="panel chat-panel">
+    <div className="panel chat-panel chat-overlay" onKeyDown={(e) => e.key === 'Escape' && (setOpen(false), (document.activeElement as HTMLElement | null)?.blur())}>
       <div className="chat-tabs">
         {channels.map((c) => (
-          <button key={c.id} className={c.id === channel ? 'active' : ''} onClick={() => setChannel(c.id)}>
+          <button key={c.id} className={c.id === channel ? 'active' : ''} onClick={() => setChannel(c.id)} type="button">
             {c.label}
           </button>
         ))}
@@ -61,7 +75,7 @@ export function ChatPanel() {
         ))}
       </div>
       <form onSubmit={send} className="chat-form">
-        <input value={text} onChange={(e) => setText(e.target.value)} maxLength={META_CONFIG.chatMaxLength} placeholder={disabled ? 'Les morts ne parlent pas…' : 'Entrée pour écrire'} disabled={disabled} name="gameChat" />
+        <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} maxLength={META_CONFIG.chatMaxLength} placeholder={disabled ? 'Les morts ne parlent pas…' : 'Votre message — Entrée pour envoyer, Échap pour fermer'} disabled={disabled} name="gameChat" />
       </form>
     </div>
   );

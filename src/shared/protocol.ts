@@ -80,7 +80,14 @@ export interface ClientToServerEvents {
   'game:action': (a: GameAction, ack: Ack<{ message?: string }>) => void;
   'game:chat': (p: { channel: ChatChannel; text: string }, ack: Ack<null>) => void;
   'game:leave': (ack: Ack<null>) => void;
+
+  // Chat vocal (WebRTC pair-à-pair, le serveur ne fait que relayer la signalisation)
+  'voice:join': (ack: Ack<{ peers: string[] }>) => void;
+  'voice:leave': () => void;
+  'voice:signal': (p: { to: string; data: VoiceSignal }) => void;
 }
+
+export type VoiceSignal = { sdp: { type: 'offer' | 'answer'; sdp: string } } | { candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } };
 
 export interface ServerToClientEvents {
   'session:state': (s: { lobby: LobbyView | null; inGame: boolean }) => void;
@@ -91,6 +98,9 @@ export interface ServerToClientEvents {
   'game:full': (v: GameSelfView) => void;
   'game:snapshot': (s: GameSnapshot) => void;
   'game:ended': () => void;
+  'voice:peer-joined': (userId: string) => void;
+  'voice:peer-left': (userId: string) => void;
+  'voice:signal': (p: { from: string; data: VoiceSignal }) => void;
 }
 
 export interface AuthResponse {

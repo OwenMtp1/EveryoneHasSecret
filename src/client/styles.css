@@ -489,3 +489,70 @@ kbd {
 .tutorial li { color: var(--text); line-height: 1.35; }
 .tutorial li.done { color: var(--ok); opacity: 0.7; text-decoration: line-through; }
 .tutorial p { margin: 0; line-height: 1.4; }
+
+/* ───────── Interface plein écran (V0.8) ───────── */
+.game.game-full { display: block; position: relative; height: 100%; overflow: hidden; background: #030305; }
+.game-full .view3d { position: absolute; inset: 0; }
+.hud-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 8; display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  background: linear-gradient(180deg, rgba(3, 4, 7, 0.85), rgba(3, 4, 7, 0)); pointer-events: none;
+}
+.hud-top > * { pointer-events: auto; }
+.hud-top .game-title { font-size: 17px; }
+.hud-top .game-clock { font-size: 22px; }
+.game-full .cam-hint { top: auto; bottom: 10px; left: 12px; }
+.game-full .tutorial { top: 56px; }
+.game-full .dead-banner { top: 56px; }
+.game-full .secret-pop { top: 50px; }
+
+.notifs { position: absolute; left: 12px; bottom: 44px; z-index: 7; width: min(420px, 60vw); display: flex; flex-direction: column; gap: 6px; pointer-events: none; transition: bottom 0.2s; }
+.notifs.with-chat { bottom: 300px; }
+.notif {
+  background: rgba(8, 9, 13, 0.82); border-left: 3px solid rgba(255, 255, 255, 0.25); border-radius: 8px; padding: 7px 11px; font-size: 13px; line-height: 1.4;
+  animation: notifIn 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; transition: opacity 0.8s, transform 0.8s; backdrop-filter: blur(6px);
+}
+.notif.leaving { opacity: 0; transform: translateX(-12px); }
+@keyframes notifIn { from { opacity: 0; translate: -20px 0; } to { opacity: 1; translate: 0 0; } }
+.notif-time { color: rgba(201, 164, 92, 0.65); font-size: 10px; }
+.notif-narration { font-family: var(--serif); font-size: 15px; font-style: italic; border-left-color: var(--gold); }
+.notif-announce { border-left-color: var(--gold); color: var(--gold-2); }
+.notif-danger { border-left-color: var(--blood-2); color: #ffc0c0; }
+.notif-whisper { border-left-color: rgba(200, 200, 220, 0.4); color: #cfc8bc; }
+.notif-chat { border-left-color: var(--blue); }
+.notif-private { border-left-color: #b98cff; }
+.notif strong { color: #fff; }
+
+.chat-overlay { position: absolute; left: 12px; bottom: 40px; z-index: 12; width: min(460px, 70vw); height: 250px; display: flex; flex-direction: column; animation: fadeIn 0.2s both; background: rgba(10, 11, 16, 0.92); }
+
+.dock { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); z-index: 9; display: flex; flex-direction: column; gap: 8px; }
+.dock-btn {
+  position: relative; width: 54px; height: 54px; border-radius: 14px; border: 1px solid var(--line); background: rgba(10, 11, 16, 0.78);
+  cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; backdrop-filter: blur(6px); transition: all 0.15s;
+}
+.dock-btn:hover, .dock-btn.active { border-color: var(--gold); background: rgba(201, 164, 92, 0.18); }
+.dock-btn.alert { box-shadow: 0 0 0 1px var(--blue), 0 0 14px rgba(106, 168, 232, 0.5); }
+.dock-icon { font-size: 21px; line-height: 1; }
+.dock-btn kbd { font-size: 9px; padding: 0 3px; }
+.dock-btn .badge { position: absolute; top: -5px; right: -5px; margin: 0; }
+
+.drawer {
+  position: absolute; top: 56px; right: 78px; bottom: 16px; z-index: 11; width: min(400px, calc(100vw - 110px)); display: flex; flex-direction: column;
+  background: rgba(10, 11, 16, 0.93); border: 1px solid var(--line-strong); border-radius: 14px; padding: 12px; backdrop-filter: blur(10px);
+  animation: drawerIn 0.22s ease both; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+@keyframes drawerIn { from { opacity: 0; translate: 20px 0; } to { opacity: 1; translate: 0 0; } }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 8px; font-family: var(--serif); font-size: 19px; color: var(--gold-2); }
+.drawer-close { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+
+.voice-ctl { display: flex; align-items: center; gap: 6px; }
+.voice-speakers { font-size: 12px; color: #b6d8ff; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-btn.muted { border-color: rgba(216, 64, 79, 0.6); color: #ffb3b3; }
+.voice-btn.speaking { box-shadow: 0 0 0 2px var(--ok), 0 0 12px rgba(111, 191, 138, 0.6); }
+
+@media (max-width: 820px) {
+  .game.game-full { height: 100%; min-height: 0; }
+  .hud-top { flex-wrap: wrap; }
+  .dock { top: auto; bottom: 70px; transform: none; flex-direction: row; right: 8px; }
+  .dock-btn { width: 44px; height: 44px; }
+  .drawer { right: 8px; left: 8px; width: auto; bottom: 124px; }
+}
