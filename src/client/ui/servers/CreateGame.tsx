@@ -11,10 +11,11 @@ export function CreateGame() {
   const [maxPlayers, setMax] = useState<number>(META_CONFIG.defaultMaxPlayers);
   const [visibility, setVis] = useState<LobbyVisibility>('PUBLIC');
   const [busy, setBusy] = useState(false);
+  const [duration, setDuration] = useState<'short' | 'normal'>('normal');
 
   const create = async () => {
     setBusy(true);
-    const lobby = await attempt(call('lobby:create', { name, maxPlayers, visibility }));
+    const lobby = await attempt(call('lobby:create', { name, maxPlayers, visibility, duration }));
     setBusy(false);
     if (lobby) useStore.setState({ lobby, screen: 'lobby' });
   };
@@ -41,6 +42,12 @@ export function CreateGame() {
           <button className={visibility === 'PRIVATE' ? 'active' : ''} onClick={() => setVis('PRIVATE')}>PRIVATE</button>
         </div>
         <p className="hint">{visibility === 'PRIVATE' ? 'Seules les personnes ayant le code pourront entrer.' : 'Visible dans la liste des serveurs.'}</p>
+        <div className="field-label">Durée de la nuit</div>
+        <div className="seg">
+          <button className={duration === 'short' ? 'active' : ''} onClick={() => setDuration('short')}>Courte (~8 min)</button>
+          <button className={duration === 'normal' ? 'active' : ''} onClick={() => setDuration('normal')}>Normale (~15 min)</button>
+        </div>
+        <p className="hint">Dans le lobby, l’hôte peut compléter la table avec des invités IA.</p>
         <button className="btn btn-primary btn-lg" onClick={create} disabled={busy}>
           OUVRIR LES PORTES
         </button>

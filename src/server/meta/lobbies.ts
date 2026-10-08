@@ -12,6 +12,8 @@ import type { NotificationService } from './notifications';
 import type { PresenceService } from './presence';
 import type { DB } from './db';
 import { lobbyCode, newId, shortId, UserError } from '../util';
+import { randomCharacter } from '@shared/content/character';
+import type { Character } from '@shared/types';
 
 interface LobbyPlayer {
   userId: string;
@@ -34,7 +36,14 @@ interface Lobby {
   /** joueurs encore « dans » la partie (avant retour au lobby) */
   inGame: Set<string>;
   startTimer?: NodeJS.Timeout;
+  /** invités IA : identité propre au salon */
+  bots: Map<string, { name: string; character: Character }>;
+  duration: NightDuration;
 }
+
+export type NightDuration = 'short' | 'normal';
+const DURATION_SCALE: Record<NightDuration, number> = { short: 0.55, normal: 1 };
+const isBot = (id: string) => id.startsWith('bot:');
 
 export interface LobbyEmitter {
   toUser(userId: string, event: string, payload?: unknown): void;
@@ -67,12 +76,19 @@ export class LobbyManager {
 
   // ───────────── lecture ─────────────
 
+  private lobbyOfBot(botId: string): Lobby | undefined {
+    for (const l of this.lobbies.values()) if (l.bots.has(botId)) return l;
+    return undefined;
+  }
+
   private lobbyOfUser(userId: string): Lobby | undefined {
     const id = this.userLobby.get(userId);
     return id ? this.lobbies.get(id) : undefined;
   }
 
-  private nameOf(userId: string) {
+  private nameOf(userId: string, l?: Lobby) {
+    const bot = l?.bots.get(userId) ?? (isBot(userId) ? this.lobbyOfBot(userId)?.bots.get(userId) : undefined);
+    if (bot) return bot.name;
     const u = this.auth.getUser(userId);
     return this.profiles.displayName(userId, u?.username ?? '???');
   }
@@ -88,6 +104,7 @@ export class LobbyManager {
       visibility: l.visibility,
       status: l.status,
       minPlayers: META_CONFIG.minPlayersToStart,
+      duration: l.duration,
       canStart:
         forUser === l.hostId &&
         l.status === 'WAITING' &&
@@ -96,8 +113,9 @@ export class LobbyManager {
         readyCount === l.players.length,
       players: l.players.map((p) => ({
         userId: p.userId,
-        username: this.auth.getUser(p.userId)?.username ?? '???',
-        character: this.profiles.getCharacter(p.userId),
+        bot: isBot(p.userId),
+        username: l.bots.get(p.userId) ? 'Invité IA' : (this.auth.getUser(p.userId)?.username ?? '???'),
+        character: l.bots.get(p.userId)?.character ?? this.profiles.getCharacter(p.userId),
         ready: p.ready,
         isHost: p.userId === l.hostId,
         connected: p.connected,
@@ -142,7 +160,7 @@ export class LobbyManager {
   // ───────────── diffusion ─────────────
 
   private broadcast(l: Lobby) {
-    for (const p of l.players) this.emitter.toUser(p.userId, 'lobby:state', this.view(l, p.userId));
+    for (const p of l.players) if (!isBot(p.userId)) this.emitter.toUser(p.userId, 'lobby:state', this.view(l, p.userId));
   }
 
   private notifyFriendsOfPresence(userId: string) {
@@ -180,7 +198,7 @@ export class LobbyManager {
     return out;
   }
 
-  create(userId: string, p: { name: string; maxPlayers: number; visibility: LobbyVisibility }): LobbyView {
+  create(userId: string, p: { name: string; maxPlayers: number; visibility: LobbyVisibility; duration?: NightDuration }): LobbyView {
     this.requireCharacter(userId);
     const s = this.validateSettings(p);
     if (!s.name || !s.maxPlayers || !s.visibility) throw new UserError('Paramètres incomplets.');
@@ -200,6 +218,8 @@ export class LobbyManager {
       chat: [],
       game: null,
       inGame: new Set(),
+      bots: new Map(),
+      duration: p.duration === 'short' ? 'short' : 'normal',
     };
     this.system(l, `${this.nameOf(userId)} a ouvert les portes de « ${l.name} ».`);
     this.lobbies.set(l.id, l);
@@ -254,12 +274,14 @@ export class LobbyManager {
     }
     this.emitter.toUser(userId, 'lobby:state', null);
     this.notifyFriendsOfPresence(userId);
-    if (l.players.length === 0) {
+    const humans = l.players.filter((p) => !isBot(p.userId));
+    if (humans.length === 0) {
+      l.players = [];
       this.destroy(l);
       return;
     }
     if (l.hostId === userId) {
-      l.hostId = l.players[0].userId;
+      l.hostId = humans[0].userId;
       this.system(l, `${this.nameOf(l.hostId)} est maintenant l’hôte.`);
     }
     if (l.status === 'STARTING') this.cancelStart(l, 'Un joueur est parti : lancement annulé.');
@@ -295,14 +317,23 @@ export class LobbyManager {
     if (targetId === hostId) throw new UserError('Vous ne pouvez pas vous expulser.');
     if (l.game) throw new UserError('Impossible pendant une partie.');
     if (!l.players.some((p) => p.userId === targetId)) throw new UserError('Joueur absent.');
+    if (isBot(targetId)) {
+      const name = this.nameOf(targetId, l);
+      l.players = l.players.filter((p) => p.userId !== targetId);
+      l.bots.delete(targetId);
+      this.system(l, `${name} quitte la villa.`);
+      this.broadcast(l);
+      return;
+    }
     this.leave(targetId);
     this.notifications.notify(targetId, 'KICKED', 'Expulsé·e', `L’hôte vous a retiré·e de « ${l.name} ».`, {}, { ephemeral: true });
   }
 
-  updateSettings(hostId: string, p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility }) {
+  updateSettings(hostId: string, p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration }) {
     const l = this.requireHost(hostId);
     if (l.status !== 'WAITING') throw new UserError('Impossible maintenant.');
     Object.assign(l, this.validateSettings(p, l));
+    if (p.duration === 'short' || p.duration === 'normal') l.duration = p.duration;
     this.system(l, 'L’hôte a modifié les paramètres.');
     this.broadcast(l);
   }
@@ -348,6 +379,31 @@ export class LobbyManager {
     this.broadcast(l);
   }
 
+  // ───────────── invités IA ─────────────
+
+  addBot(hostId: string) {
+    const l = this.requireHost(hostId);
+    if (l.status !== 'WAITING' || l.game) throw new UserError('Impossible maintenant.');
+    if (l.players.length >= l.maxPlayers) throw new UserError('La partie est complète.');
+    const taken = new Set(l.players.map((p) => this.nameOf(p.userId, l)));
+    let character = randomCharacter();
+    for (let i = 0; i < 20 && taken.has(`${character.firstName} ${character.lastName}`); i++) character = randomCharacter();
+    const id = `bot:${shortId()}`;
+    const name = `${character.firstName} ${character.lastName}`;
+    l.bots.set(id, { name, character });
+    l.players.push({ userId: id, ready: true, joinedAt: Date.now(), connected: true });
+    this.system(l, `${name} (invité IA) est arrivé·e.`);
+    this.broadcast(l);
+  }
+
+  /** Partie rapide : un salon privé, des invités IA, nuit courte, lancement immédiat. */
+  quickPlay(userId: string, bots = 4): LobbyView {
+    const view = this.create(userId, { name: 'Partie rapide', maxPlayers: bots + 1, visibility: 'PRIVATE', duration: 'short' });
+    for (let i = 0; i < bots; i++) this.addBot(userId);
+    this.start(userId);
+    return this.view(this.lobbies.get(view.id)!, userId);
+  }
+
   // ───────────── lancement ─────────────
 
   start(hostId: string) {
@@ -367,7 +423,7 @@ export class LobbyManager {
   private cancelStart(l: Lobby, reason: string) {
     if (l.startTimer) clearTimeout(l.startTimer);
     l.status = 'WAITING';
-    for (const p of l.players) p.ready = false;
+    for (const p of l.players) p.ready = isBot(p.userId);
     this.system(l, reason);
   }
 
@@ -376,16 +432,17 @@ export class LobbyManager {
     if (!this.lobbies.has(l.id) || l.status !== 'STARTING') return;
     const players = l.players.map((p) => ({
       userId: p.userId,
-      name: this.nameOf(p.userId),
-      character: this.profiles.getCharacter(p.userId)!,
+      name: this.nameOf(p.userId, l),
+      character: l.bots.get(p.userId)?.character ?? this.profiles.getCharacter(p.userId)!,
+      bot: isBot(p.userId),
     }));
-    l.inGame = new Set(players.map((p) => p.userId));
+    l.inGame = new Set(players.filter((p) => !p.bot).map((p) => p.userId));
     l.game = new GameInstance({
       id: newId(),
       lobbyId: l.id,
       title: l.name,
       players,
-      timeScale: this.timeScale,
+      timeScale: this.timeScale * DURATION_SCALE[l.duration],
       emit: (userId, event, payload) => {
         if (l.inGame.has(userId)) this.emitter.toUser(userId, event, payload);
       },
@@ -393,6 +450,7 @@ export class LobbyManager {
     });
     l.status = 'IN_GAME';
     for (const p of l.players) {
+      if (isBot(p.userId)) continue;
       if (!p.connected) l.game.setConnected(p.userId, false);
       this.emitter.toUser(p.userId, 'session:state', this.sessionState(p.userId));
       this.notifyFriendsOfPresence(p.userId);
@@ -403,6 +461,7 @@ export class LobbyManager {
   private onGameFinished(l: Lobby, epi: EpilogueView) {
     const g = l.game!;
     for (const p of g.players.values()) {
+      if (p.bot) continue;
       const won = epi.caseType === 'quiet' ? false : p.id === epi.culpritId ? !epi.culpritCaught : epi.culpritCaught;
       try {
         this.profiles.recordGame(p.id, won);
@@ -415,7 +474,7 @@ export class LobbyManager {
       .run(g.id, l.name, epi.caseType, epi.headline, JSON.stringify([...g.players.values()].map((p) => p.name)), Date.now());
     // Le salon redevient disponible ; chacun y revient quand il a fini de lire l'épilogue
     l.status = 'WAITING';
-    for (const p of l.players) p.ready = false;
+    for (const p of l.players) p.ready = isBot(p.userId);
     this.system(l, `Fin de la nuit : ${epi.headline}`);
     this.broadcast(l);
     // filet de sécurité : libère la partie au bout de 15 minutes

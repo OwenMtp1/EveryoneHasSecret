@@ -70,7 +70,10 @@ export function LobbyScreen() {
           p ? (
             <div key={p.userId} className={`roster-item ${p.ready || p.isHost ? 'is-ready' : ''} ${!p.connected ? 'is-away' : ''}`}>
               <Portrait character={p.character} size={34} />
-              <span className="grow">{p.character ? `${p.character.firstName} ${p.character.lastName}` : p.username}</span>
+              <span className="grow">
+                {p.character ? `${p.character.firstName} ${p.character.lastName}` : p.username}
+                {p.bot && <span className="chip chip-bot">IA</span>}
+              </span>
               <span className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'READY ✓' : 'NOT READY'}</span>
               {isHost && !p.isHost && lobby.status === 'WAITING' && (
                 <button className="kick" title="Expulser" onClick={() => confirm(`Expulser ${p.username} ?`) && attempt(call('lobby:kick', p.userId))}>✕</button>
@@ -98,7 +101,7 @@ export function LobbyScreen() {
         </div>
         <div className="panel lobby-actions">
           <div className="muted">
-            {lobby.players.length} / {lobby.maxPlayers} joueurs · {ready} prêts · minimum {lobby.minPlayers}
+            {lobby.players.length} / {lobby.maxPlayers} joueurs · {ready} prêts · minimum {lobby.minPlayers} · nuit {lobby.duration === 'short' ? 'courte' : 'normale'}
           </div>
           {inGame && (
             <button className="btn btn-primary btn-lg" onClick={() => go('game')}>REVENIR À LA PARTIE</button>
@@ -114,6 +117,9 @@ export function LobbyScreen() {
             </button>
           )}
           <div className="row-actions">
+            {isHost && lobby.status === 'WAITING' && lobby.players.length < lobby.maxPlayers && (
+              <button className="btn btn-sm" onClick={() => attempt(call('lobby:addBot'))}>+ INVITÉ IA</button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={() => setShowInvite(!showInvite)}>INVITE FRIENDS</button>
             {isHost && <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(!showSettings)}>Paramètres</button>}
             {isHost && <button className="btn btn-ghost btn-sm danger" onClick={() => confirm('Fermer la partie pour tout le monde ?') && attempt(call('lobby:close'))}>Fermer</button>}
@@ -147,6 +153,11 @@ function LobbySettings() {
       <div className="seg seg-wrap">
         {META_CONFIG.maxPlayersOptions.map((n) => (
           <button key={n} className={lobby.maxPlayers === n ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { maxPlayers: n }))}>{n}</button>
+        ))}
+      </div>
+      <div className="seg">
+        {(['short', 'normal'] as const).map((d) => (
+          <button key={d} className={lobby.duration === d ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { duration: d }))}>{d === 'short' ? 'Nuit courte' : 'Nuit normale'}</button>
         ))}
       </div>
       <div className="seg">

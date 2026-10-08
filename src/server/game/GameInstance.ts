@@ -55,13 +55,15 @@ import { ScenarioDirector } from './director';
 import { RelationshipSystem } from './relationships';
 import { ActionSystem } from './actions';
 import { InvestigationSystem } from './investigation';
+import { BotSystem } from './bots';
+import { doorsBetween } from './pathfinding';
 import { seededRandom, shortId, UserError } from '../util';
 
 export interface GameInit {
   id: string;
   lobbyId: string;
   title: string;
-  players: { userId: string; name: string; character: Character }[];
+  players: { userId: string; name: string; character: Character; bot?: boolean }[];
   emit: (userId: string, event: 'game:full' | 'game:snapshot' | 'game:ended', payload?: unknown) => void;
   onFinished?: (epilogue: EpilogueView, game: GameInstance) => void;
   /** < 1 accélère toute la nuit (tests). */
@@ -111,6 +113,7 @@ export class GameInstance {
   readonly relationships: RelationshipSystem;
   readonly actions: ActionSystem;
   readonly investigation: InvestigationSystem;
+  readonly bots: BotSystem;
 
   private seq = 0;
   private timers: NodeJS.Timeout[] = [];
@@ -138,6 +141,7 @@ export class GameInstance {
         id: pl.userId,
         name: pl.name,
         character: pl.character,
+        bot: !!pl.bot,
         alive: true,
         connected: true,
         pos: { ...spawn },
@@ -173,8 +177,10 @@ export class GameInstance {
     this.relationships = new RelationshipSystem(this);
     this.actions = new ActionSystem(this);
     this.investigation = new InvestigationSystem(this);
+    this.bots = new BotSystem(this);
 
     this.director.setup();
+    for (const p of this.players.values()) if (p.bot) this.bots.register(p.id);
     if (!init.manual) this.start();
     this.log('GAME_STARTED', { text: `La nuit commence — ${this.title}`, data: { seeds: this.director.seeds } });
   }
@@ -211,7 +217,11 @@ export class GameInstance {
     const now = this.now();
     const dt = Math.min(0.25, Math.max(0, (now - (this.lastSimAt || now)) / 1000));
     this.lastSimAt = now;
-    if (!this.ended) for (const p of this.players.values()) this.simulatePlayer(p, dt);
+    if (!this.ended) {
+      this.bots.steer();
+      for (const p of this.players.values()) this.simulatePlayer(p, dt);
+      this.bots.think();
+    }
     if (now - this.lastSecondTick >= 1000) {
       this.lastSecondTick = now;
       this.secondTick();
@@ -285,9 +295,17 @@ export class GameInstance {
     return !this.isBlackout() || this.hasLight(p) || !!roomById(p.roomId)?.outdoor;
   }
 
-  /** L'observateur voit-il la cible ? (même pièce + lumière) */
+  /**
+   * L'observateur voit-il la cible ? Même pièce (avec lumière pendant une coupure),
+   * ou pièce voisine à travers une porte ouverte, si les deux sont près de cette porte.
+   */
   canSee(observer: PlayerState, target: PlayerState) {
-    if (observer.roomId !== target.roomId) return false;
+    if (observer.roomId !== target.roomId) {
+      if (this.isBlackout()) return false;
+      return doorsBetween(observer.roomId, target.roomId, this.unlockedDoors).some(
+        (d) => Math.hypot(d.x + 0.5 - observer.pos.x, d.y + 0.5 - observer.pos.y) < 7 && Math.hypot(d.x + 0.5 - target.pos.x, d.y + 0.5 - target.pos.y) < 7,
+      );
+    }
     if (!this.isBlackout()) return true;
     if (roomById(observer.roomId)?.outdoor) return Math.hypot(observer.pos.x - target.pos.x, observer.pos.y - target.pos.y) < 3;
     return this.hasLight(observer) || this.hasLight(target);
@@ -471,14 +489,14 @@ export class GameInstance {
   }
 
   private recordSighting(observer: PlayerState, target: PlayerState, force = false) {
-    const key = `${target.id}|${observer.roomId}`;
+    const key = `${target.id}|${target.roomId}`;
     const last = observer.sightings.get(key);
     const clock = this.clock();
     if (!force && last !== undefined && clock - last < SIGHTING_COOLDOWN_MIN) return;
     if (force && last !== undefined && clock - last < 3) return;
     observer.sightings.set(key, clock);
     const stained = target.stained ? ' Ses vêtements portent une tache sombre.' : '';
-    this.know(observer.id, 'seen', `${formatClock(clock)} — Vu ${target.name} (${roomName(observer.roomId)}).${stained}`, { important: !!stained });
+    this.know(observer.id, 'seen', `${formatClock(clock)} — Vu ${target.name} (${roomName(target.roomId)}).${stained}`, { important: !!stained });
   }
 
   private recordSightings() {
@@ -798,7 +816,7 @@ export class GameInstance {
 
   broadcast() {
     for (const p of this.players.values()) {
-      if (!p.connected) continue;
+      if (!p.connected || p.bot) continue;
       if (p.dirty) {
         p.dirty = false;
         this.emitFn(p.id, 'game:full', this.buildSelfView(p));

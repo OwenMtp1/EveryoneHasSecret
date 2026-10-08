@@ -353,7 +353,7 @@ export class ActionSystem {
       if (t.id === p.id || t.roomId !== p.roomId || dist(t.pos, p.pos) > GAME_CONFIG.interactRange) continue;
       const motive = p.motiveAgainst.has(t.id) && g.motivePhases().includes(g.phase);
       if (!phaseOk && !motive) continue;
-      const witnesses = g.alivePlayers().filter((w) => w.id !== p.id && w.id !== t.id && w.roomId === p.roomId && g.canSee(w, p));
+      const witnesses = g.alivePlayers().filter((w) => w.id !== p.id && w.id !== t.id && g.canSee(w, p));
       if (witnesses.length === 0) return { target: t, weapon, dark };
     }
     return null;

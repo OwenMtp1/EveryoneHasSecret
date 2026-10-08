@@ -69,6 +69,7 @@ export type LobbyStatus = 'WAITING' | 'STARTING' | 'IN_GAME';
 
 export interface LobbyPlayerView {
   userId: string;
+  bot?: boolean;
   username: string;
   character: Character | null;
   ready: boolean;
@@ -96,6 +97,7 @@ export interface LobbyView {
   chat: LobbyChatMessage[];
   minPlayers: number;
   canStart: boolean;
+  duration: 'short' | 'normal';
 }
 
 export interface ServerListEntry {

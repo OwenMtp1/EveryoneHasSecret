@@ -59,15 +59,17 @@ export interface ClientToServerEvents {
   // Serveurs & lobby
   'servers:list': (filters: ServerFilters, ack: Ack<ServerListEntry[]>) => void;
   'lobby:create': (
-    p: { name: string; maxPlayers: number; visibility: LobbyVisibility },
+    p: { name: string; maxPlayers: number; visibility: LobbyVisibility; duration?: 'short' | 'normal' },
     ack: Ack<LobbyView>,
   ) => void;
+  'lobby:addBot': (ack: Ack<null>) => void;
+  'lobby:quickplay': (p: { bots?: number }, ack: Ack<LobbyView>) => void;
   'lobby:join': (p: { lobbyId?: string; code?: string }, ack: Ack<LobbyView>) => void;
   'lobby:leave': (ack: Ack<null>) => void;
   'lobby:ready': (ready: boolean, ack: Ack<null>) => void;
   'lobby:kick': (userId: string, ack: Ack<null>) => void;
   'lobby:settings': (
-    p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility },
+    p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: 'short' | 'normal' },
     ack: Ack<null>,
   ) => void;
   'lobby:close': (ack: Ack<null>) => void;

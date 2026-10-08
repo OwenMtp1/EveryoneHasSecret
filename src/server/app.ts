@@ -186,6 +186,11 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
     socket.on('servers:list', handle((f) => lobbies.list(userId, f ?? {})));
     socket.on('lobby:create', handle((p) => lobbies.create(userId, p)));
     socket.on('lobby:join', handle((p) => lobbies.join(userId, p ?? {})));
+    socket.on('lobby:addBot', handle(() => {
+      lobbies.addBot(userId);
+      return null;
+    }));
+    socket.on('lobby:quickplay', handle((p) => lobbies.quickPlay(userId, Math.max(1, Math.min(5, Number(p?.bots ?? 4) || 4)))));
     socket.on('lobby:leave', handle(() => {
       lobbies.leave(userId);
       return null;

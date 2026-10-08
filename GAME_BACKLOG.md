@@ -20,6 +20,12 @@ Rendu entièrement en 3D dans le navigateur (Three.js) : villa générée depuis
 ### V0.3 — personnages réalistes, étape 1
 Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec animations capturées (attente, marche, course) transférées en espace monde depuis le mannequin Mixamo ; mélange des animations selon la vitesse ; teinte de peau et couleurs de tenue appliquées à l'homme. Repli automatique sur le personnage procédural. Voir `public/models/README.md`.
 
+### V0.4 — jouer seul : invités IA + partie rapide
+- **Invités IA** (`server/game/bots.ts`) : mêmes actions validées que les humains ; exploration (pathfinding), mémoire des objets aperçus, relations, rancunes (un bot avec mobile va chercher une arme et suit sa cible), meurtre opportuniste, nettoyage après coup, témoignages (le coupable ment), rôles d'enquête joués (autopsie, inspection, caméras, empreintes, interrogatoires) et résultats partagés, vote d'après ses connaissances.
+- **Partie rapide** : vous + 4 invités IA, nuit courte, un clic. L'hôte peut aussi ajouter/retirer des invités IA dans n'importe quel lobby.
+- **Durée de la nuit** : courte (~8 min) ou normale (~15 min).
+- **Ligne de vue** : on voit (et on est vu) à travers une porte ouverte, près de celle-ci ; les témoins à travers une porte empêchent l'opportunité.
+
 ### Problèmes découverts pendant le développement
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
 - Le serveur émet `session:state` dès la connexion : un client doit brancher ses écouteurs **avant** `connect` (corrigé dans les tests).
@@ -87,6 +93,8 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ⬜ [P2] Filtres langue, type de partie, difficulté, scénario, mode (structure `ServerFilters` extensible)
 
 ## LOBBY
+- ✅ [P0] Invités IA ajoutables/retirables par l'hôte · ✅ [P0] Partie rapide (solo + IA) · ✅ [P1] Durée de nuit (courte/normale)
+- ⬜ [P1] Niveau des invités IA (naïf / rusé), personnalités
 - ✅ [P0] Créer une partie (nom, max joueurs 2–8, PUBLIC / PRIVATE)
 - ✅ [P0] Code de partie (6 caractères non ambigus) · ✅ [P0] JOIN GAME par code
 - ✅ [P0] Lobby en scène (personnages, READY ✓ / NOT READY, places libres)
@@ -233,7 +241,7 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ✅ [P1] Direction artistique sombre/élégante (Cormorant + Inter, or ancien/cramoisi)
 - ✅ [P0] Villa 3D (sols texturés par matériau, murs, plafonds, portes, fenêtres, mobilier composé, lampes, cheminée animée, traces au sol, corps)
 - ✅ [P1] Menu, créateur, lobby, profil et épilogue en 3D
-- ⬜ [P1] Ombres dynamiques (performance à mesurer) · ⬜ [P1] Ligne de vue : voir les joueurs à travers les portes ouvertes (filtrage serveur)
+- ⬜ [P1] Ombres dynamiques (performance à mesurer) · ✅ [P1] Ligne de vue : voir les joueurs à travers les portes ouvertes (filtrage serveur)
 - ⬜ [P2] Modèles 3D d'objets au lieu d'icônes · ⬜ [P2] Post-traitement (bloom, grain) · ⬜ [P3] Graphismes définitifs
 
 ## TECHNICAL

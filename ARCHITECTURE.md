@@ -57,6 +57,8 @@ src/
       relationships.ts        relations, historique social, trahisons
       investigation.ts        affaire, rôles dynamiques, outils, témoignages, vote, épilogue
       events/engine.ts        moteur de règles générique
+      bots.ts                 invités IA (mêmes actions validées que les humains)
+      pathfinding.ts          chemins sur la grille, portes entre pièces
 
   client/
     store.ts                  état client (Zustand) + abonnements socket
@@ -135,5 +137,4 @@ Les erreurs métier lèvent `UserError` (message affiché tel quel) ; toute autr
 - Un seul processus serveur (pas de répartition horizontale des parties).
 - Un seul meurtre par partie (`maxMurders = 1`).
 - Pas de pathfinding/clic-pour-aller ; contrôles clavier + souris (mobile non optimisé).
-- Visibilité serveur par pièce : à travers une porte ouverte, on ne voit pas encore les joueurs de la pièce voisine (ligne de vue à faire).
 - Personnages en primitives (style « figurine ») : à remplacer par des modèles riggés (glTF) sans changer les données.

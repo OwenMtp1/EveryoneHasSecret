@@ -20,7 +20,7 @@ npm run build
 npm start            # → http://localhost:3001
 ```
 
-Pour tester seul : ouvrez plusieurs fenêtres **privées** (une session par fenêtre), créez un compte dans chacune, une partie dans l’une, rejoignez avec le code dans les autres.
+**Jouer seul** : menu **JOUER → PARTIE RAPIDE** (vous + 4 invités IA, nuit courte). À plusieurs : une fenêtre privée par joueur, ou de vrais amis ; l’hôte peut compléter la table avec des invités IA.
 
 ### Variables d’environnement
 
