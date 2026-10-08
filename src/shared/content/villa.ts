@@ -50,7 +50,8 @@ export interface FurnitureDef {
     | 'tree'
     | 'car'
     | 'fireplace'
-    | 'crate';
+    | 'crate'
+    | 'stairs';
   x: number;
   y: number;
   w: number;
@@ -118,6 +119,7 @@ export const FURNITURE: FurnitureDef[] = [
   // Hall
   { id: 'f_hall_clock', roomId: 'hall', name: 'Horloge de parquet', kind: 'clock', x: 12, y: 14, w: 1, h: 1 },
   { id: 'f_hall_console', roomId: 'hall', name: 'Console', kind: 'table', x: 25, y: 14, w: 2, h: 1, hiding: true },
+  { id: 'f_hall_stairs', roomId: 'hall', name: 'Escalier', kind: 'stairs', x: 26, y: 17, w: 3, h: 5, hiding: true },
   // Chambres
   { id: 'f_bed1', roomId: 'bedroom1', name: 'Lit', kind: 'bed', x: 30, y: 19, w: 2, h: 3, hiding: true },
   { id: 'f_wardrobe1', roomId: 'bedroom1', name: 'Armoire', kind: 'wardrobe', x: 37, y: 19, w: 1, h: 2, hiding: true },

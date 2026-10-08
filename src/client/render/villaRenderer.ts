@@ -30,6 +30,7 @@ const FURNITURE_STYLE: Record<FurnitureDef['kind'], { color: string; icon: strin
   car: { color: '#3a1d1d', icon: '🚗' },
   fireplace: { color: '#3b2016', icon: '🔥' },
   crate: { color: '#5d4630', icon: '📦' },
+  stairs: { color: '#4a3322', icon: '🪜' },
 };
 
 function hash(x: number, y: number) {

@@ -14,6 +14,12 @@ import { labelSprite, emojiSprite } from './sprites';
 import { realisticReady } from './realistic';
 import { objectModel } from './objects3d';
 import { voice } from '../voice';
+import { loadEnvironment } from './materials';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { roomAt as roomAtPos, buildWorldGrid } from '@shared/content/villa';
 
 type CamMode = 'third' | 'first';
 
@@ -50,6 +56,9 @@ export class GameView3D {
   private moon: THREE.DirectionalLight;
   private selfLight = new THREE.PointLight('#ffd9a8', 2.2, 4.5, 1.4);
   private raycaster = new THREE.Raycaster();
+  private composer: EffectComposer;
+  private bloom: UnrealBloomPass;
+  private grid = buildWorldGrid();
   private clock = new THREE.Clock();
   private raf = 0;
   private view: GameSelfView | null = null;
@@ -76,17 +85,33 @@ export class GameView3D {
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.domElement.className = 'villa-canvas';
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color('#05070c');
-    this.scene.fog = new THREE.FogExp2('#06080e', 0.045);
-    this.hemi = new THREE.HemisphereLight('#6d7fa8', '#0b0b10', 0.55);
+    this.scene.fog = new THREE.FogExp2('#06080e', 0.03);
+    this.hemi = new THREE.HemisphereLight('#6d7fa8', '#0b0b10', 0.32);
     this.scene.add(this.hemi);
-    this.moon = new THREE.DirectionalLight('#8fa6d8', 0.5);
-    this.moon.position.set(WORLD_W / 2 - 20, 30, -10);
-    this.scene.add(this.moon);
-    this.scene.add(new THREE.AmbientLight('#1a1c26', 0.6));
+    // Clair de lune : ombres portées à l'extérieur et à travers les fenêtres
+    this.moon = new THREE.DirectionalLight('#8fa6d8', 0.6);
+    this.moon.position.set(WORLD_W / 2 - 18, 32, -14);
+    this.moon.target.position.set(WORLD_W / 2, 0, WORLD_H / 2);
+    this.moon.castShadow = true;
+    this.moon.shadow.mapSize.set(2048, 2048);
+    Object.assign(this.moon.shadow.camera, { left: -32, right: 32, top: 24, bottom: -24, near: 1, far: 90 });
+    this.moon.shadow.bias = -0.0008;
+    this.scene.add(this.moon, this.moon.target);
+    this.scene.add(new THREE.AmbientLight('#1a1c26', 0.35));
     this.scene.add(this.selfLight);
+    loadEnvironment(this.renderer, this.scene, 0.22);
+
+    // Post-traitement : halo léger autour des sources lumineuses
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.55, 0.88);
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
 
     this.villa = buildVilla();
     this.scene.add(this.villa.group);
@@ -485,18 +510,22 @@ export class GameView3D {
       this.nextLightning = t + 10 + Math.random() * 18;
     }
     const blackout = this.view?.blackout;
-    this.hemi.intensity = (blackout ? 0.08 : 0.55) + this.flash * 2.2;
-    this.moon.intensity = (blackout ? 0.12 : 0.5) + this.flash * 1.5;
+    this.hemi.intensity = (blackout ? 0.06 : 0.32) + this.flash * 2.2;
+    this.moon.intensity = (blackout ? 0.18 : 0.6) + this.flash * 1.8;
     this.selfLight.intensity = blackout ? 0.8 : 2.2;
     this.flash = Math.max(0, this.flash - dt * 4);
     this.updateCamera();
-    this.renderer.render(this.scene, this.camera);
+    // Ombres de la lampe de la pièce où l'on se trouve
+    const me = this.view ? this.actors.get(this.view.you) : undefined;
+    this.villa.focusRoom(me ? roomAtPos(this.grid, me.pos.x, me.pos.z)?.id : undefined);
+    this.composer.render();
   };
 
   private resize = () => {
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   };
@@ -517,6 +546,7 @@ export class GameView3D {
       const m = o as THREE.Mesh;
       m.geometry?.dispose?.();
     });
+    this.composer.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

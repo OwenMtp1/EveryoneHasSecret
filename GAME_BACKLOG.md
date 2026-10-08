@@ -44,6 +44,12 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - **Chat vocal de proximité** (WebRTC pair-à-pair, signalisation relayée par le serveur) : on n'entend que ceux qu'on voit, volume selon la distance ; morts inaudibles pour les vivants ; micro coupable (N) ; indicateur 🔊 au-dessus des personnes qui parlent.
 - Étiquettes de nom à taille constante à l'écran.
 
+### V0.9 — villa réaliste
+- **Matériaux** : textures photo (parquet, brique, carrelage, gazon, normales d'eau, CC0 three.js) + textures procédurales (marbre, papiers peints damas/rayures, plâtre, béton, gravier, tissu) ; cache partagé (`materials.ts`).
+- **Identité par pièce** : sol, papier peint, luminaire (lustre, suspension, ampoule), tapis, teinte de lumière.
+- **Architecture** : plinthes, corniches, chambranles de porte, fenêtres à croisillons avec rideaux, façade en brique, escalier dans le hall, mobilier orienté contre les murs.
+- **Lumière** : ombres douces dynamiques (lampe principale qui suit la pièce courante), environnement HDR nocturne, bloom léger, fenêtres éclairées de l'extérieur.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
@@ -261,8 +267,8 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ✅ [P1] Direction artistique sombre/élégante (Cormorant + Inter, or ancien/cramoisi)
 - ✅ [P0] Villa 3D (sols texturés par matériau, murs, plafonds, portes, fenêtres, mobilier composé, lampes, cheminée animée, traces au sol, corps)
 - ✅ [P1] Menu, créateur, lobby, profil et épilogue en 3D
-- ⬜ [P1] Ombres dynamiques (performance à mesurer) · ✅ [P1] Ligne de vue : voir les joueurs à travers les portes ouvertes (filtrage serveur)
-- ✅ [P1] Modèles 3D d'objets (data-driven) · ⬜ [P2] Post-traitement (bloom, grain) · ⬜ [P3] Graphismes définitifs
+- ✅ [P1] Ombres dynamiques (une lampe ombrée : la pièce courante) · ✅ [P1] Ligne de vue : voir les joueurs à travers les portes ouvertes (filtrage serveur)
+- ✅ [P1] Modèles 3D d'objets (data-driven) · ✅ [P2] Post-traitement (bloom) · ⬜ grain · ⬜ [P3] Graphismes définitifs
 
 ## TECHNICAL
 - ✅ [P0] TypeScript partagé client/serveur, protocole typé

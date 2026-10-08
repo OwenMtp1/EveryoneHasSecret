@@ -1,212 +1,478 @@
 /**
- * Villa Beaumont en 3D, générée à partir des données de plan (shared/content/villa.ts).
+ * Villa Beaumont en 3D réaliste, générée à partir du plan (shared/content/villa.ts).
  * 1 tuile = 1 mètre. Monde : x = colonne, z = ligne, y = hauteur.
- * Ajouter une pièce / un meuble dans les données suffit à le faire apparaître ici.
+ *
+ *  - murs : faces orientées par pièce (papier peint / carrelage / brique en façade), plinthes, corniches
+ *  - sols PBR par matériau, tapis, plafonds en plâtre et suspensions
+ *  - portes encadrées, fenêtres avec vitrage et rideaux, façade éclairée de l'intérieur
+ *  - mobilier détaillé orienté contre le mur le plus proche
+ * Ajouter une pièce ou un meuble dans les données suffit à le faire apparaître.
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { DOORS, FURNITURE, ROOMS, WORLD_H, WORLD_W, buildWorldGrid, type FurnitureDef, type RoomDef } from '@shared/content/villa';
+import { MAT, fabricTex } from './materials';
 
 export const WALL_H = 3;
 const grid = buildWorldGrid();
+const roomIdx = (x: number, y: number) => (x < 0 || y < 0 || x >= WORLD_W || y >= WORLD_H ? 0 : grid.rooms[y * WORLD_W + x]);
+const roomAtTile = (x: number, y: number): RoomDef | null => {
+  const r = roomIdx(x, y);
+  return r ? ROOMS[r - 1] : null;
+};
+const isDoor = (x: number, y: number) => x >= 0 && y >= 0 && x < WORLD_W && y < WORLD_H && !!grid.doors[y * WORLD_W + x];
 
-function floorTexture(room: RoomDef): THREE.Texture {
+// ───────────── style des pièces ─────────────
+
+interface RoomStyle {
+  floor: (w: number, h: number) => THREE.Material;
+  wall: () => THREE.Material;
+  light: string;
+  lamp: 'pendant' | 'chandelier' | 'bulb';
+  rug?: { w: number; h: number; base: string; border: string; dx?: number; dz?: number };
+}
+
+const STYLE: Record<string, RoomStyle> = {
+  kitchen: { floor: (w, h) => MAT.tiles(w, h), wall: () => MAT.wallpaper('#d9d1bf', '#b9ae97', 'tiles', WALL_H), light: '#ffd9a6', lamp: 'pendant' },
+  living: { floor: (w, h) => MAT.hardwood(w, h), wall: () => MAT.wallpaper('#2f4a3c', '#c9a45c', 'damask', WALL_H), light: '#ffc98a', lamp: 'chandelier', rug: { w: 5, h: 3.2, base: '#5a1820', border: '#c9a45c', dx: -4, dz: 0.4 } },
+  office: { floor: (w, h) => MAT.hardwood(w, h, '#8a6a52'), wall: () => MAT.wallpaper('#1f2a40', '#3a4a6a', 'stripes', WALL_H), light: '#ffcf96', lamp: 'pendant', rug: { w: 3, h: 2, base: '#3a2232', border: '#a07a4a', dz: 0.5 } },
+  bathroom: { floor: (w, h) => MAT.tiles(w, h), wall: () => MAT.wallpaper('#e8ecef', '#9fb0bc', 'tiles', WALL_H), light: '#f1f4ff', lamp: 'bulb' },
+  cellar: { floor: (w, h) => MAT.concrete(w, h), wall: () => MAT.brick(1, WALL_H / 1.5), light: '#ffb070', lamp: 'bulb' },
+  hall: { floor: (w, h) => MAT.marble(w, h), wall: () => MAT.wallpaper('#5a1d26', '#8a3a44', 'damask', WALL_H), light: '#ffc98a', lamp: 'chandelier', rug: { w: 2, h: 6, base: '#3b1218', border: '#c9a45c', dz: 0 } },
+  corridor: { floor: (w, h) => MAT.hardwood(w, h), wall: () => MAT.wallpaper('#c9b48f', '#a88f68', 'stripes', WALL_H), light: '#ffcf96', lamp: 'bulb', rug: { w: 12, h: 1.2, base: '#4a2a1e', border: '#b08a4a' } },
+  bedroom1: { floor: (w, h) => MAT.hardwood(w, h), wall: () => MAT.wallpaper('#28375a', '#48618f', 'damask', WALL_H), light: '#ffd3a0', lamp: 'pendant', rug: { w: 3, h: 2, base: '#1e2a4a', border: '#c8b48a', dx: 1 } },
+  bedroom2: { floor: (w, h) => MAT.hardwood(w, h, '#a27a5a'), wall: () => MAT.wallpaper('#4a1a24', '#7a2c3a', 'damask', WALL_H), light: '#ffc58a', lamp: 'chandelier', rug: { w: 3.5, h: 2.4, base: '#3a1018', border: '#d4b06a', dx: -0.5 } },
+  garden: { floor: (w, h) => MAT.grass(w, h), wall: () => MAT.brick(1, 1.1 / 1.5), light: '', lamp: 'bulb' },
+  exterior: { floor: (w, h) => MAT.gravel(w, h), wall: () => MAT.brick(1, 1.1 / 1.5), light: '', lamp: 'bulb' },
+};
+
+// ───────────── helpers de construction ─────────────
+
+type V3 = [number, number, number];
+function box(parent: THREE.Object3D, size: V3, m: THREE.Material, pos: V3, rot: V3 = [0, 0, 0], rounded = 0) {
+  const g = rounded ? new RoundedBoxGeometry(size[0], size[1], size[2], 3, Math.min(rounded, size[0] / 2.1, size[1] / 2.1, size[2] / 2.1)) : new THREE.BoxGeometry(...size);
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(...pos);
+  mesh.rotation.set(...rot);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+function cyl(parent: THREE.Object3D, rTop: number, rBot: number, h: number, m: THREE.Material, pos: V3, rot: V3 = [0, 0, 0], seg = 20) {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, seg), m);
+  mesh.position.set(...pos);
+  mesh.rotation.set(...rot);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+function sphere(parent: THREE.Object3D, r: number, m: THREE.Material, pos: V3, scale: V3 = [1, 1, 1]) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12), m);
+  mesh.position.set(...pos);
+  mesh.scale.set(...scale);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+/** Côté du meuble adossé à un mur : 'n' (z−), 's' (z+), 'w' (x−), 'e' (x+). */
+function wallSide(f: FurnitureDef): 'n' | 's' | 'w' | 'e' | null {
+  const blockedRow = (y: number) => [...Array(f.w).keys()].every((i) => !roomIdx(f.x + i, y) || isDoor(f.x + i, y));
+  const blockedCol = (x: number) => [...Array(f.h).keys()].every((i) => !roomIdx(x, f.y + i) || isDoor(x, f.y + i));
+  if (blockedRow(f.y - 1)) return 'n';
+  if (blockedRow(f.y + f.h)) return 's';
+  if (blockedCol(f.x - 1)) return 'w';
+  if (blockedCol(f.x + f.w)) return 'e';
+  return null;
+}
+
+/** Repère local : dos du meuble vers −z (contre le mur), largeur W sur x, profondeur D sur z. */
+function oriented(f: FurnitureDef) {
+  const side = wallSide(f) ?? 'n';
+  const g = new THREE.Group();
+  g.position.set(f.x + f.w / 2, 0, f.y + f.h / 2);
+  let W = f.w;
+  let D = f.h;
+  if (side === 's') g.rotation.y = Math.PI;
+  if (side === 'w') {
+    g.rotation.y = Math.PI / 2;
+    W = f.h;
+    D = f.w;
+  }
+  if (side === 'e') {
+    g.rotation.y = -Math.PI / 2;
+    W = f.h;
+    D = f.w;
+  }
+  return { g, W: W - 0.08, D: D - 0.08 };
+}
+
+let paintingSeed = 3;
+function paintingTexture(): THREE.Texture {
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = 128;
+  c.height = 96;
   const x = c.getContext('2d')!;
-  const base = new THREE.Color(room.floorColor);
-  x.fillStyle = room.floorColor;
-  x.fillRect(0, 0, 128, 128);
-  const rnd = (i: number) => {
-    const s = Math.sin(i * 91.7 + room.id.length * 13.1) * 43758.5;
-    return s - Math.floor(s);
-  };
-  const shade = (k: number) => `#${base.clone().multiplyScalar(k).getHexString()}`;
-  switch (room.floor) {
-    case 'wood':
-      for (let i = 0; i < 4; i++) {
-        x.fillStyle = shade(0.85 + rnd(i) * 0.3);
-        x.fillRect(0, i * 32, 128, 31);
-        x.fillStyle = 'rgba(0,0,0,.35)';
-        x.fillRect(((i * 53) % 128) | 0, i * 32, 2, 32);
-      }
-      break;
-    case 'tile':
-      for (let i = 0; i < 2; i++)
-        for (let j = 0; j < 2; j++) {
-          x.fillStyle = (i + j) % 2 ? shade(1.25) : shade(0.85);
-          x.fillRect(i * 64 + 1, j * 64 + 1, 62, 62);
-        }
-      break;
-    case 'stone':
-      x.fillStyle = shade(1.15);
-      x.fillRect(2, 2, 124, 124);
-      x.strokeStyle = shade(0.7);
-      x.lineWidth = 3;
-      x.strokeRect(1, 1, 126, 126);
-      break;
-    case 'grass':
-    case 'gravel':
-      for (let i = 0; i < 260; i++) {
-        x.fillStyle = shade(0.7 + rnd(i) * 0.7);
-        const s = room.floor === 'grass' ? 3 : 2;
-        x.fillRect(rnd(i * 3) * 128, rnd(i * 7) * 128, s, room.floor === 'grass' ? 6 : s);
-      }
-      break;
-    case 'carpet':
-      x.strokeStyle = shade(1.3);
-      x.lineWidth = 2;
-      for (let i = 8; i < 128; i += 16) {
-        x.beginPath();
-        x.moveTo(i, 0);
-        x.lineTo(i, 128);
-        x.stroke();
-      }
-      x.globalAlpha = 0.4;
-      x.fillStyle = shade(0.8);
-      x.fillRect(0, 0, 128, 128);
-      break;
-    case 'concrete':
-      for (let i = 0; i < 80; i++) {
-        x.fillStyle = shade(0.8 + rnd(i) * 0.4);
-        x.fillRect(rnd(i * 5) * 128, rnd(i * 11) * 128, 6, 6);
-      }
-      break;
+  const r = () => ((paintingSeed = (paintingSeed * 16807) % 2147483647) - 1) / 2147483646;
+  const palettes = [['#2b3a2a', '#6b7b4a', '#c9b47a'], ['#1a2238', '#3a5a8a', '#d8c08a'], ['#3a1a1a', '#8a3a2a', '#e0b080'], ['#20302e', '#5a7a6a', '#f0e0b0']];
+  const p = palettes[Math.floor(r() * palettes.length)];
+  const g = x.createLinearGradient(0, 0, 0, 96);
+  g.addColorStop(0, p[1]);
+  g.addColorStop(1, p[0]);
+  x.fillStyle = g;
+  x.fillRect(0, 0, 128, 96);
+  if (r() < 0.5) {
+    x.fillStyle = p[0];
+    x.beginPath();
+    x.moveTo(0, 70);
+    for (let i = 0; i <= 128; i += 16) x.lineTo(i, 55 + r() * 25);
+    x.lineTo(128, 96);
+    x.lineTo(0, 96);
+    x.fill();
+    x.fillStyle = p[2];
+    x.beginPath();
+    x.arc(30 + r() * 70, 25, 8, 0, Math.PI * 2);
+    x.fill();
+  } else {
+    x.fillStyle = p[0];
+    x.beginPath();
+    x.ellipse(64, 40, 16, 20, 0, 0, Math.PI * 2);
+    x.fill();
+    x.fillRect(38, 58, 52, 40);
+    x.fillStyle = p[2];
+    x.globalAlpha = 0.35;
+    x.beginPath();
+    x.ellipse(60, 36, 7, 9, 0, 0, Math.PI * 2);
+    x.fill();
   }
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
   return t;
 }
 
-const M = (color: string, o: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...o });
+// ───────────── mobilier ─────────────
 
-function box(parent: THREE.Object3D, w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  parent.add(m);
-  return m;
-}
-
-/** Mobilier composé de primitives selon son type. Coordonnées : coin (f.x, f.y), taille (f.w, f.h). */
-function buildFurniture(f: FurnitureDef): THREE.Group {
-  const g = new THREE.Group();
-  const cx = f.x + f.w / 2;
-  const cz = f.y + f.h / 2;
-  g.position.set(cx, 0, cz);
-  const w = f.w - 0.1;
-  const d = f.h - 0.1;
-  const wood = M('#5c3b24');
-  const darkWood = M('#3a2416');
+function buildFurniture(f: FurnitureDef, fires: THREE.Object3D[], pendulums: THREE.Object3D[], waters: THREE.Mesh[]): THREE.Group {
+  const { g, W, D } = oriented(f);
+  const wood = MAT.wood('#5c3a22');
+  const dark = MAT.wood('#2e1d12');
+  const back = -D / 2;
   switch (f.kind) {
-    case 'table':
-    case 'desk': {
-      const top = f.kind === 'desk' ? darkWood : wood;
-      box(g, w, 0.06, d, top, 0, 0.76, 0);
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.06, 0.74, 0.06, top, sx * (w / 2 - 0.08), 0.37, sz * (d / 2 - 0.08));
-      if (f.kind === 'desk') box(g, 0.35, 0.05, 0.25, M('#d8cfb8'), 0.2, 0.81, 0);
+    case 'counter': {
+      box(g, [W, 0.86, D * 0.92], MAT.paint('#e8e2d4', 0.5), [0, 0.43, back + D * 0.46]);
+      const n = Math.max(1, Math.round(W / 0.6));
+      for (let i = 0; i < n; i++) {
+        const x = -W / 2 + W / n / 2 + i * (W / n);
+        box(g, [W / n - 0.06, 0.7, 0.02], MAT.paint('#ded7c6', 0.4), [x, 0.43, back + D * 0.93]);
+        box(g, [0.12, 0.02, 0.03], MAT.metal('#b9a27a', 0.25), [x, 0.72, back + D * 0.95]);
+      }
+      box(g, [W + 0.04, 0.05, D * 0.98], MAT.lacquer('#2a2826'), [0, 0.885, back + D * 0.49]);
+      box(g, [0.6, 0.012, 0.5], MAT.lacquer('#0b0b0c'), [W / 2 - 0.45, 0.917, back + D * 0.45]);
+      for (const [dx, dz] of [[-0.15, -0.12], [0.15, -0.12], [-0.15, 0.12], [0.15, 0.12]]) cyl(g, 0.08, 0.08, 0.004, MAT.metal('#3a3a3c', 0.5), [W / 2 - 0.45 + dx, 0.925, back + D * 0.45 + dz]);
+      box(g, [W, 0.7, 0.35], MAT.paint('#e8e2d4', 0.5), [0, 1.85, back + 0.18]);
       break;
     }
-    case 'counter':
-      box(g, w, 0.88, d, M('#e7e0d2'), 0, 0.44, 0);
-      box(g, w + 0.04, 0.05, d + 0.04, M('#2b2b2e', { roughness: 0.3 }), 0, 0.9, 0);
-      break;
-    case 'sink':
-      box(g, w, 0.85, d, M('#dfe5e8', { roughness: 0.3 }), 0, 0.42, 0);
-      box(g, w * 0.7, 0.04, d * 0.6, M('#7b8a92', { roughness: 0.2, metalness: 0.6 }), 0, 0.86, 0);
-      break;
-    case 'sofa':
-      box(g, w, 0.42, d, M('#6b1f2a'), 0, 0.21, 0);
-      box(g, w, 0.5, 0.18, M('#5a1923'), 0, 0.55, -d / 2 + 0.09);
-      for (const s of [-1, 1]) box(g, 0.18, 0.62, d, M('#5a1923'), s * (w / 2 - 0.09), 0.31, 0);
-      break;
-    case 'piano':
-      box(g, w, 0.32, d, M('#0c0c0e', { roughness: 0.15 }), 0, 0.85, 0);
-      box(g, w * 0.9, 0.04, 0.2, M('#f2efe8'), 0, 0.92, d / 2 - 0.1);
-      for (const [sx, sz] of [[-1, -1], [1, -1], [0, 1]]) box(g, 0.08, 0.7, 0.08, M('#0c0c0e'), sx * (w / 2 - 0.15), 0.35, sz * (d / 2 - 0.15));
-      break;
-    case 'shelf': {
-      const tall = 1.9;
-      box(g, w, tall, d, darkWood, 0, tall / 2, 0);
-      const colors = ['#7a2a2a', '#2b4a6b', '#3d5a33', '#8a6d2f', '#4b3354'];
-      for (let r = 0; r < 4; r++)
-        for (let i = 0; i < Math.floor((Math.max(w, d) - 0.2) / 0.16); i++) {
-          const along = -Math.max(w, d) / 2 + 0.1 + i * 0.16;
-          const bm = M(colors[(i + r) % colors.length]);
-          if (w >= d) box(g, 0.1, 0.26, d * 0.7, bm, along, 0.3 + r * 0.45, d * 0.05);
-          else box(g, d * 0.7, 0.26, 0.1, bm, w * 0.05, 0.3 + r * 0.45, along);
-        }
-      break;
-    }
-    case 'terminal':
-      box(g, w, 0.75, d, darkWood, 0, 0.375, 0);
-      box(g, 0.6, 0.42, 0.06, M('#0a0a0a'), 0, 1.0, 0);
-      box(g, 0.54, 0.36, 0.01, new THREE.MeshStandardMaterial({ color: '#0d2b1e', emissive: '#2bd17a', emissiveIntensity: 0.6 }), 0, 1.0, 0.035).name = 'screen';
-      break;
-    case 'bath':
-      box(g, w, 0.6, d, M('#f4f4f2', { roughness: 0.2 }), 0, 0.3, 0);
-      box(g, w - 0.16, 0.02, d - 0.16, M('#6c8fa3', { roughness: 0.05 }), 0, 0.55, 0);
-      break;
-    case 'bed':
-      box(g, w, 0.35, d, wood, 0, 0.175, 0);
-      box(g, w - 0.08, 0.2, d - 0.08, M('#efe9dd'), 0, 0.44, 0);
-      box(g, w - 0.06, 0.08, d * 0.6, M(f.roomId === 'bedroom2' ? '#5a1d2b' : '#24365e'), 0, 0.56, d * 0.18);
-      box(g, w * 0.7, 0.12, 0.32, M('#ffffff'), 0, 0.6, -d / 2 + 0.25);
-      box(g, w, 1.0, 0.08, darkWood, 0, 0.5, -d / 2 + 0.04);
-      break;
-    case 'wardrobe':
-      box(g, w, 2.1, d, darkWood, 0, 1.05, 0);
-      break;
-    case 'clock':
-      box(g, w * 0.6, 2.0, d * 0.6, darkWood, 0, 1.0, 0);
-      box(g, 0.3, 0.3, 0.02, M('#e8dcc0', { emissive: '#3a2a10', emissiveIntensity: 0.3 }), 0, 1.6, d * 0.3 + 0.01);
-      break;
-    case 'fountain': {
-      const basin = new THREE.Mesh(new THREE.CylinderGeometry(w / 2, w / 2, 0.5, 24), M('#7b8188'));
-      basin.position.y = 0.25;
-      g.add(basin);
-      const water = new THREE.Mesh(new THREE.CylinderGeometry(w / 2 - 0.1, w / 2 - 0.1, 0.02, 24), M('#2d4a5f', { roughness: 0.05, metalness: 0.3 }));
-      water.position.y = 0.48;
-      g.add(water);
-      box(g, 0.2, 1.2, 0.2, M('#8d939a'), 0, 0.6, 0);
-      break;
-    }
-    case 'hedge':
-      box(g, w, 1.3, d, M('#1d3b20'), 0, 0.65, 0);
-      break;
-    case 'tree': {
-      box(g, 0.3, 2.2, 0.3, M('#3b2a1c'), 0, 1.1, 0);
-      const fol = new THREE.Mesh(new THREE.SphereGeometry(1.4, 14, 10), M('#183020'));
-      fol.position.y = 3;
-      fol.castShadow = true;
-      g.add(fol);
-      break;
-    }
-    case 'car': {
-      const paint = M('#4a1414', { roughness: 0.25, metalness: 0.5 });
-      box(g, w, 0.55, d, paint, 0, 0.45, 0);
-      box(g, w * 0.55, 0.45, d * 0.9, M('#1a1c22', { roughness: 0.1, metalness: 0.4 }), -w * 0.05, 0.95, 0);
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-        const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.2, 16), M('#111'));
-        wh.rotation.x = Math.PI / 2;
-        wh.position.set(sx * (w / 2 - 0.5), 0.3, sz * (d / 2));
-        g.add(wh);
+    case 'sink': {
+      if (f.roomId === 'bathroom') {
+        cyl(g, 0.12, 0.16, 0.8, MAT.porcelain(), [0, 0.4, back + 0.3]);
+        box(g, [0.6, 0.12, 0.45], MAT.porcelain(), [0, 0.86, back + 0.26], [0, 0, 0], 0.04);
+        box(g, [0.46, 0.04, 0.3], MAT.paint('#a8b4bc', 0.1), [0, 0.91, back + 0.27]);
+        cyl(g, 0.012, 0.012, 0.18, MAT.metal(), [0, 1.0, back + 0.08]);
+        box(g, [0.6, 0.8, 0.015], MAT.wood('#3a2a1c'), [0, 1.55, back + 0.008]);
+        box(g, [0.55, 0.75, 0.01], MAT.metal('#d8dde2', 0.04), [0, 1.55, back + 0.02]);
+      } else {
+        box(g, [W, 0.86, D * 0.92], MAT.paint('#e8e2d4', 0.5), [0, 0.43, back + D * 0.46]);
+        box(g, [W + 0.04, 0.05, D * 0.98], MAT.lacquer('#2a2826'), [0, 0.885, back + D * 0.49]);
+        box(g, [W * 0.55, 0.06, D * 0.5], MAT.metal('#9aa3aa', 0.15), [0, 0.89, back + D * 0.45]);
+        cyl(g, 0.015, 0.015, 0.3, MAT.metal(), [0, 1.05, back + 0.1]);
+        box(g, [0.02, 0.02, 0.18], MAT.metal(), [0, 1.2, back + 0.18]);
       }
       break;
     }
-    case 'fireplace':
-      box(g, w + 0.3, 1.2, d, M('#6b625a'), 0, 0.6, 0);
-      box(g, w * 0.5, 0.5, d * 0.7, new THREE.MeshStandardMaterial({ color: '#ff7a2a', emissive: '#ff5a10', emissiveIntensity: 1.4 }), 0.1, 0.3, 0).name = 'fire';
+    case 'table': {
+      const low = f.roomId === 'living';
+      const isConsole = f.roomId === 'hall';
+      const h = low ? 0.42 : isConsole ? 0.82 : 0.76;
+      const tw = isConsole ? W : W * 0.7;
+      const td = isConsole ? D * 0.45 : D * (low ? 0.8 : 0.6);
+      const tz = isConsole ? back + td / 2 : 0;
+      box(g, [tw, 0.05, td], low ? MAT.lacquer('#2a1a10') : wood, [0, h, tz]);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(g, 0.025, 0.02, h, low ? MAT.metal('#b8913e', 0.3) : dark, [sx * (tw / 2 - 0.07), h / 2, tz + sz * (td / 2 - 0.07)]);
+      if (isConsole) {
+        box(g, [tw * 0.85, 1.08, 0.025], MAT.metal('#b8913e', 0.35), [0, 1.55, back + 0.008]);
+        box(g, [tw * 0.8, 1.0, 0.01], MAT.metal('#d8dde2', 0.04), [0, 1.55, back + 0.025]);
+        cyl(g, 0.06, 0.08, 0.3, MAT.porcelain(), [tw * 0.3, h + 0.17, tz]);
+      } else if (!low) {
+        for (const sz of [-1, 1])
+          for (const sx of [-0.25, 0.25]) {
+            const c = new THREE.Group();
+            c.position.set(sx * tw, 0, sz * (td / 2 + 0.22));
+            c.rotation.y = sz > 0 ? Math.PI : 0;
+            box(c, [0.42, 0.05, 0.42], wood, [0, 0.46, 0]);
+            box(c, [0.42, 0.5, 0.04], wood, [0, 0.74, -0.19]);
+            for (const lx of [-0.18, 0.18]) for (const lz of [-0.18, 0.18]) box(c, [0.035, 0.46, 0.035], dark, [lx, 0.23, lz]);
+            g.add(c);
+          }
+        box(g, [tw * 0.9, 0.006, td * 0.5], MAT.fabric('#e9e2d0'), [0, h + 0.028, 0]);
+      } else {
+        box(g, [0.3, 0.06, 0.22], MAT.paint('#6a2a2a'), [0.15, h + 0.055, 0]);
+      }
       break;
-    case 'crate':
-      box(g, w * 0.55, 0.6, d * 0.55, M('#7a5a36'), -w * 0.18, 0.3, -d * 0.18);
-      box(g, w * 0.5, 0.5, d * 0.5, M('#6b4e2f'), w * 0.2, 0.25, d * 0.2);
-      box(g, w * 0.45, 0.45, d * 0.45, M('#806040'), -w * 0.1, 0.83, -d * 0.1);
+    }
+    case 'sofa': {
+      const fab = MAT.fabric('#5b1f2a');
+      box(g, [W, 0.25, D], fab, [0, 0.27, 0], [0, 0, 0], 0.05);
+      const n = Math.max(2, Math.round(W / 0.9));
+      for (let i = 0; i < n; i++) {
+        const cw = (W - 0.36) / n;
+        const x = -W / 2 + 0.18 + cw / 2 + i * cw;
+        box(g, [cw - 0.02, 0.14, D * 0.7], fab, [x, 0.46, D * 0.08], [0, 0, 0], 0.05);
+        box(g, [cw - 0.02, 0.45, 0.18], fab, [x, 0.72, back + 0.14], [-0.12, 0, 0], 0.06);
+      }
+      for (const s of [-1, 1]) box(g, [0.18, 0.62, D], fab, [s * (W / 2 - 0.09), 0.43, 0], [0, 0, 0], 0.06);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(g, 0.025, 0.02, 0.14, MAT.metal('#b8913e', 0.3), [sx * (W / 2 - 0.1), 0.07, sz * (D / 2 - 0.1)]);
       break;
+    }
+    case 'piano': {
+      const lac = MAT.lacquer('#0a0a0b');
+      box(g, [W * 0.92, 0.3, D * 0.85], lac, [0, 0.82, 0], [0, 0, 0], 0.08);
+      box(g, [W * 0.9, 0.02, D * 0.8], lac, [0, 1.2, -0.25], [0.6, 0, 0]);
+      cyl(g, 0.008, 0.008, 0.65, MAT.metal('#b8913e'), [W * 0.2, 1.05, 0.05], [0.3, 0, 0]);
+      box(g, [W * 0.75, 0.04, 0.16], MAT.porcelain(), [0, 0.98, D * 0.43]);
+      for (let i = 0; i < 18; i++) box(g, [0.018, 0.03, 0.09], lac, [-W * 0.36 + i * (W * 0.042), 1.0, D * 0.41]);
+      for (const [sx, sz] of [[-0.4, -0.3], [0.4, -0.3], [0, 0.35]]) cyl(g, 0.05, 0.04, 0.68, lac, [sx * W, 0.34, sz * D]);
+      box(g, [0.7, 0.06, 0.32], lac, [0, 0.48, D / 2 + 0.1], [0, 0, 0], 0.02);
+      break;
+    }
+    case 'shelf': {
+      const tall = 2.1;
+      const frame = MAT.wood('#3a2416');
+      box(g, [W, tall, 0.05], frame, [0, tall / 2, back + 0.025]);
+      for (const s of [-1, 1]) box(g, [0.05, tall, D * 0.9], frame, [s * (W / 2 - 0.025), tall / 2, back + D * 0.45]);
+      const colors = ['#6a2424', '#24406a', '#2f4a28', '#7a5a22', '#3b2a4a', '#6a5a4a', '#1f1f1f'];
+      for (let r = 0; r < 5; r++) {
+        const y = 0.08 + r * 0.42;
+        box(g, [W - 0.1, 0.03, D * 0.88], frame, [0, y, back + D * 0.45]);
+        if (r === 4) continue;
+        let x = -W / 2 + 0.08;
+        let i = r * 7;
+        while (x < W / 2 - 0.12) {
+          const bw = 0.03 + ((i * 37) % 5) * 0.008;
+          const bh = 0.24 + ((i * 13) % 6) * 0.018;
+          box(g, [bw, bh, D * 0.6], MAT.paint(colors[i % colors.length], 0.7), [x + bw / 2, y + 0.015 + bh / 2, back + D * 0.4], [0, 0, (i * 7) % 9 === 0 ? 0.12 : 0]);
+          x += bw + 0.004;
+          i++;
+        }
+      }
+      break;
+    }
+    case 'desk': {
+      const top = MAT.wood('#3a2416');
+      const dd = Math.min(D, 0.75);
+      box(g, [W, 0.05, dd], top, [0, 0.76, back + dd / 2]);
+      for (const s of [-1, 1]) box(g, [Math.min(0.45, W / 3), 0.72, dd - 0.03], top, [s * (W / 2 - Math.min(0.45, W / 3) / 2 - 0.02), 0.37, back + dd / 2]);
+      if (f.roomId === 'office') {
+        box(g, [0.5, 0.01, 0.35], MAT.paint('#2a4a2a', 0.8), [0, 0.79, back + 0.4]);
+        cyl(g, 0.06, 0.08, 0.03, MAT.metal('#b8913e'), [W / 2 - 0.3, 0.8, back + 0.25]);
+        cyl(g, 0.012, 0.012, 0.3, MAT.metal('#b8913e'), [W / 2 - 0.3, 0.95, back + 0.25]);
+        box(g, [0.32, 0.08, 0.14], MAT.glow('#2f8a4a', 0.6), [W / 2 - 0.3, 1.12, back + 0.3]);
+        box(g, [0.21, 0.004, 0.3], MAT.paint('#efe8d8'), [-0.2, 0.788, back + 0.42], [0, 0.2, 0]);
+      } else {
+        box(g, [0.5, 0.6, 0.02], MAT.metal('#d8dde2', 0.04), [0, 1.2, back + 0.02]);
+        cyl(g, 0.03, 0.04, 0.1, MAT.porcelain(), [0.25, 0.83, back + 0.3]);
+      }
+      break;
+    }
+    case 'terminal': {
+      box(g, [W, 0.74, D], MAT.wood('#2e1d12'), [0, 0.37, 0]);
+      for (const dx of [-0.17, 0.17]) {
+        box(g, [0.3, 0.26, 0.28], MAT.paint('#2a2a2a', 0.5), [dx, 0.9, back + 0.2], [0, 0, 0], 0.03);
+        const screen = box(g, [0.24, 0.18, 0.01], new THREE.MeshStandardMaterial({ color: '#0d2b1e', emissive: '#3aa86a', emissiveIntensity: 0.9 }), [dx, 0.91, back + 0.345]);
+        screen.name = 'screen';
+      }
+      break;
+    }
+    case 'bath': {
+      box(g, [W, 0.6, D], MAT.porcelain(), [0, 0.38, 0], [0, 0, 0], 0.2);
+      box(g, [W - 0.15, 0.03, D - 0.15], MAT.water(), [0, 0.62, 0]);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) sphere(g, 0.05, MAT.metal('#b8913e'), [sx * (W / 2 - 0.15), 0.05, sz * (D / 2 - 0.12)]);
+      cyl(g, 0.015, 0.015, 0.4, MAT.metal(), [0, 0.85, back + 0.06]);
+      break;
+    }
+    case 'bed': {
+      const double = W > 2.2;
+      const bw = double ? Math.min(W - 0.9, 1.9) : Math.min(W, 1.5);
+      const bl = Math.min(D, 2.1);
+      const head = MAT.fabric(f.roomId === 'bedroom2' ? '#4a1a24' : '#24365e');
+      box(g, [bw, 0.3, bl], MAT.wood('#3a2416'), [0, 0.2, back + bl / 2]);
+      box(g, [bw - 0.06, 0.24, bl - 0.08], MAT.paint('#f2eee6', 0.9), [0, 0.46, back + bl / 2 + 0.02], [0, 0, 0], 0.08);
+      box(g, [bw, 0.08, bl * 0.62], MAT.fabric(f.roomId === 'bedroom2' ? '#7a2434' : '#2f4a7a'), [0, 0.6, back + bl * 0.66], [0, 0, 0], 0.04);
+      for (const s of double ? [-1, 1] : [0]) box(g, [double ? bw * 0.4 : bw * 0.7, 0.14, 0.38], MAT.paint('#ffffff', 0.9), [s * bw * 0.23, 0.66, back + 0.32], [0.25, 0, 0], 0.07);
+      box(g, [bw + 0.1, 1.1, 0.1], head, [0, 0.75, back + 0.05], [0, 0, 0], 0.05);
+      if (double)
+        for (const s of [-1, 1]) {
+          const nx = s * (bw / 2 + 0.27);
+          box(g, [0.45, 0.55, 0.4], MAT.wood('#3a2416'), [nx, 0.275, back + 0.25]);
+          cyl(g, 0.06, 0.08, 0.18, MAT.porcelain(), [nx, 0.64, back + 0.25]);
+          const shade = cyl(g, 0.15, 0.1, 0.18, MAT.fabric('#e8dcc0'), [nx, 0.82, back + 0.25], [0, 0, 0], 16);
+          shade.castShadow = false;
+        }
+      break;
+    }
+    case 'wardrobe': {
+      box(g, [W, 2.15, D * 0.9], MAT.wood('#3a2416'), [0, 1.075, back + D * 0.45]);
+      box(g, [W + 0.06, 0.08, D * 0.95], MAT.wood('#2e1d12'), [0, 2.19, back + D * 0.47]);
+      for (const s of [-1, 1]) {
+        box(g, [W / 2 - 0.08, 1.85, 0.02], MAT.wood('#4a2e1c'), [s * W * 0.25, 1.05, back + D * 0.9 + 0.01]);
+        cyl(g, 0.012, 0.012, 0.18, MAT.metal('#b8913e'), [s * 0.06, 1.1, back + D * 0.9 + 0.04]);
+      }
+      break;
+    }
+    case 'clock': {
+      const caseM = MAT.wood('#3a2416');
+      box(g, [0.5, 0.3, 0.38], caseM, [0, 0.15, back + 0.2]);
+      box(g, [0.38, 1.35, 0.3], caseM, [0, 0.98, back + 0.2]);
+      box(g, [0.5, 0.5, 0.38], caseM, [0, 1.9, back + 0.2]);
+      cyl(g, 0.17, 0.17, 0.02, MAT.paint('#efe6cc', 0.4), [0, 1.9, back + 0.4], [Math.PI / 2, 0, 0]);
+      box(g, [0.24, 0.9, 0.01], MAT.glass(), [0, 1.0, back + 0.36]);
+      const pend = new THREE.Group();
+      pend.position.set(0, 1.4, back + 0.32);
+      cyl(pend, 0.006, 0.006, 0.6, MAT.metal('#b8913e'), [0, -0.3, 0]);
+      cyl(pend, 0.07, 0.07, 0.02, MAT.metal('#d4b06a', 0.2), [0, -0.62, 0], [Math.PI / 2, 0, 0]);
+      g.add(pend);
+      pendulums.push(pend);
+      box(g, [0.56, 0.1, 0.42], caseM, [0, 2.2, back + 0.2]);
+      break;
+    }
+    case 'fireplace': {
+      const stone = MAT.paint('#8a8178', 0.85);
+      box(g, [W + 0.9, 1.15, 0.45], stone, [0, 0.575, back + 0.2]);
+      box(g, [W + 1.1, 0.08, 0.55], MAT.marble(1, 1), [0, 1.19, back + 0.25]);
+      box(g, [Math.max(0.6, W * 0.75), 0.75, 0.3], MAT.paint('#0b0a09', 0.9), [0, 0.4, back + 0.3]);
+      for (const dx of [-0.12, 0.12]) cyl(g, 0.05, 0.05, 0.45, MAT.wood('#3a2416'), [dx, 0.12, back + 0.3], [0, 0, Math.PI / 2 + dx]);
+      const fire = box(g, [0.4, 0.3, 0.12], new THREE.MeshStandardMaterial({ color: '#ff7a2a', emissive: '#ff6a1a', emissiveIntensity: 2.4 }), [0, 0.3, back + 0.32]);
+      fire.castShadow = false;
+      fires.push(fire);
+      const light = new THREE.PointLight('#ff8a3a', 6, 7, 1.6);
+      light.position.set(0, 0.6, back + 0.8);
+      g.add(light);
+      fires.push(light);
+      box(g, [1.0, 0.75, 0.04], MAT.metal('#b8913e', 0.35), [0, 1.85, back + 0.02]);
+      const canvas = new THREE.Mesh(new THREE.PlaneGeometry(0.88, 0.63), new THREE.MeshStandardMaterial({ map: paintingTexture(), roughness: 0.8 }));
+      canvas.position.set(0, 1.85, back + 0.045);
+      g.add(canvas);
+      break;
+    }
+    case 'crate': {
+      box(g, [0.75, 0.6, 0.75], MAT.wood('#7a5a36'), [-W * 0.18, 0.3, -D * 0.15]);
+      box(g, [0.6, 0.5, 0.6], MAT.wood('#6b4e2f'), [W * 0.2, 0.25, D * 0.2], [0, 0.4, 0]);
+      box(g, [0.55, 0.45, 0.55], MAT.wood('#806040'), [-W * 0.12, 0.83, -D * 0.12], [0, -0.2, 0]);
+      break;
+    }
+    case 'stairs': {
+      // Escalier vers l'étage : il monte vers le mur du fond
+      const steps = 14;
+      const run = D / steps;
+      for (let i = 0; i < steps; i++) {
+        const h = ((i + 1) / steps) * (WALL_H - 0.15);
+        box(g, [W * 0.8, 0.06, run + 0.02], MAT.wood('#4a2e1c'), [0, h, D / 2 - run * (i + 0.5)]);
+        box(g, [W * 0.8, h, 0.02], MAT.paint('#e8e2d4', 0.6), [0, h / 2, D / 2 - run * i]);
+      }
+      const rail = MAT.wood('#2e1d12');
+      const len = Math.hypot(D, WALL_H);
+      box(g, [0.06, 0.06, len], rail, [W * 0.4, WALL_H / 2 + 0.9, 0], [Math.atan2(WALL_H, D), 0, 0]);
+      for (let i = 0; i < steps; i += 2) {
+        const h = ((i + 1) / steps) * (WALL_H - 0.15);
+        cyl(g, 0.02, 0.02, 0.9, MAT.paint('#f2eee6', 0.4), [W * 0.4, h + 0.45, D / 2 - run * (i + 0.5)]);
+      }
+      cyl(g, 0.06, 0.06, 1.15, rail, [W * 0.4, 0.58, D / 2 - 0.05]);
+      break;
+    }
+    case 'fountain': {
+      g.rotation.y = 0;
+      const stone = MAT.paint('#8d9196', 0.8);
+      cyl(g, f.w / 2, f.w / 2 + 0.05, 0.5, stone, [0, 0.25, 0], [0, 0, 0], 32);
+      waters.push(cyl(g, f.w / 2 - 0.1, f.w / 2 - 0.1, 0.02, MAT.water(), [0, 0.46, 0], [0, 0, 0], 32));
+      cyl(g, 0.12, 0.16, 1.1, stone, [0, 0.8, 0]);
+      cyl(g, 0.45, 0.3, 0.15, stone, [0, 1.3, 0], [0, 0, 0], 24);
+      cyl(g, 0.05, 0.08, 0.4, stone, [0, 1.55, 0]);
+      break;
+    }
+    case 'hedge': {
+      g.rotation.y = 0;
+      const leaf = new THREE.MeshStandardMaterial({ color: '#4a6a3e', map: fabricTex('#3a5a32'), roughness: 1 });
+      box(g, [f.w - 0.05, 1.3, f.h - 0.05], leaf, [0, 0.65, 0], [0, 0, 0], 0.18);
+      break;
+    }
+    case 'tree': {
+      g.rotation.y = 0;
+      cyl(g, 0.16, 0.26, 2.6, MAT.paint('#3b2a1c', 1), [0, 1.3, 0]);
+      const leaves = new THREE.MeshStandardMaterial({ color: '#1f3a22', roughness: 1, flatShading: true });
+      for (const [x, y, z, r] of [[0, 3.2, 0, 1.5], [0.8, 2.8, 0.4, 1.0], [-0.7, 2.9, -0.3, 1.1], [0.2, 3.9, -0.4, 1.0], [-0.3, 2.6, 0.8, 0.9]] as const) {
+        const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves);
+        m.position.set(x, y, z);
+        m.castShadow = true;
+        g.add(m);
+      }
+      break;
+    }
+    case 'car': {
+      g.rotation.y = 0;
+      const paint = MAT.lacquer('#4a1018');
+      const L = Math.max(f.w, f.h) - 0.2;
+      const Wd = Math.min(f.w, f.h) - 0.1;
+      const car = new THREE.Group();
+      if (f.h > f.w) car.rotation.y = Math.PI / 2;
+      g.add(car);
+      box(car, [L, 0.45, Wd], paint, [0, 0.5, 0], [0, 0, 0], 0.15);
+      box(car, [L * 0.48, 0.42, Wd * 0.88], paint, [-L * 0.08, 0.92, 0], [0, 0, 0], 0.12);
+      box(car, [L * 0.44, 0.34, Wd * 0.9], MAT.glass(), [-L * 0.08, 0.93, 0], [0, 0, 0], 0.1);
+      for (const sx of [-1, 1])
+        for (const sz of [-1, 1]) {
+          cyl(car, 0.33, 0.33, 0.22, MAT.paint('#111', 0.7), [sx * L * 0.32, 0.33, sz * (Wd / 2 - 0.05)], [Math.PI / 2, 0, 0]);
+          cyl(car, 0.16, 0.16, 0.24, MAT.metal('#d8d8dc', 0.2), [sx * L * 0.32, 0.33, sz * (Wd / 2 - 0.05)], [Math.PI / 2, 0, 0]);
+        }
+      for (const sz of [-0.3, 0.3]) sphere(car, 0.09, MAT.glow('#fff4d8', 0.3), [L / 2 - 0.02, 0.62, sz * Wd]);
+      box(car, [0.05, 0.12, Wd * 0.7], MAT.metal('#d8d8dc', 0.15), [L / 2 + 0.01, 0.45, 0]);
+      break;
+    }
   }
   g.userData.furnitureId = f.id;
+  return g;
+}
+
+// ───────────── lampes ─────────────
+
+function lampMesh(kind: RoomStyle['lamp'], y: number, bulbMats: Set<THREE.MeshStandardMaterial>): THREE.Group {
+  const g = new THREE.Group();
+  const brass = MAT.metal('#b8913e', 0.3);
+  const bulb = new THREE.MeshStandardMaterial({ color: '#fff2d6', emissive: '#ffd59a', emissiveIntensity: 3 });
+  bulbMats.add(bulb);
+  if (kind === 'chandelier') {
+    cyl(g, 0.01, 0.01, 0.5, brass, [0, y - 0.25, 0]);
+    cyl(g, 0.35, 0.35, 0.03, brass, [0, y - 0.55, 0], [0, 0, 0], 24);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      cyl(g, 0.02, 0.02, 0.1, MAT.porcelain(), [Math.cos(a) * 0.35, y - 0.48, Math.sin(a) * 0.35]);
+      sphere(g, 0.035, bulb, [Math.cos(a) * 0.35, y - 0.4, Math.sin(a) * 0.35], [1, 1.4, 1]);
+    }
+    sphere(g, 0.08, MAT.glass(), [0, y - 0.68, 0]);
+  } else if (kind === 'pendant') {
+    cyl(g, 0.006, 0.006, 0.6, MAT.paint('#111'), [0, y - 0.3, 0]);
+    const shadeMat = new THREE.MeshStandardMaterial({ color: '#efe2c4', side: THREE.DoubleSide, emissive: '#ffcf88', emissiveIntensity: 0.5 });
+    bulbMats.add(shadeMat);
+    const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.28, 0.25, 24, 1, true), shadeMat);
+    shade.position.set(0, y - 0.7, 0);
+    g.add(shade);
+    sphere(g, 0.05, bulb, [0, y - 0.75, 0]);
+  } else {
+    cyl(g, 0.006, 0.006, 0.3, MAT.paint('#111'), [0, y - 0.15, 0]);
+    sphere(g, 0.06, bulb, [0, y - 0.35, 0], [1, 1.3, 1]);
+  }
+  g.traverse((o) => (o.castShadow = false));
   return g;
 }
 
@@ -216,202 +482,351 @@ export interface Villa3D {
   colliders: THREE.Object3D[];
   setBlackout(on: boolean): void;
   setUnlocked(ids: string[]): void;
+  /** la lampe de la pièce où se trouve le joueur projette des ombres */
+  focusRoom(roomId: string | undefined): void;
   update(t: number): void;
+  /** vitres éclairées vues de l'extérieur (vue avec toit) : matériau propre à chacune */
+  exteriorWindows: { mesh: THREE.Mesh; x: number; z: number; ry: number }[];
 }
 
-export function buildVilla(opts: { roof?: boolean } = {}): Villa3D {
+const ROOM_LIGHT = 14;
+
+/** Axe de l'allée d'accès (cinématique) : aucun arbre dans ce couloir. */
+export const DRIVEWAY_X = 21;
+
+export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): Villa3D {
   const group = new THREE.Group();
   const colliders: THREE.Object3D[] = [];
+  const inGame = !opts.roof;
 
-  // Sol extérieur infini
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), M('#0d140e'));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(WORLD_W / 2, -0.02, WORLD_H / 2);
-  ground.receiveShadow = true;
-  group.add(ground);
+  // ── Terrain autour de la propriété + forêt sombre ──
+  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), MAT.grass(220, 220));
+  lawn.rotation.x = -Math.PI / 2;
+  lawn.position.set(WORLD_W / 2, -0.03, WORLD_H / 2);
+  lawn.receiveShadow = true;
+  group.add(lawn);
+  const treeMat = new THREE.MeshStandardMaterial({ color: '#13241a', roughness: 1, flatShading: true });
+  const trunkMat = MAT.paint('#2a1e14', 1);
+  for (let i = 0; i < 70; i++) {
+    const a = (i / 70) * Math.PI * 2;
+    const r = 40 + ((i * 37) % 17);
+    const x = WORLD_W / 2 + Math.cos(a) * r;
+    const z = WORLD_H / 2 + Math.sin(a) * r * 0.8;
+    const s = 0.8 + ((i * 13) % 7) / 6;
+    if (opts.driveway && Math.abs(x - DRIVEWAY_X) < 6 && z > WORLD_H) continue;
+    cyl(group, 0.25 * s, 0.35 * s, 3 * s, trunkMat, [x, 1.5 * s, z]);
+    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4 * s, 1), treeMat);
+    crown.position.set(x, 4.2 * s, z);
+    group.add(crown);
+  }
 
-  // Sols des pièces
-  const floorMats = new Map<string, THREE.MeshStandardMaterial>();
+  // ── Sols, tapis, seuils ──
   for (const r of ROOMS) {
-    const tex = floorTexture(r);
-    tex.repeat.set(r.rect.w, r.rect.h);
-    const m = M('#ffffff', { map: tex, roughness: r.floor === 'tile' ? 0.35 : 0.85 });
-    floorMats.set(r.id, m);
-    const f = new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w, r.rect.h), m);
+    const st = STYLE[r.id];
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w, r.rect.h), st ? st.floor(r.rect.w, r.rect.h) : MAT.concrete(r.rect.w, r.rect.h));
     f.rotation.x = -Math.PI / 2;
     f.position.set(r.rect.x + r.rect.w / 2, 0, r.rect.y + r.rect.h / 2);
     f.receiveShadow = true;
     group.add(f);
+    if (st?.rug) {
+      const rug = new THREE.Mesh(new THREE.PlaneGeometry(st.rug.w, st.rug.h), MAT.rug(st.rug.base, st.rug.border));
+      rug.rotation.x = -Math.PI / 2;
+      rug.position.set(r.rect.x + r.rect.w / 2 + (st.rug.dx ?? 0), 0.006, r.rect.y + r.rect.h / 2 + (st.rug.dz ?? 0));
+      rug.receiveShadow = true;
+      group.add(rug);
+    }
   }
-  // Seuils de porte
   for (const d of DOORS) {
-    const f = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), M('#3d2a1c'));
-    f.rotation.x = -Math.PI / 2;
-    f.position.set(d.x + 0.5, 0.005, d.y + 0.5);
-    group.add(f);
+    const sill = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), MAT.marble(1, 1));
+    sill.rotation.x = -Math.PI / 2;
+    sill.position.set(d.x + 0.5, 0.004, d.y + 0.5);
+    sill.receiveShadow = true;
+    group.add(sill);
   }
 
-  // Murs (instanciés) : intérieurs hauts, murets bas autour des zones extérieures
-  const roomAtIdx = (x: number, y: number) => (x < 0 || y < 0 || x >= WORLD_W || y >= WORLD_H ? 0 : grid.rooms[y * WORLD_W + x]);
-  const walls: { x: number; y: number; h: number; color: THREE.Color }[] = [];
-  const windows: { x: number; y: number; axis: 'x' | 'z'; outdoorSide: number }[] = [];
+  // ── Murs : noyaux (collision caméra) + faces habillées par pièce ──
+  const wallTiles: { x: number; y: number; h: number }[] = [];
+  const heightAt = new Map<string, number>();
   for (let y = -1; y <= WORLD_H; y++)
     for (let x = -1; x <= WORLD_W; x++) {
-      if (roomAtIdx(x, y)) continue;
+      if (roomIdx(x, y)) continue;
       let indoor = false;
       let outdoor = false;
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) {
-          const r = roomAtIdx(x + dx, y + dy);
+          const r = roomAtTile(x + dx, y + dy);
           if (!r) continue;
-          if (ROOMS[r - 1].outdoor) outdoor = true;
+          if (r.outdoor) outdoor = true;
           else indoor = true;
         }
       if (!indoor && !outdoor) continue;
       const h = indoor ? WALL_H : 1.1;
-      walls.push({ x, y, h, color: new THREE.Color(indoor ? (outdoor ? '#5d574f' : '#4a3f36') : '#3b3a36') });
-      // Fenêtres : mur entre intérieur et extérieur, une tuile sur trois
-      const up = roomAtIdx(x, y - 1);
-      const down = roomAtIdx(x, y + 1);
-      if (up && down && ROOMS[up - 1].outdoor !== ROOMS[down - 1].outdoor && x % 3 === 1)
-        windows.push({ x, y, axis: 'x', outdoorSide: ROOMS[up - 1].outdoor ? -1 : 1 });
+      wallTiles.push({ x, y, h });
+      heightAt.set(`${x},${y}`, h);
     }
-  const wallGeo = new THREE.BoxGeometry(1, 1, 1);
-  const wallMat = M('#ffffff', { roughness: 0.9 });
-  const wallMesh = new THREE.InstancedMesh(wallGeo, wallMat, walls.length);
+  const core = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), MAT.paint('#2a2622', 0.9), wallTiles.length);
   const tmp = new THREE.Object3D();
-  walls.forEach((w, i) => {
+  wallTiles.forEach((w, i) => {
     tmp.position.set(w.x + 0.5, w.h / 2, w.y + 0.5);
-    tmp.scale.set(1, w.h, 1);
+    tmp.scale.set(0.998, w.h, 0.998);
     tmp.updateMatrix();
-    wallMesh.setMatrixAt(i, tmp.matrix);
-    wallMesh.setColorAt(i, w.color);
+    core.setMatrixAt(i, tmp.matrix);
   });
-  wallMesh.castShadow = true;
-  wallMesh.receiveShadow = true;
-  group.add(wallMesh);
-  colliders.push(wallMesh);
+  core.castShadow = true;
+  core.receiveShadow = true;
+  group.add(core);
+  colliders.push(core);
 
-  // Fenêtres lumineuses
-  // Côté jardin/allée : vitre éclairée de l'intérieur. Côté intérieur : vitre sombre sur la nuit.
-  const windowMat = new THREE.MeshStandardMaterial({ color: '#2a1d10', emissive: '#ffb45c', emissiveIntensity: 1.2 });
-  const nightGlass = new THREE.MeshStandardMaterial({ color: '#0b1220', emissive: '#1a2a48', emissiveIntensity: 0.5, roughness: 0.1, metalness: 0.3 });
-  const paneGeo = new THREE.PlaneGeometry(0.8, 1.1);
-  for (const w of windows) {
-    for (const side of [1, -1]) {
-      const outside = side === w.outdoorSide;
-      const pane = new THREE.Mesh(paneGeo, outside ? windowMat : nightGlass);
-      pane.position.set(w.x + 0.5, 1.6, w.y + 0.5 + side * 0.505);
-      if (side < 0) pane.rotation.y = Math.PI;
-      group.add(pane);
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.1, 0.02), M('#1a1410'));
-      bar.position.copy(pane.position);
-      group.add(bar);
+  const faces = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  const trims: THREE.BufferGeometry[] = [];
+  const crowns: THREE.BufferGeometry[] = [];
+  const windowSpots: { x: number; z: number; ry: number; outdoor: boolean }[] = [];
+  // [dx, dy, rotation de la face pour qu'elle regarde la pièce]
+  const DIRS: [number, number, number][] = [[0, -1, 0], [0, 1, Math.PI], [-1, 0, Math.PI / 2], [1, 0, -Math.PI / 2]];
+  for (let y = 0; y < WORLD_H; y++)
+    for (let x = 0; x < WORLD_W; x++) {
+      const room = roomAtTile(x, y);
+      if (!room || isDoor(x, y)) continue;
+      for (const [dx, dy, ry] of DIRS) {
+        const wx = x + dx;
+        const wy = y + dy;
+        if (roomIdx(wx, wy)) continue;
+        const h = heightAt.get(`${wx},${wy}`) ?? WALL_H;
+        const m = STYLE[room.id].wall();
+        const plane = new THREE.PlaneGeometry(1, h);
+        plane.rotateY(ry);
+        plane.translate(x + 0.5 + dx * 0.499, h / 2, y + 0.5 + dy * 0.499);
+        if (!faces.has(m)) faces.set(m, []);
+        faces.get(m)!.push(plane);
+        if (!room.outdoor) {
+          const base = new THREE.BoxGeometry(1, 0.12, 0.025);
+          base.rotateY(ry);
+          base.translate(x + 0.5 + dx * 0.487, 0.06, y + 0.5 + dy * 0.487);
+          trims.push(base);
+          const crown = new THREE.BoxGeometry(1, 0.09, 0.06);
+          crown.rotateY(ry);
+          crown.translate(x + 0.5 + dx * 0.47, WALL_H - 0.045, y + 0.5 + dy * 0.47);
+          crowns.push(crown);
+        }
+        const across = roomAtTile(wx + dx, wy + dy);
+        if (across && across.outdoor !== room.outdoor && h === WALL_H && (dy !== 0 ? wx % 3 === 1 : wy % 3 === 1))
+          windowSpots.push({ x: x + 0.5 + dx * 0.5, z: y + 0.5 + dy * 0.5, ry, outdoor: !!room.outdoor });
+      }
     }
+  for (const [m, geos] of faces) {
+    const mesh = new THREE.Mesh(mergeGeometries(geos), m);
+    mesh.receiveShadow = true;
+    group.add(mesh);
   }
+  if (trims.length) {
+    const t = new THREE.Mesh(mergeGeometries(trims), MAT.paint('#ece6da', 0.5));
+    t.receiveShadow = true;
+    group.add(t);
+  }
+  if (crowns.length) group.add(new THREE.Mesh(mergeGeometries(crowns), MAT.paint('#f2ede2', 0.6)));
 
-  // Portes : linteaux + battants des portes verrouillées
-  const lockedDoors = new Map<string, THREE.Mesh>();
+  // ── Fenêtres ──
+  const glowMat = new THREE.MeshStandardMaterial({ color: '#2a1d10', emissive: '#ffb45c', emissiveIntensity: 1.1 });
+  const frameMat = MAT.paint('#e9e4da', 0.5);
+  const curtainColors = ['#5a1820', '#2f4a3c', '#24365e', '#6a5a3a'];
+  const exteriorWindows: Villa3D['exteriorWindows'] = [];
+  windowSpots.forEach((w, i) => {
+    const g = new THREE.Group();
+    g.position.set(w.x, 0, w.z);
+    g.rotation.y = w.ry;
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.2), w.outdoor ? (opts.roof ? glowMat.clone() : glowMat) : MAT.glass());
+    if (w.outdoor && opts.roof) exteriorWindows.push({ mesh: pane, x: w.x, z: w.z, ry: w.ry });
+    pane.position.set(0, 1.6, 0.003);
+    g.add(pane);
+    box(g, [0.92, 0.06, 0.06], frameMat, [0, 2.23, 0.02]);
+    box(g, [0.95, 0.05, 0.14], frameMat, [0, 0.97, 0.05]);
+    for (const s of [-1, 1]) box(g, [0.06, 1.3, 0.06], frameMat, [s * 0.43, 1.6, 0.02]);
+    box(g, [0.035, 1.2, 0.03], frameMat, [0, 1.6, 0.02]);
+    box(g, [0.8, 0.035, 0.03], frameMat, [0, 1.75, 0.02]);
+    if (!w.outdoor) {
+      const cur = MAT.fabric(curtainColors[i % curtainColors.length]);
+      for (const s of [-1, 1]) box(g, [0.28, 2.2, 0.04], cur, [s * 0.58, 1.55, 0.08]);
+      cyl(g, 0.015, 0.015, 1.6, MAT.metal('#b8913e', 0.3), [0, 2.62, 0.1], [0, 0, Math.PI / 2]);
+    }
+    group.add(g);
+  });
+
+  // ── Portes : chambranles, linteaux, battants verrouillés ──
+  const lockedDoors = new Map<string, THREE.Object3D>();
+  const casing = MAT.paint('#ece6da', 0.45);
   for (const d of DOORS) {
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(1, WALL_H - 2.3, 1), M('#4a3f36'));
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(1, WALL_H - 2.3, 1), MAT.paint('#2a2622', 0.9));
     lintel.position.set(d.x + 0.5, 2.3 + (WALL_H - 2.3) / 2, d.y + 0.5);
     group.add(lintel);
     colliders.push(lintel);
+    // passage nord-sud si les tuiles à gauche/droite sont des murs
+    const northSouth = !roomIdx(d.x - 1, d.y) || !roomIdx(d.x + 1, d.y);
+    const g = new THREE.Group();
+    g.position.set(d.x + 0.5, 0, d.y + 0.5);
+    if (!northSouth) g.rotation.y = Math.PI / 2;
+    // chambranle seulement du côté mur
+    if (!roomIdx(d.x - 1, d.y) || !roomIdx(d.x, d.y - 1)) box(g, [0.08, 2.32, 1.04], casing, [-0.47, 1.16, 0]);
+    if (!roomIdx(d.x + 1, d.y) || !roomIdx(d.x, d.y + 1)) box(g, [0.08, 2.32, 1.04], casing, [0.47, 1.16, 0]);
+    box(g, [1.02, 0.1, 1.04], casing, [0, 2.33, 0]);
+    group.add(g);
     if (d.lockedBy) {
-      const horizontal = d.rooms.some((r) => ROOMS.find((x) => x.id === r)!.rect.y > d.y) && d.rooms.some((r) => ROOMS.find((x) => x.id === r)!.rect.y + ROOMS.find((x) => x.id === r)!.rect.h <= d.y);
-      const door = new THREE.Mesh(new THREE.BoxGeometry(horizontal ? 0.96 : 0.12, 2.3, horizontal ? 0.12 : 0.96), M('#4b2c18', { roughness: 0.6 }));
-      door.position.set(d.x + 0.5, 1.15, d.y + 0.5);
-      door.castShadow = true;
-      group.add(door);
-      colliders.push(door);
-      lockedDoors.set(d.id, door);
+      const leaf = new THREE.Group();
+      leaf.position.copy(g.position);
+      leaf.rotation.copy(g.rotation);
+      box(leaf, [0.88, 2.25, 0.06], MAT.wood('#3a1e10'), [0, 1.125, 0]);
+      for (const y of [0.6, 1.6]) box(leaf, [0.6, 0.7, 0.07], MAT.wood('#5a3620'), [0, y, 0]);
+      sphere(leaf, 0.035, MAT.metal('#b8913e', 0.25), [0.33, 1.05, 0.05]);
+      group.add(leaf);
+      colliders.push(leaf);
+      lockedDoors.set(d.id, leaf);
     }
   }
 
-  // Mobilier
-  const fires: THREE.Mesh[] = [];
+  // ── Mobilier ──
+  const fires: THREE.Object3D[] = [];
+  const pendulums: THREE.Object3D[] = [];
+  const waters: THREE.Mesh[] = [];
+  const screens: THREE.Mesh[] = [];
   for (const f of FURNITURE) {
-    const fg = buildFurniture(f);
-    fg.traverse((o) => o.name === 'fire' && fires.push(o as THREE.Mesh));
+    const fg = buildFurniture(f, fires, pendulums, waters);
+    fg.traverse((o) => o.name === 'screen' && screens.push(o as THREE.Mesh));
     group.add(fg);
   }
-  // Tapis du salon
-  const rug = new THREE.Mesh(new THREE.PlaneGeometry(5, 3), M('#5a1820'));
-  rug.rotation.x = -Math.PI / 2;
-  rug.position.set(16, 0.01, 10);
-  group.add(rug);
 
-  // Lumières : une lampe par pièce intérieure
-  const roomLights: THREE.PointLight[] = [];
-  const bulbs: THREE.Mesh[] = [];
-  const bulbMat = new THREE.MeshStandardMaterial({ color: '#fff2d6', emissive: '#ffcf88', emissiveIntensity: 2 });
-  for (const r of ROOMS) {
-    if (r.outdoor) continue;
-    const light = new THREE.PointLight('#ffc98a', 10, Math.max(r.rect.w, r.rect.h) * 1.4, 1.4);
-    light.position.set(r.rect.x + r.rect.w / 2, WALL_H - 0.4, r.rect.y + r.rect.h / 2);
-    group.add(light);
-    roomLights.push(light);
-    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), bulbMat);
-    bulb.position.copy(light.position);
-    group.add(bulb);
-    bulbs.push(bulb);
+  // ── Tableaux aux murs ──
+  const paintingSpots: [number, number, number][] = [[14, 6.02, 0], [27.5, 12.98, Math.PI], [17, 14.02, 0], [23, 14.02, 0], [34, 17.02, 0], [44, 17.02, 0], [34, 6.02, 0], [36, 14.02, 0], [40, 14.02, 0], [2.5, 21.98, Math.PI]];
+  for (const [x, z, ry] of paintingSpots) {
+    const g = new THREE.Group();
+    g.position.set(x, 1.65, z);
+    g.rotation.y = ry;
+    box(g, [0.8, 0.62, 0.04], MAT.metal('#a8843e', 0.35), [0, 0, 0.02]);
+    const c = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.5), new THREE.MeshStandardMaterial({ map: paintingTexture(), roughness: 0.85 }));
+    c.position.z = 0.045;
+    g.add(c);
+    group.add(g);
   }
 
-  // Plafonds (en jeu) : l'intérieur est clos, la caméra ne passe pas au-dessus des murs
-  if (!opts.roof) {
-    const ceilMat = M('#17130f', { side: THREE.DoubleSide });
+  // ── Plafonds, lampes, lumières ──
+  const roomLights = new Map<string, THREE.PointLight>();
+  const bulbMats = new Set<THREE.MeshStandardMaterial>();
+  if (inGame)
     for (const r of ROOMS) {
       if (r.outdoor) continue;
-      const c = new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w + 1, r.rect.h + 1), ceilMat);
+      const c = new THREE.Mesh(new THREE.PlaneGeometry(r.rect.w + 1, r.rect.h + 1), MAT.plaster());
       c.rotation.x = Math.PI / 2;
       c.position.set(r.rect.x + r.rect.w / 2, WALL_H, r.rect.y + r.rect.h / 2);
+      c.receiveShadow = true;
+      c.castShadow = true;
       group.add(c);
       colliders.push(c);
     }
+  for (const r of ROOMS) {
+    if (r.outdoor) continue;
+    const st = STYLE[r.id];
+    const cx = r.rect.x + r.rect.w / 2;
+    const cz = r.rect.y + r.rect.h / 2;
+    const lamp = lampMesh(st.lamp, WALL_H, bulbMats);
+    lamp.position.set(cx, 0, cz);
+    group.add(lamp);
+    const light = new THREE.PointLight(st.light, ROOM_LIGHT, Math.max(r.rect.w, r.rect.h) * 1.5, 1.5);
+    light.position.set(cx, WALL_H - 0.85, cz);
+    group.add(light);
+    roomLights.set(r.id, light);
+  }
+  // Lampe « active » : seule source intérieure qui projette des ombres (celle de la pièce du joueur).
+  // Le nombre de lumières reste constant → pas de recompilation des shaders.
+  const shadowLamp = new THREE.PointLight('#ffc98a', 0, 10, 1.5);
+  shadowLamp.castShadow = inGame;
+  shadowLamp.shadow.mapSize.set(512, 512);
+  shadowLamp.shadow.bias = -0.003;
+  shadowLamp.shadow.radius = 4;
+  group.add(shadowLamp);
+  let focused: string | undefined;
+  let blackout = false;
+
+  // ── Extérieur : lanternes, perron, bancs ──
+  for (const [x, z] of [[18.6, 23.3], [23.4, 23.3], [4, 1.4], [26, 1.4], [38, 1.4]] as const) {
+    cyl(group, 0.05, 0.07, 2.4, MAT.paint('#151515', 0.5), [x, 1.2, z]);
+    box(group, [0.22, 0.32, 0.22], MAT.glow('#ffd29a', 2.2), [x, 2.5, z]);
+    const l = new THREE.PointLight('#ffb66b', 10, 9, 1.6);
+    l.position.set(x, 2.45, z);
+    group.add(l);
+  }
+  box(group, [3, 0.12, 1.2], MAT.marble(2, 1), [21, 0.06, 23.6]);
+  for (const x of [15, 26]) {
+    const b = new THREE.Group();
+    b.position.set(x, 0, 1.3);
+    box(b, [1.4, 0.06, 0.4], MAT.wood('#5a3a22'), [0, 0.45, 0]);
+    box(b, [1.4, 0.4, 0.05], MAT.wood('#5a3a22'), [0, 0.7, -0.18]);
+    for (const s of [-0.6, 0.6]) box(b, [0.06, 0.45, 0.4], MAT.metal('#222', 0.6), [s, 0.22, 0]);
+    group.add(b);
   }
 
-  // Toit (vue extérieure du menu)
+  // ── Toit (vue extérieure du menu) ──
   if (opts.roof) {
-    const houseX0 = 0;
-    const houseX1 = WORLD_W;
     const houseZ0 = 5;
     const houseZ1 = 23;
-    const roofMat = M('#1c1e24', { roughness: 0.7 });
-    const len = houseX1 - houseX0;
     const depth = houseZ1 - houseZ0;
     const shape = new THREE.Shape();
     shape.moveTo(-depth / 2 - 0.6, 0);
     shape.lineTo(depth / 2 + 0.6, 0);
     shape.lineTo(0, 5.5);
     shape.closePath();
-    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: len + 1.2, bevelEnabled: false }), roofMat);
+    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: WORLD_W + 1.2, bevelEnabled: false }), MAT.paint('#26282e', 0.75));
     roof.rotation.y = Math.PI / 2;
-    roof.position.set(houseX0 - 0.6, WALL_H, houseZ0 + depth / 2);
+    roof.position.set(-0.6, WALL_H, houseZ0 + depth / 2);
     roof.castShadow = true;
     group.add(roof);
-    const chimney = new THREE.Mesh(new THREE.BoxGeometry(1.2, 4, 1.2), M('#3a332d'));
-    chimney.position.set(12.5, WALL_H + 3.5, 9);
-    group.add(chimney);
+    for (const x of [12.5, 35.5]) box(group, [1.2, 4, 1.2], MAT.brick(1, 2.6), [x, WALL_H + 3.5, 9]);
   }
 
   return {
     group,
     colliders,
+    exteriorWindows,
     setBlackout(on) {
-      for (const l of roomLights) l.visible = !on;
-      bulbMat.emissiveIntensity = on ? 0 : 2;
-      windowMat.emissiveIntensity = on ? 0.02 : 1.2;
+      blackout = on;
+      for (const [id, l] of roomLights) l.intensity = on || id === focused ? 0 : ROOM_LIGHT;
+      shadowLamp.intensity = on || !focused ? 0 : ROOM_LIGHT;
+      for (const m of bulbMats) m.emissiveIntensity = on ? 0 : m.side === THREE.DoubleSide ? 0.5 : 3;
+      glowMat.emissiveIntensity = on ? 0.02 : 1.1;
+      for (const s of screens) (s.material as THREE.MeshStandardMaterial).emissiveIntensity = on ? 0 : 0.9;
     },
     setUnlocked(ids) {
-      for (const [id, mesh] of lockedDoors) {
-        const open = ids.includes(id);
-        mesh.visible = !open;
-        const i = colliders.indexOf(mesh);
-        if (open && i >= 0) colliders.splice(i, 1);
+      for (const [id, obj] of [...lockedDoors]) {
+        if (!ids.includes(id)) continue;
+        // la porte pivote et reste ouverte contre le mur
+        obj.rotation.y += Math.PI / 2;
+        obj.position.x += Math.sin(obj.rotation.y) * 0.45;
+        obj.position.z += Math.cos(obj.rotation.y) * 0.45;
+        const i = colliders.indexOf(obj);
+        if (i >= 0) colliders.splice(i, 1);
+        lockedDoors.delete(id);
       }
     },
+    focusRoom(roomId) {
+      if (roomId === focused) return;
+      if (focused && roomLights.has(focused)) roomLights.get(focused)!.intensity = blackout ? 0 : ROOM_LIGHT;
+      focused = roomId && roomLights.has(roomId) ? roomId : undefined;
+      if (focused) {
+        const l = roomLights.get(focused)!;
+        shadowLamp.position.copy(l.position);
+        shadowLamp.color.copy(l.color);
+        shadowLamp.distance = l.distance;
+        shadowLamp.intensity = blackout ? 0 : ROOM_LIGHT;
+        l.intensity = 0;
+      } else shadowLamp.intensity = 0;
+    },
     update(t) {
-      for (const f of fires) (f.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.2 + Math.sin(t * 13) * 0.25 + Math.sin(t * 7.3) * 0.2;
+      for (const f of fires) {
+        if ((f as THREE.PointLight).isPointLight) (f as THREE.PointLight).intensity = blackout ? 5 : 5 + Math.sin(t * 11) * 1.2 + Math.sin(t * 17.3) * 0.8;
+        else ((f as THREE.Mesh).material as THREE.MeshStandardMaterial).emissiveIntensity = 2.2 + Math.sin(t * 13) * 0.4;
+      }
+      for (const p of pendulums) p.rotation.z = Math.sin(t * Math.PI) * 0.12;
+      for (const w of waters) {
+        const m = w.material as THREE.MeshStandardMaterial;
+        if (m.normalMap) m.normalMap.offset.set(t * 0.02, t * 0.013);
+      }
     },
   };
 }

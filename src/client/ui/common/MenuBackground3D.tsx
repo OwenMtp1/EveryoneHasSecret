@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { WORLD_H, WORLD_W } from '@shared/content/villa';
 import { buildVilla } from '../../three/villa3d';
+import { loadEnvironment } from '../../three/materials';
 import { useStore } from '../../store';
 import { NightBackground } from './NightBackground';
 
@@ -37,6 +38,7 @@ export function MenuBackground3D({ dim }: { dim: boolean }) {
     const moon = new THREE.DirectionalLight('#9fb4e6', 0.6);
     moon.position.set(60, 50, 80);
     scene.add(moon);
+    loadEnvironment(renderer, scene, 0.3);
     const villa = buildVilla({ roof: true });
     scene.add(villa.group);
     // Lanternes de l'allée et du perron
