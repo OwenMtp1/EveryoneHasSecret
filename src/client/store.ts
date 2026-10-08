@@ -141,19 +141,47 @@ export const useStore = create<AppState>((set, get) => ({
       if (n.type.startsWith('FRIEND')) get().refreshFriends();
     });
     s.on('friends:changed', () => get().refreshFriends());
-    s.on('game:full', (view) => {
-      const prev = get().game;
-      if (prev && view.feed.length && prev.feed[prev.feed.length - 1]?.id !== view.feed[view.feed.length - 1]?.id) {
-        const last = view.feed[view.feed.length - 1];
-        if (last.style === 'danger') audio.danger();
+    // Les vues de partie arrivent jusqu'à 12 fois/s : on les regroupe en UNE mise à jour par image
+    // (évite les rafales de rendus quand l'onglet ou le GPU est lent).
+    let pendingFull: GameSelfView | null = null;
+    let pendingSnap: GameSnapshot | null = null;
+    let scheduled = false;
+    const flush = () => {
+      scheduled = false;
+      const st = get();
+      let next = pendingFull ?? st.game;
+      if (pendingSnap && next) next = { ...next, ...pendingSnap };
+      const hadFull = !!pendingFull;
+      pendingFull = null;
+      pendingSnap = null;
+      if (!next) return;
+      const prev = st.game;
+      if (prev && next.feed.length && prev.feed[prev.feed.length - 1]?.id !== next.feed[next.feed.length - 1]?.id) {
+        if (next.feed[next.feed.length - 1].style === 'danger') audio.danger();
       }
-      set({ game: view, inGame: true, screen: 'game', transition: null });
+      if (hadFull && (st.screen !== 'game' || st.transition || !st.inGame)) set({ game: next, inGame: true, screen: 'game', transition: null });
+      else set({ game: next });
+    };
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      if (document.hidden) setTimeout(flush, 60);
+      else requestAnimationFrame(flush);
+    };
+    s.on('game:full', (view) => {
+      pendingFull = view;
+      pendingSnap = null;
+      schedule();
     });
     s.on('game:snapshot', (snap: GameSnapshot) => {
-      const g = get().game;
-      if (g) set({ game: { ...g, ...snap } });
+      pendingSnap = snap;
+      schedule();
     });
-    s.on('game:ended', () => set({ game: null, inGame: false }));
+    s.on('game:ended', () => {
+      pendingFull = null;
+      pendingSnap = null;
+      set({ game: null, inGame: false });
+    });
   },
 
   logout: async () => {

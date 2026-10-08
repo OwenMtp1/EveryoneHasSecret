@@ -109,7 +109,7 @@ export class ScenarioDirector {
       name: def.name,
       location: ownerId
         ? { kind: 'player', playerId: ownerId }
-        : { kind: 'floor', roomId: roomId!, pos: randomFreeTile(g.grid, roomId!, g.rnd) },
+        : { kind: 'floor', roomId: roomId!, pos: this.freeSpot(roomId!) },
       spawnRoomId: roomId,
       history: [],
       traces: [],
@@ -131,6 +131,17 @@ export class ScenarioDirector {
     }
     g.log('OBJECT_SPAWNED', { objectId: id, roomId: roomId ?? undefined, actorId: ownerId, text: `${def.name} ${ownerId ? `apporté par ${g.nameOf(ownerId)}` : `placé — ${roomName(roomId!)}`}` });
     return obj;
+  }
+
+  /** Case libre, sans autre objet déjà posé dessus (léger décalage pour le naturel). */
+  private freeSpot(roomId: string) {
+    const g = this.g;
+    for (let i = 0; i < 30; i++) {
+      const t = randomFreeTile(g.grid, roomId, g.rnd);
+      const taken = [...g.objects.values()].some((o) => o.location.kind === 'floor' && Math.floor(o.location.pos.x) === Math.floor(t.x) && Math.floor(o.location.pos.y) === Math.floor(t.y));
+      if (!taken) return { x: t.x + (g.rnd() - 0.5) * 0.3, y: t.y + (g.rnd() - 0.5) * 0.3 };
+    }
+    return randomFreeTile(g.grid, roomId, g.rnd);
   }
 
   /** Lettre anonyme révélant le secret d'un joueur vivant au hasard. */

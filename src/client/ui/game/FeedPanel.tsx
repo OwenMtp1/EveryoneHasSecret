@@ -5,7 +5,8 @@ import { useStore } from '../../store';
 import { audio } from '../../audio';
 
 export function FeedPanel() {
-  const feed = useStore((s) => s.game?.feed ?? []);
+  const EMPTY: never[] = [];
+  const feed = useStore((s) => s.game?.feed) ?? EMPTY;
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' });

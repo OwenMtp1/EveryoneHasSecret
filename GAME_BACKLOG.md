@@ -25,7 +25,14 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - **Ligne de vue** : on voit (et on est vu) à travers une porte ouverte, près de celle-ci ; ces témoins empêchent l'opportunité.
 - Décision du joueur : **pas de bots** — le jeu reste exclusivement entre joueurs humains.
 
+### V0.5 — objets 3D, guide de première nuit, stabilité
+- **Objets en 3D** décrits en données (`model` dans `objects.ts`) : couteau, chandelier, corde, coupe-papier, bouteille, clé, tournevis, lampe, torchon, briquet, téléphone, somnifères, montre, badge, collier, lettre, photo ; étiquette au survol de proximité ; lampe torche visible en main quand elle est allumée.
+- **Guide de la première nuit** : objectifs qui se cochent tout seuls (3 premières parties, désactivable).
+- **Stabilité** : les vues réseau sont regroupées en une mise à jour par image (corrige une erreur « Maximum update depth » quand le rendu est lent).
+- Objets jamais superposés sur la même case.
+
 ### Problèmes découverts pendant le développement
+- Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
 - Le serveur émet `session:state` dès la connexion : un client doit brancher ses écouteurs **avant** `connect` (corrigé dans les tests).
 - Les animations CSS utilisant `transform` écrasaient les centrages `translateX(-50%)` → les keyframes utilisent `translate`.
@@ -228,7 +235,7 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ✅ [P0] Barre d’interactions contextuelle (ce qui est à portée), sélecteur de cible, retours d’action
 - ✅ [P1] Onglets Inventaire / Relations / Carnet / Enquête, raccourcis clavier
 - ✅ [P1] Carnet filtrable (vu, entendu, indices, rôle, reçu) + partage
-- ⬜ [P1] Tutoriel / première nuit guidée · ⬜ [P1] Interface mobile dédiée · ⬜ [P2] Internationalisation (EN)
+- ✅ [P1] Guide de première nuit · ⬜ [P1] Interface mobile dédiée · ⬜ [P2] Internationalisation (EN)
 - ⬜ [P2] Accessibilité (lecteur d’écran, contrastes) — 🟡 option « réduire les animations » faite
 
 ## AUDIO
@@ -240,7 +247,7 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ✅ [P0] Villa 3D (sols texturés par matériau, murs, plafonds, portes, fenêtres, mobilier composé, lampes, cheminée animée, traces au sol, corps)
 - ✅ [P1] Menu, créateur, lobby, profil et épilogue en 3D
 - ⬜ [P1] Ombres dynamiques (performance à mesurer) · ✅ [P1] Ligne de vue : voir les joueurs à travers les portes ouvertes (filtrage serveur)
-- ⬜ [P2] Modèles 3D d'objets au lieu d'icônes · ⬜ [P2] Post-traitement (bloom, grain) · ⬜ [P3] Graphismes définitifs
+- ✅ [P1] Modèles 3D d'objets (data-driven) · ⬜ [P2] Post-traitement (bloom, grain) · ⬜ [P3] Graphismes définitifs
 
 ## TECHNICAL
 - ✅ [P0] TypeScript partagé client/serveur, protocole typé

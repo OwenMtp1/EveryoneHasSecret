@@ -12,6 +12,7 @@ import { buildCharacter, type Character3D } from './character3d';
 import { buildVilla, type Villa3D } from './villa3d';
 import { labelSprite, emojiSprite } from './sprites';
 import { realisticReady } from './realistic';
+import { objectModel } from './objects3d';
 
 type CamMode = 'third' | 'first';
 
@@ -38,7 +39,7 @@ export class GameView3D {
   private villa: Villa3D;
   private actors = new Map<string, Actor>();
   private bodies = new Map<string, Character3D>();
-  private objects = new Map<string, { sprite: THREE.Sprite; ring: THREE.Mesh; base: THREE.Vector3 }>();
+  private objects = new Map<string, { visual: THREE.Object3D; label: THREE.Sprite; ring: THREE.Mesh; base: THREE.Vector3; modeled: boolean }>();
   private traces = new Map<string, THREE.Mesh>();
   private allyMarkers = new Map<string, THREE.Sprite>();
   private rain: THREE.LineSegments;
@@ -248,11 +249,24 @@ export class GameView3D {
       // Lampe torche
       if (p.hasLight && !a.light) {
         a.light = new THREE.SpotLight('#fff1cf', 18, 12, 0.6, 0.5, 1.2);
-        a.light.position.set(0, 1.4, 0.2);
+        a.light.position.set(0.22, 1.05, 0.3);
         a.light.target.position.set(0, 0.6, 4);
         a.c3d.root.add(a.light, a.light.target);
+        // La lampe est visible dans la main
+        const torch = objectModel('flashlight');
+        if (torch) {
+          torch.name = 'torch';
+          torch.rotation.y = -Math.PI / 2;
+          torch.position.set(0.22, 1.0, 0.18);
+          torch.scale.setScalar(1.2);
+          a.c3d.root.add(torch);
+        }
       }
-      if (a.light) a.light.visible = !!p.hasLight;
+      if (a.light) {
+        a.light.visible = !!p.hasLight;
+        const torch = a.c3d.root.getObjectByName('torch');
+        if (torch) torch.visible = !!p.hasLight;
+      }
     }
     for (const id of [...this.actors.keys()]) if (!seen.has(id)) this.removeActor(id);
     for (const [id, m] of this.allyMarkers)
@@ -298,21 +312,26 @@ export class GameView3D {
       let e = this.objects.get(o.id);
       const hidden = o.name.endsWith('(caché)');
       if (!e) {
-        const sprite = emojiSprite(o.icon);
-        const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 24), new THREE.MeshBasicMaterial({ color: '#ffcf88', transparent: true, opacity: 0.55, depthWrite: false }));
+        const model = objectModel(o.type);
+        const visual: THREE.Object3D = model ?? emojiSprite(o.icon);
+        if (model) model.scale.setScalar(1.6); // lisibilité en jeu
+        const label = labelSprite(`${o.icon} ${o.name}`, '#ffe2b0');
+        label.scale.multiplyScalar(0.75);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.25, 32), new THREE.MeshBasicMaterial({ color: '#ffcf88', transparent: true, opacity: 0.5, depthWrite: false }));
         ring.rotation.x = -Math.PI / 2;
-        this.scene.add(sprite, ring);
-        e = { sprite, ring, base: new THREE.Vector3() };
+        this.scene.add(visual, ring, label);
+        e = { visual, label, ring, base: new THREE.Vector3(), modeled: !!model };
         this.objects.set(o.id, e);
       }
-      e.base.set(o.pos.x, hidden ? 0.55 : 0.75, o.pos.y);
+      // Objet caché (connu) : posé dans le meuble, à mi-hauteur
+      e.base.set(o.pos.x, hidden ? 0.5 : e.modeled ? 0.012 : 0.75, o.pos.y);
       e.ring.position.set(o.pos.x, 0.015, o.pos.y);
+      e.label.position.set(o.pos.x, (hidden ? 0.5 : 0) + 0.6, o.pos.y);
       (e.ring.material as THREE.MeshBasicMaterial).color.set(o.bloody ? '#ff3344' : '#ffcf88');
-      (e.sprite.material as THREE.SpriteMaterial).opacity = hidden ? 0.55 : 1;
     }
     for (const [id, e] of this.objects)
       if (!seen.has(id)) {
-        this.scene.remove(e.sprite, e.ring);
+        this.scene.remove(e.visual, e.ring, e.label);
         this.objects.delete(id);
       }
   }
@@ -420,9 +439,19 @@ export class GameView3D {
     const t = this.clock.elapsedTime;
     if (this.pressed.size) this.sendInput();
     this.sync(dt);
+    const mePos = this.view ? this.actors.get(this.view.you)?.pos : undefined;
     for (const [, o] of this.objects) {
-      o.sprite.position.copy(o.base).add(new THREE.Vector3(0, Math.sin(t * 2 + o.base.x) * 0.05, 0));
+      o.visual.position.copy(o.base);
+      if (!o.modeled) o.visual.position.y += Math.sin(t * 2 + o.base.x) * 0.05;
+      (o.ring.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + o.base.x) * 0.2;
+      o.label.visible = !!mePos && mePos.distanceTo(new THREE.Vector3(o.base.x, 0, o.base.z)) < 2.6;
     }
+    // Étiquettes proches : empilées pour rester lisibles
+    const shown = [...this.objects.values()].filter((o) => o.label.visible).sort((a, b) => a.base.x - b.base.x || a.base.z - b.base.z);
+    shown.forEach((o, i) => {
+      const stack = shown.slice(0, i).filter((p) => Math.hypot(p.base.x - o.base.x, p.base.z - o.base.z) < 1.2).length;
+      o.label.position.y = o.base.y + 0.55 + stack * 0.2;
+    });
     this.villa.update(t);
     this.updateRain(dt);
     // Éclairs

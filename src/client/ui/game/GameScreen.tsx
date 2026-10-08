@@ -14,6 +14,7 @@ import { InventoryTab } from './InventoryTab';
 import { RelationsTab } from './RelationsTab';
 import { NotebookTab } from './NotebookTab';
 import { InvestigationTab } from '../investigation/InvestigationTab';
+import { Tutorial } from './Tutorial';
 import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker } from './Overlays';
 
 
@@ -150,6 +151,7 @@ export function GameScreen() {
         </div>
         {showMap && <MapOverlay onClose={() => setShowMap(false)} />}
         {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
+        <Tutorial />
         <Announcement />
         <OpportunityPrompt />
         <ActionBar />
