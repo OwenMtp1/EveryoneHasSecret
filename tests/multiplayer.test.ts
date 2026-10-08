@@ -132,9 +132,9 @@ test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchr
   // Expulsion vérifiée côté serveur
   await assert.rejects(call(b.socket, 'lobby:kick', c.id), /hôte/);
 
-  const transition = new Promise((r) => b.socket.once('lobby:transition', r));
+  const intro = new Promise((r) => b.socket.once('lobby:intro', r));
   await call(host.socket, 'lobby:start');
-  await transition;
+  await intro;
   await waitFor(() => host.lastFull && b.lastFull && c.lastFull && d.lastFull);
 
   const hv = host.lastFull!;

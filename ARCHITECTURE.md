@@ -69,11 +69,14 @@ src/
       GameView3D.ts           scène de jeu : caméra 3e/1re personne avec collision murs, souris,
                               déplacements relatifs à la caméra, interpolation, pluie, éclairs, coupure + lampes torches
       sprites.ts              icônes d'objets et étiquettes de nom
+    game/intro/               cinématique d'arrivée (scène, caméra, véhicule, personnages assis, son,
+                              textes, chargement masqué) — voir docs/INTRO_CINEMATIC.md
     render/                   avatar SVG (portraits) + plan 2D (touche M)
     ui/                       home, auth, character-creation, profile, friends, servers,
                               lobby, settings, game, investigation, common
 tests/
   engine.test.ts              règles du monde, boucle complète, relations, traces
+  intro.test.ts               cinématique : véhicules, places, chronologie, synchro 2/4/5/8 joueurs, composition figée
   multiplayer.test.ts         4 clients réels : lobby, sync, chat privé, reconnexion, amis
 ```
 
@@ -105,7 +108,7 @@ Un test vérifie que la vue d’un joueur ne contient ni le secret ni l’emprei
 
 - Requête/réponse (ack `{ok,data}|{ok:false,error}`) : `friends:*`, `notifications:*`, `invite:respond`, `servers:list`, `lobby:create|join|leave|ready|kick|settings|close|start|invite|chat`, `game:action`, `game:chat`, `game:leave`.
 - Flux : `game:input` (sans ack).
-- Poussées serveur : `session:state`, `lobby:state`, `lobby:transition`, `notification`, `friends:changed`, `game:full`, `game:snapshot`, `game:ended`.
+- Poussées serveur : `session:state`, `lobby:state`, `lobby:intro`, `lobby:intro-state` (cinématique, voir `docs/INTRO_CINEMATIC.md`), `notification`, `friends:changed`, `game:full`, `game:snapshot`, `game:ended`.
 - REST : `/api/auth/register|login|logout`, `/api/me`, `PUT /api/character`, `/api/profile/:id`, `/api/history`, `/api/health`.
 
 Les erreurs métier lèvent `UserError` (message affiché tel quel) ; toute autre exception est journalisée et renvoyée comme « Erreur serveur inattendue ».

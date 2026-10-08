@@ -50,6 +50,9 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - **Architecture** : plinthes, corniches, chambranles de porte, fenêtres à croisillons avec rideaux, façade en brique, escalier dans le hall, mobilier orienté contre les murs.
 - **Lumière** : ombres douces dynamiques (lampe principale qui suit la pièce courante), environnement HDR nocturne, bloom léger, fenêtres éclairées de l'extérieur.
 
+### V0.10 — cinématique d'arrivée (Villa Beaumont)
+Scène 3D temps réel de 20 s (réglable) qui masque le chargement : les **vrais personnages** des joueurs arrivent en **berline (2–4)** ou en **minibus (5–8)**, conducteur tiré au sort par le serveur, animations variées (discute, rit, danse, regarde dehors), le conducteur montre la villa, la caméra sort par le pare-brise et révèle véhicule + route + villa ; fenêtres qui s'allument, silhouette furtive derrière un rideau ; textes tapés en bas ; 5 couches sonores. États `INTRO_START → … → GAME_START` cadencés par le serveur, composition figée, reprise à la reconnexion. Détails : `docs/INTRO_CINEMATIC.md`. Tests 2/4/5/8 joueurs.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
@@ -146,6 +149,7 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ✅ [P0] Zones verrouillées (cave & garage : clé ou tournevis)
 - ✅ [P1] Brouillard : seules la pièce courante et ce qui s’y trouve sont visibles
 - ✅ [P1] Météo : pluie sur l’extérieur, coupure de courant (blackout)
+- ✅ [P1] Cinématique d'arrivée data-driven (véhicules, places, cadrages) · ⬜ [P2] Vrais modèles de véhicules (glTF via `assets.model`) · ⬜ [P2] Animations assises capturées · ⬜ [P3] Lieux d'arrivée variés (`IntroConfig`)
 - ⬜ [P1] Étage (chambres à l’étage, escalier) · ⬜ [P2] Fenêtres (voir dans le jardin) · ⬜ [P2] Portes qu’on ferme à clé de l’intérieur
 - ⬜ [P2] Pièces secrètes / passages · ⬜ [P2] Variantes de villa (agencements tirés au sort)
 - ⬜ [P3] Jardin étendu → quartier → village → ville → autres bâtiments → véhicules

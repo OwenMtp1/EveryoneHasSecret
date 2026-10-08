@@ -15,7 +15,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import type { Appearance, Character } from '@shared/types';
 import { findHairColor, findOutfit, findSkinTone } from '@shared/content/character';
 import type { GestureKind } from '@shared/types';
-import { GesturePlayer, findRig } from './gestures';
+import { GesturePlayer, findRig, type PoseFn } from './gestures';
 
 interface BaseModel {
   scene: THREE.Group;
@@ -160,6 +160,8 @@ export interface RealisticInstance {
   setVisible(v: boolean): void;
   setDead(animated: boolean): void;
   gesture(kind: GestureKind): void;
+  /** pose continue (cinématique) */
+  setPose(fn: PoseFn | null): void;
   dispose(): void;
 }
 
@@ -261,6 +263,9 @@ export function buildRealistic(c: Character): RealisticInstance | null {
     },
     gesture(kind) {
       if (!dead) gestures.play(kind);
+    },
+    setPose(fn) {
+      gestures.hold(fn);
     },
     setVisible(v) {
       model.visible = v;

@@ -36,7 +36,14 @@ class AudioManager {
     }
   }
 
-  private noiseBuffer(seconds = 2) {
+  /** Accès aux bus audio pour les mises en scène (cinématique) ; null si l'audio n'est pas débloqué. */
+  buses(): { ctx: AudioContext; music: GainNode; sfx: GainNode } | null {
+    if (!this.ctx || !this.music || !this.sfx) return null;
+    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    return { ctx: this.ctx, music: this.music, sfx: this.sfx };
+  }
+
+  noiseBuffer(seconds = 2) {
     const ctx = this.ctx!;
     const buf = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
     const d = buf.getChannelData(0);

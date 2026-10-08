@@ -547,9 +547,11 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   // ── Murs : noyaux (collision caméra) + faces habillées par pièce ──
   const wallTiles: { x: number; y: number; h: number }[] = [];
   const heightAt = new Map<string, number>();
+  // ouverture du muret d'enceinte face à l'allée d'accès (cinématique d'arrivée)
+  const isOpening = (x: number, y: number) => !!opts.driveway && y === WORLD_H - 1 && Math.abs(x + 0.5 - DRIVEWAY_X) < 2.5;
   for (let y = -1; y <= WORLD_H; y++)
     for (let x = -1; x <= WORLD_W; x++) {
-      if (roomIdx(x, y)) continue;
+      if (roomIdx(x, y) || isOpening(x, y)) continue;
       let indoor = false;
       let outdoor = false;
       for (let dy = -1; dy <= 1; dy++)
@@ -590,7 +592,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       for (const [dx, dy, ry] of DIRS) {
         const wx = x + dx;
         const wy = y + dy;
-        if (roomIdx(wx, wy)) continue;
+        if (roomIdx(wx, wy) || isOpening(wx, wy)) continue;
         const h = heightAt.get(`${wx},${wy}`) ?? WALL_H;
         const m = STYLE[room.id].wall();
         const plane = new THREE.PlaneGeometry(1, h);

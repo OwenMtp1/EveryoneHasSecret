@@ -15,6 +15,7 @@ import type {
   ServerFilters,
   ServerListEntry,
 } from './types';
+import type { GameIntroState, IntroPlan } from './content/intro';
 
 export type Ack<T = unknown> = (res: AckResult<T>) => void;
 export type AckResult<T = unknown> = { ok: true; data: T } | { ok: false; error: string };
@@ -92,7 +93,10 @@ export type VoiceSignal = { sdp: { type: 'offer' | 'answer'; sdp: string } } | {
 export interface ServerToClientEvents {
   'session:state': (s: { lobby: LobbyView | null; inGame: boolean }) => void;
   'lobby:state': (l: LobbyView | null) => void;
-  'lobby:transition': (p: { title: string; clock: number; durationMs: number }) => void;
+  /** début de la cinématique d'arrivée (aussi renvoyé à un joueur qui se reconnecte pendant celle-ci) */
+  'lobby:intro': (p: { plan: IntroPlan; serverNow: number }) => void;
+  /** changement d'état de la cinématique, cadencé par le serveur */
+  'lobby:intro-state': (p: { planId: string; state: GameIntroState; serverNow: number }) => void;
   notification: (n: AppNotification) => void;
   'friends:changed': () => void;
   'game:full': (v: GameSelfView) => void;

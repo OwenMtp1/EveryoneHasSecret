@@ -3,7 +3,8 @@
  * Toutes les permissions (hôte, places, statut) sont vérifiées ici, côté serveur.
  */
 import type { LobbyView, LobbyVisibility, ServerFilters, ServerListEntry, EpilogueView } from '@shared/types';
-import { GAME_NAME, META_CONFIG, GAME_CONFIG } from '@shared/config';
+import { GAME_NAME, META_CONFIG } from '@shared/config';
+import { buildIntroPlan, introSchedule, type IntroPlan } from '@shared/content/intro';
 import { GameInstance } from '../game/GameInstance';
 import type { AuthService } from './auth';
 import type { ProfileService } from './profiles';
@@ -33,7 +34,8 @@ interface Lobby {
   game: GameInstance | null;
   /** joueurs encore « dans » la partie (avant retour au lobby) */
   inGame: Set<string>;
-  startTimer?: NodeJS.Timeout;
+  /** cinématique en cours : composition figée, états cadencés par le serveur */
+  intro?: { plan: IntroPlan; timers: NodeJS.Timeout[] };
   duration: NightDuration;
 }
 
@@ -49,9 +51,9 @@ export class LobbyManager {
   private lobbies = new Map<string, Lobby>();
   private userLobby = new Map<string, string>();
   private disconnectTimers = new Map<string, NodeJS.Timeout>();
-  /** Accélération (tests) : durée de la nuit et de la transition. */
+  /** Accélération (tests) : durée de la nuit et de la cinématique d'arrivée (15–25 s en jeu réel). */
   timeScale = Number(process.env.EHAS_TIME_SCALE ?? 1);
-  transitionMs = Number(process.env.EHAS_TRANSITION_MS ?? 6500);
+  transitionMs = Number(process.env.EHAS_TRANSITION_MS ?? 20000);
 
   constructor(
     private db: DB,
@@ -115,6 +117,12 @@ export class LobbyManager {
   sessionState(userId: string) {
     const l = this.lobbyOfUser(userId);
     return { lobby: l ? this.view(l, userId) : null, inGame: !!(l?.game && l.inGame.has(userId)) };
+  }
+
+  /** Plan de la cinématique en cours si ce joueur en fait partie. */
+  introOf(userId: string): IntroPlan | null {
+    const plan = this.lobbyOfUser(userId)?.intro?.plan;
+    return plan && plan.occupants.some((o) => o.userId === userId) ? plan : null;
   }
 
   gameOf(userId: string): GameInstance | null {
@@ -269,13 +277,13 @@ export class LobbyManager {
       l.hostId = l.players[0].userId;
       this.system(l, `${this.nameOf(l.hostId)} est maintenant l’hôte.`);
     }
-    if (l.status === 'STARTING') this.cancelStart(l, 'Un joueur est parti : lancement annulé.');
+    // Pendant la cinématique, la composition est figée : on ne l'interrompt pas pour un départ.
     this.system(l, `${this.nameOf(userId)} est parti·e.`);
     this.broadcast(l);
   }
 
   private destroy(l: Lobby) {
-    if (l.startTimer) clearTimeout(l.startTimer);
+    this.clearIntro(l);
     l.game?.stop();
     for (const p of l.players) this.userLobby.delete(p.userId);
     this.lobbies.delete(l.id);
@@ -300,7 +308,7 @@ export class LobbyManager {
   kick(hostId: string, targetId: string) {
     const l = this.requireHost(hostId);
     if (targetId === hostId) throw new UserError('Vous ne pouvez pas vous expulser.');
-    if (l.game) throw new UserError('Impossible pendant une partie.');
+    if (l.game || l.status !== 'WAITING') throw new UserError('Impossible pendant une partie.');
     if (!l.players.some((p) => p.userId === targetId)) throw new UserError('Joueur absent.');
     this.leave(targetId);
     this.notifications.notify(targetId, 'KICKED', 'Expulsé·e', `L’hôte vous a retiré·e de « ${l.name} ».`, {}, { ephemeral: true });
@@ -365,29 +373,48 @@ export class LobbyManager {
     if (l.players.length < META_CONFIG.minPlayersToStart) throw new UserError(`Il faut au moins ${META_CONFIG.minPlayersToStart} joueurs.`);
     if (!v.canStart) throw new UserError('Tous les joueurs doivent être prêts.');
     l.status = 'STARTING';
-    this.system(l, 'Les portes de la villa se referment derrière vous…');
+    this.system(l, 'En route pour la villa…');
     this.broadcast(l);
-    for (const p of l.players)
-      this.emitter.toUser(p.userId, 'lobby:transition', { title: l.name, clock: GAME_CONFIG.startClockMinutes, durationMs: this.transitionMs });
-    l.startTimer = setTimeout(() => this.launch(l), this.transitionMs);
+    // Composition FIGÉE : ces joueurs (et eux seuls) sont dans le véhicule et dans la partie
+    const plan = buildIntroPlan(
+      l.players.map((p) => ({ userId: p.userId, name: this.nameOf(p.userId), character: this.profiles.getCharacter(p.userId)! })),
+      { id: shortId('intro_'), seed: Math.floor(Math.random() * 2 ** 31), startedAt: Date.now(), durationMs: this.transitionMs },
+    );
+    l.intro = { plan, timers: [] };
+    for (const p of l.players) this.emitter.toUser(p.userId, 'lobby:intro', { plan, serverNow: Date.now() });
+    for (const step of introSchedule(plan.durationMs)) {
+      if (step.at === 0) continue;
+      l.intro.timers.push(
+        setTimeout(() => {
+          if (l.intro?.plan.id !== plan.id) return;
+          for (const id of plan.occupants.map((o) => o.userId))
+            if (l.players.some((p) => p.userId === id)) this.emitter.toUser(id, 'lobby:intro-state', { planId: plan.id, state: step.state, serverNow: Date.now() });
+          if (step.state === 'GAME_START') this.launch(l);
+        }, step.at),
+      );
+    }
   }
 
-  private cancelStart(l: Lobby, reason: string) {
-    if (l.startTimer) clearTimeout(l.startTimer);
-    l.status = 'WAITING';
-    for (const p of l.players) p.ready = false;
-    this.system(l, reason);
+  private clearIntro(l: Lobby) {
+    for (const t of l.intro?.timers ?? []) clearTimeout(t);
+    l.intro = undefined;
   }
 
   private launch(l: Lobby) {
-    l.startTimer = undefined;
-    if (!this.lobbies.has(l.id) || l.status !== 'STARTING') return;
-    const players = l.players.map((p) => ({
-      userId: p.userId,
-      name: this.nameOf(p.userId),
-      character: this.profiles.getCharacter(p.userId)!,
-    }));
-    l.inGame = new Set(players.map((p) => p.userId));
+    const plan = l.intro?.plan;
+    this.clearIntro(l);
+    if (!plan || !this.lobbies.has(l.id) || l.status !== 'STARTING') return;
+    // Exactement les joueurs de la cinématique ; ceux partis entre-temps restent dans
+    // l'histoire (personnage présent, considéré déconnecté) mais ne sont plus suivis par le salon.
+    const players = plan.occupants.map((o) => ({ userId: o.userId, name: o.name, character: o.character }));
+    const present = new Set(l.players.map((p) => p.userId));
+    for (const p of players) {
+      // une déconnexion pendant la partie ne fait pas quitter le salon (délai de grâce du salon annulé)
+      const t = this.disconnectTimers.get(p.userId);
+      if (t) clearTimeout(t);
+      this.disconnectTimers.delete(p.userId);
+    }
+    l.inGame = new Set(players.filter((p) => present.has(p.userId)).map((p) => p.userId));
     l.game = new GameInstance({
       id: newId(),
       lobbyId: l.id,
@@ -400,6 +427,7 @@ export class LobbyManager {
       onFinished: (epi) => this.onGameFinished(l, epi),
     });
     l.status = 'IN_GAME';
+    for (const p of players) if (!present.has(p.userId)) l.game.setConnected(p.userId, false);
     for (const p of l.players) {
       if (!p.connected) l.game.setConnected(p.userId, false);
       this.emitter.toUser(p.userId, 'session:state', this.sessionState(p.userId));

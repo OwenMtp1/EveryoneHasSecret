@@ -6,6 +6,7 @@ import type { AppNotification, Character, FriendEntry, GameSelfView, GameSnapsho
 import { api, tokenStore } from './net/api';
 import { call, connectSocket, disconnectSocket } from './net/socket';
 import { audio } from './audio';
+import { introStateAt, type GameIntroState, type IntroPlan } from '@shared/content/intro';
 
 export type Screen =
   | 'boot'
@@ -50,7 +51,9 @@ interface AppState {
   lobby: LobbyView | null;
   inGame: boolean;
   game: GameSelfView | null;
-  transition: { title: string; clock: number; durationMs: number; startedAt: number } | null;
+  /** cinématique d'arrivée : plan serveur, décalage d'horloge (serveur − local), état courant */
+  intro: { plan: IntroPlan; offset: number; state: GameIntroState } | null;
+  endIntro: () => void;
   notifications: AppNotification[];
   toasts: Toast[];
   friends: FriendEntry[];
@@ -79,7 +82,8 @@ export const useStore = create<AppState>((set, get) => ({
   lobby: null,
   inGame: false,
   game: null,
-  transition: null,
+  intro: null,
+  endIntro: () => set({ intro: null }),
   notifications: [],
   toasts: [],
   friends: [],
@@ -119,7 +123,7 @@ export const useStore = create<AppState>((set, get) => ({
     s.on('session:state', ({ lobby, inGame }) => {
       const cur = get().screen;
       set({ lobby, inGame });
-      if (inGame) set({ screen: 'game', transition: null });
+      if (inGame) set({ screen: 'game' });
       else if (lobby && (cur === 'game' || cur === 'menu' || cur === 'play' || cur === 'servers' || cur === 'join' || cur === 'create')) set({ screen: 'lobby' });
       else if (!lobby && cur === 'game') set({ screen: 'menu', game: null });
     });
@@ -127,10 +131,17 @@ export const useStore = create<AppState>((set, get) => ({
       const st = get();
       set({ lobby });
       if (!lobby && st.screen === 'lobby') set({ screen: 'menu' });
+      if (!lobby && st.intro) set({ intro: null });
     });
-    s.on('lobby:transition', (t) => {
-      audio.sting();
-      set({ transition: { ...t, startedAt: Date.now() } });
+    s.on('lobby:intro', ({ plan, serverNow }) => {
+      const offset = serverNow - Date.now();
+      set({ intro: { plan, offset, state: introStateAt(plan.durationMs, serverNow - plan.startedAt) } });
+    });
+    s.on('lobby:intro-state', ({ planId, state, serverNow }) => {
+      const cur = get().intro;
+      if (!cur || cur.plan.id !== planId) return;
+      // l'horloge se recale à chaque état reçu : tous les clients restent alignés sur le serveur
+      set({ intro: { ...cur, state, offset: serverNow - Date.now() } });
     });
     s.on('notification', (n) => {
       audio.notify();
@@ -159,7 +170,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (prev && next.feed.length && prev.feed[prev.feed.length - 1]?.id !== next.feed[next.feed.length - 1]?.id) {
         if (next.feed[next.feed.length - 1].style === 'danger') audio.danger();
       }
-      if (hadFull && (st.screen !== 'game' || st.transition || !st.inGame)) set({ game: next, inGame: true, screen: 'game', transition: null });
+      if (hadFull && (st.screen !== 'game' || !st.inGame)) set({ game: next, inGame: true, screen: 'game', intro: st.intro ? { ...st.intro, state: 'GAME_START' } : null });
       else set({ game: next });
     };
     const schedule = () => {

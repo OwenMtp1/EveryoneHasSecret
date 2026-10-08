@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import type { GestureKind } from '@shared/types';
 
-type BoneKey = 'Hips' | 'Spine' | 'Spine1' | 'Spine2' | 'Neck' | 'Head' | 'RightArm' | 'RightForeArm' | 'LeftArm' | 'LeftForeArm' | 'RightUpLeg' | 'LeftUpLeg' | 'RightLeg' | 'LeftLeg';
+export type BoneKey = 'Hips' | 'Spine' | 'Spine1' | 'Spine2' | 'Neck' | 'Head' | 'RightArm' | 'RightForeArm' | 'RightHand' | 'LeftArm' | 'LeftForeArm' | 'LeftHand' | 'RightUpLeg' | 'LeftUpLeg' | 'RightLeg' | 'LeftLeg';
 
 export type Rig = Partial<Record<BoneKey, THREE.Bone>>;
 
@@ -20,8 +20,21 @@ export function findRig(root: THREE.Object3D): Rig {
   return rig;
 }
 
-/** Une pose = rotations (radians) autour de deux axes du personnage : `bend` (vers l'avant) et `side`. */
-type Pose = Partial<Record<BoneKey, { bend?: number; side?: number }>>;
+/**
+ * Une pose = rotations (radians) autour d'axes du personnage : `bend` (vers l'avant), `side`, `turn` (vertical) ;
+ * ou `aim` : direction visée par l'os (vers son os enfant), dans le repère du personnage
+ * (x = sa gauche, y = haut, z = avant), avec un poids `aimW`. L'aim donne le même résultat sur tous les squelettes.
+ */
+export interface BoneRot {
+  bend?: number;
+  side?: number;
+  turn?: number;
+  aim?: [number, number, number];
+  aimW?: number;
+}
+export type Pose = Partial<Record<BoneKey, BoneRot>>;
+/** Pose continue (assis, discute, danse…) : fonction du temps écoulé en secondes. */
+export type PoseFn = (time: number) => Pose;
 
 interface GestureDef {
   duration: number;
@@ -58,6 +71,28 @@ const _qp = new THREE.Quaternion();
 const _fwd = new THREE.Vector3();
 const _bendAxis = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
+const AIM_CHILD: Partial<Record<BoneKey, BoneKey>> = { RightArm: 'RightForeArm', RightForeArm: 'RightHand', LeftArm: 'LeftForeArm', LeftForeArm: 'LeftHand' };
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _rootQ = new THREE.Quaternion();
+const _id = new THREE.Quaternion();
+
+/** Oriente l'os pour que le segment os → enfant pointe vers `dirWorld` (poids w). */
+function aimWorld(bone: THREE.Bone, child: THREE.Bone, dirWorld: THREE.Vector3, w: number) {
+  if (!bone.parent || w <= 0) return;
+  child.updateWorldMatrix(true, false);
+  bone.getWorldPosition(_a);
+  child.getWorldPosition(_b);
+  const cur = _b.sub(_a);
+  if (cur.lengthSq() < 1e-8) return;
+  _q.setFromUnitVectors(cur.normalize(), dirWorld);
+  if (w < 1) _q.slerpQuaternions(_id, _q, w);
+  bone.getWorldQuaternion(_qw);
+  bone.parent.getWorldQuaternion(_qp);
+  _q.multiply(_qw);
+  bone.quaternion.copy(_qp.invert().multiply(_q));
+}
 
 function rotateWorld(bone: THREE.Bone, axis: THREE.Vector3, angle: number) {
   if (!angle || !bone.parent) return;
@@ -70,6 +105,8 @@ function rotateWorld(bone: THREE.Bone, axis: THREE.Vector3, angle: number) {
 
 export class GesturePlayer {
   private current: { def: GestureDef; t: number } | null = null;
+  private held: PoseFn | null = null;
+  private time = 0;
 
   constructor(private rig: Rig, private root: THREE.Object3D) {}
 
@@ -77,24 +114,42 @@ export class GesturePlayer {
     this.current = { def: GESTURES[kind], t: 0 };
   }
 
+  /** Pose maintenue en continu (cinématique) ; null pour la retirer. */
+  hold(fn: PoseFn | null) {
+    this.held = fn;
+    this.time = 0;
+  }
+
   /** À appeler APRÈS la mise à jour des animations capturées. */
   apply(dt: number) {
+    this.time += dt;
     const c = this.current;
-    if (!c) return;
-    c.t += dt / c.def.duration;
-    if (c.t >= 1) {
-      this.current = null;
-      return;
+    let gesture: Pose | null = null;
+    if (c) {
+      c.t += dt / c.def.duration;
+      if (c.t >= 1) this.current = null;
+      else gesture = c.def.pose(c.t);
     }
-    const pose = c.def.pose(c.t);
+    const base = this.held ? this.held(this.time) : null;
+    if (!gesture && !base) return;
     this.root.getWorldDirection(_fwd); // +z local = avant du personnage
     _bendAxis.crossVectors(UP, _fwd).normalize(); // rotation positive = pencher vers l'avant
+    this.root.getWorldQuaternion(_rootQ);
     for (const k of ORDER) {
-      const p = pose[k];
       const bone = this.rig[k];
-      if (!p || !bone) continue;
-      if (p.bend) rotateWorld(bone, _bendAxis, p.bend);
-      if (p.side) rotateWorld(bone, _fwd, p.side);
+      if (!bone) continue;
+      const aim = base?.[k]?.aim;
+      const child = AIM_CHILD[k] && this.rig[AIM_CHILD[k]!];
+      if (aim && child) {
+        _dir.set(aim[0], aim[1], aim[2]).normalize().applyQuaternion(_rootQ);
+        aimWorld(bone, child, _dir, Math.min(1, base![k]!.aimW ?? 1));
+      }
+      const bend = (base?.[k]?.bend ?? 0) + (gesture?.[k]?.bend ?? 0);
+      const side = (base?.[k]?.side ?? 0) + (gesture?.[k]?.side ?? 0);
+      const turn = (base?.[k]?.turn ?? 0) + (gesture?.[k]?.turn ?? 0);
+      if (turn) rotateWorld(bone, UP, turn); // tourner (la tête vers un voisin, la fenêtre…)
+      if (bend) rotateWorld(bone, _bendAxis, bend);
+      if (side) rotateWorld(bone, _fwd, side);
     }
   }
 }

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import type { Character, GestureKind } from '@shared/types';
 import { findHairColor, findHairStyle, findOutfit, findSkinTone, type HairPart3D, type Outfit } from '@shared/content/character';
 import { buildRealistic } from './realistic';
+import type { PoseFn } from './gestures';
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
 function geo(key: string, make: () => THREE.BufferGeometry) {
@@ -59,6 +60,8 @@ export interface Character3D {
   /** animated : la chute est jouée (le joueur était visible au moment de la mort) */
   setDead(dead: boolean, animated?: boolean): void;
   gesture(kind: GestureKind): void;
+  /** pose continue superposée (cinématique : assis, discute, rit…) ; null pour revenir à la normale */
+  setPose(fn: PoseFn | null): void;
   dispose(): void;
 }
 
@@ -73,6 +76,7 @@ export function buildCharacter(c: Character): Character3D {
     setVisibleBody: r.setVisible,
     setDead: (d, animated) => d && r.setDead(!!animated),
     gesture: r.gesture,
+    setPose: r.setPose,
     dispose: r.dispose,
   };
 }
@@ -214,6 +218,8 @@ export function buildProcedural(c: Character): Character3D {
   let phase = Math.random() * 10;
   let walkBlend = 0;
   let gestureT = 1;
+  let held: PoseFn | null = null;
+  let heldT = 0;
   return {
     root,
     head,
@@ -238,9 +244,24 @@ export function buildProcedural(c: Character): Character3D {
         body.rotation.x = 0.35 * e;
         arms[1].rotation.x = -1.1 * e;
       }
+      if (held) {
+        // version simplifiée : cuisses et bras seulement (pas de genoux sur le modèle de repli)
+        heldT += dt;
+        const p = held(heldT);
+        legs[0].rotation.x = p.LeftUpLeg?.bend ?? legs[0].rotation.x;
+        legs[1].rotation.x = p.RightUpLeg?.bend ?? legs[1].rotation.x;
+        arms[0].rotation.x = p.LeftArm?.bend ?? arms[0].rotation.x;
+        arms[1].rotation.x = p.RightArm?.bend ?? arms[1].rotation.x;
+        body.rotation.x = p.Spine?.bend ?? 0;
+        head.rotation.y = p.Head?.side ?? head.rotation.y;
+      }
     },
     gesture() {
       gestureT = 0;
+    },
+    setPose(fn) {
+      held = fn;
+      heldT = 0;
     },
     setVisibleBody(v) {
       body.visible = v;

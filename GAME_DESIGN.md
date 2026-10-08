@@ -30,7 +30,7 @@ Ouverture (fond vivant : villa de nuit, pluie, fenêtres, éclairs)
 → Menu principal (JOUER · SERVEURS · AMIS · PROFIL · PARAMÈTRES)
 → Créer une partie (publique/privée + code) / Rejoindre par code / Serveurs publics
 → Lobby (personnages en scène, READY, chat, invitations, hôte)
-→ Transition cinématique (écran noir · 23:47 · Villa Beaumont · …)
+→ Cinématique d'arrivée en 3D (les joueurs en voiture ou en minibus, révélation de la Villa Beaumont, 22h00)
 → Villa → Exploration → Relations → Objets → Événements → Drame
 → Enquête (rôles) → Accusation → Épilogue (la vérité) → Retour lobby / Rejouer
 ```

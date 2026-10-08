@@ -16,7 +16,7 @@ import { FriendsScreen } from './ui/friends/FriendsScreen';
 import { ProfileScreen } from './ui/profile/ProfileScreen';
 import { SettingsScreen } from './ui/settings/SettingsScreen';
 import { LobbyScreen } from './ui/lobby/LobbyScreen';
-import { Transition } from './ui/lobby/Transition';
+import { IntroScreen } from './game/intro/IntroScreen';
 import { GameScreen } from './ui/game/GameScreen';
 
 export function App() {
@@ -53,7 +53,7 @@ export function App() {
       {screen === 'settings' && <SettingsScreen />}
       {screen === 'lobby' && <LobbyScreen />}
       {inGame && <GameScreen />}
-      <Transition />
+      <IntroScreen />
       <Toasts />
       <ActionFlash />
       {user && !connected && screen !== 'auth' && <div className="offline-banner">Connexion au serveur perdue — reconnexion…</div>}

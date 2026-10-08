@@ -132,6 +132,9 @@ export function createApp(opts: { dbPath?: string } = {}): AppContext {
     const first = presence.connect(userId, socket.id);
     lobbies.onConnect(userId);
     socket.emit('session:state', lobbies.sessionState(userId));
+    // Reconnexion pendant la cinématique : on reprend au bon moment
+    const intro = lobbies.introOf(userId);
+    if (intro) socket.emit('lobby:intro', { plan: intro, serverNow: Date.now() });
     if (first) {
       for (const f of friends.friendIds(userId)) {
         toUser(f, 'friends:changed');
