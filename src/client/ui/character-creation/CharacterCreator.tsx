@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Character } from '@shared/types';
 import {
   APPEARANCES,
@@ -10,6 +10,7 @@ import {
   validateCharacter,
 } from '@shared/content/character';
 import { Avatar } from '../common/Avatar';
+import { Stage3D } from '../common/Stage3D';
 import { api } from '../../net/api';
 import { useStore } from '../../store';
 import { audio } from '../../audio';
@@ -23,7 +24,6 @@ export function CharacterCreator() {
   const [c, setC] = useState<Character>(() => existing ?? { ...randomCharacter(), firstName: '', lastName: '' });
   const [tab, setTab] = useState<Tab>('identity');
   const [angle, setAngle] = useState(0);
-  const [dragging, setDragging] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isFirst = !existing;
@@ -34,21 +34,6 @@ export function CharacterCreator() {
   };
 
   const validation = useMemo(() => validateCharacter(c), [c]);
-  const view = Math.cos((angle * Math.PI) / 180) >= 0 ? 'front' : 'back';
-  const squash = Math.max(0.18, Math.abs(Math.cos((angle * Math.PI) / 180)));
-
-  useEffect(() => {
-    if (dragging === null) return;
-    const move = (e: PointerEvent) => setAngle((a) => a + (e.clientX - dragging) * 0.02);
-    const up = () => setDragging(null);
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    return () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-  }, [dragging]);
-
   const surprise = () => {
     audio.click();
     const r = randomCharacter();
@@ -75,15 +60,13 @@ export function CharacterCreator() {
     <div className="creator fade-in">
       <div className="creator-stage">
         <h2 className="screen-title">CREATE YOUR CHARACTER</h2>
-        <div className="creator-spot" onPointerDown={(e) => setDragging(e.clientX)}>
-          <div className="creator-figure idle" style={{ transform: `scaleX(${squash})` }}>
-            <Avatar character={c} size={250} view={view} />
-          </div>
+        <div className="creator-spot">
+          <Stage3D actors={[{ key: 'me', character: c }]} rotatable angle={angle} />
         </div>
         <div className="creator-rotate">
-          <button className="btn btn-ghost btn-sm" onClick={() => setAngle((a) => a - 45)}>⟲</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setAngle((a) => a - Math.PI / 4)}>⟲</button>
           <span>Glissez pour tourner</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => setAngle((a) => a + 45)}>⟳</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setAngle((a) => a + Math.PI / 4)}>⟳</button>
         </div>
         <div className="creator-name">{c.firstName || 'Prénom'} {c.lastName || 'Nom'}</div>
       </div>

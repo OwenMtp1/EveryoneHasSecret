@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { META_CONFIG } from '@shared/config';
 import { call } from '../../net/socket';
 import { attempt, useStore } from '../../store';
-import { Avatar, Portrait } from '../common/Avatar';
+import { Portrait } from '../common/Avatar';
+import { Stage3D } from '../common/Stage3D';
 
 export function LobbyScreen() {
   const lobby = useStore((s) => s.lobby);
@@ -53,25 +54,30 @@ export function LobbyScreen() {
       </header>
 
       <div className="lobby-stage">
-        <div className="lobby-floor" />
+        <Stage3D
+          actors={lobby.players
+            .filter((p) => p.character)
+            .map((p) => ({
+              key: p.userId,
+              character: p.character!,
+              label: `${p.isHost ? '♛ ' : ''}${p.character!.firstName}${p.isHost || p.ready ? ' ✓' : ''}`,
+              highlight: p.isHost || p.ready,
+            }))}
+        />
+      </div>
+      <div className="lobby-roster">
         {slots.map((p, i) =>
           p ? (
-            <div key={p.userId} className={`lobby-slot ${p.ready || p.isHost ? 'is-ready' : ''} ${!p.connected ? 'is-away' : ''}`} style={{ animationDelay: `${i * 0.06}s` }}>
-              {p.character && <Avatar character={p.character} size={110} className="idle" />}
-              <div className="lobby-name">
-                {p.isHost && <span title="Hôte">♛ </span>}
-                {p.character ? p.character.firstName : p.username}
-              </div>
-              <div className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'READY ✓' : 'NOT READY'}</div>
+            <div key={p.userId} className={`roster-item ${p.ready || p.isHost ? 'is-ready' : ''} ${!p.connected ? 'is-away' : ''}`}>
+              <Portrait character={p.character} size={34} />
+              <span className="grow">{p.character ? `${p.character.firstName} ${p.character.lastName}` : p.username}</span>
+              <span className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'READY ✓' : 'NOT READY'}</span>
               {isHost && !p.isHost && lobby.status === 'WAITING' && (
                 <button className="kick" title="Expulser" onClick={() => confirm(`Expulser ${p.username} ?`) && attempt(call('lobby:kick', p.userId))}>✕</button>
               )}
             </div>
           ) : (
-            <div key={`empty-${i}`} className="lobby-slot empty">
-              <div className="empty-silhouette" />
-              <div className="lobby-name muted">Place libre</div>
-            </div>
+            <div key={`empty-${i}`} className="roster-item empty">Place libre</div>
           ),
         )}
       </div>

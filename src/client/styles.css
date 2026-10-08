@@ -454,3 +454,26 @@ kbd {
   .player-chip { right: 12px; top: 12px; }
 }
 .reduced *, .reduced *::before, .reduced *::after { animation-duration: 0.01ms !important; }
+
+/* ───────── 3D ───────── */
+.view3d { position: absolute; inset: 0; }
+.view3d canvas { cursor: crosshair; }
+.cam-hint { position: absolute; top: 10px; left: 12px; z-index: 5; font-size: 11px; color: rgba(236, 228, 212, 0.7); background: rgba(0, 0, 0, 0.45); padding: 5px 10px; border-radius: 8px; pointer-events: none; }
+.map-overlay { position: absolute; inset: 0; z-index: 20; background: rgba(2, 3, 6, 0.88); display: flex; flex-direction: column; animation: fadeIn 0.2s both; }
+.map-overlay canvas { flex: 1; width: 100%; min-height: 0; }
+.map-caption { text-align: center; padding: 8px; color: var(--gold); letter-spacing: 0.2em; font-size: 11px; }
+.stage3d { position: relative; width: 100%; height: 100%; }
+.stage3d canvas { display: block; width: 100% !important; height: 100% !important; }
+.three-bg { position: fixed; inset: 0; z-index: 0; }
+.three-bg canvas { width: 100% !important; height: 100% !important; display: block; }
+.three-bg.dim::after { content: ''; position: absolute; inset: 0; background: rgba(4, 5, 8, 0.55); pointer-events: none; }
+.creator-spot { cursor: default; min-height: 360px; }
+.profile-figure { height: 440px; padding-top: 0; }
+.lobby-stage { display: block; min-height: 240px; padding: 0; }
+.lobby-roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.roster-item { position: relative; display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 34px 6px 8px; font-size: 13px; animation: fadeIn 0.4s both; }
+.roster-item.is-ready { border-color: rgba(111, 191, 138, 0.45); }
+.roster-item.is-away { opacity: 0.45; }
+.roster-item.empty { color: var(--muted); border-style: dashed; justify-content: center; padding: 14px; }
+.roster-item .kick { top: 50%; right: 6px; transform: translateY(-50%); }
+.epilogue-figure { width: 170px; height: 240px; flex-shrink: 0; }

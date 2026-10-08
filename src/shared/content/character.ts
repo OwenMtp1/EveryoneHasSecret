@@ -18,9 +18,23 @@ export interface HairColor {
   color: string;
 }
 
+/**
+ * Coiffure 3D décrite par des primitives (mètres, repère centré sur la tête, +z = visage).
+ * cap = calotte (demi-ellipsoïde), sphere / box / capsule = volumes.
+ */
+export interface HairPart3D {
+  kind: 'cap' | 'sphere' | 'box' | 'capsule';
+  p: [number, number, number];
+  s: [number, number, number];
+  r?: [number, number, number];
+  /** couche rasée (plus sombre / translucide) */
+  shade?: boolean;
+}
+
 export interface HairStyle {
   id: string;
   name: string;
+  parts3d: HairPart3D[];
   /** Couche derrière la tête (cheveux longs, chignon…) */
   back?: string;
   /** Couche devant (frange, dessus) */
@@ -88,23 +102,27 @@ export const HAIR_STYLES: HairStyle[] = [
   {
     id: 'buzz',
     name: 'Rasé court',
+    parts3d: [{ kind: 'cap', p: [0, 0.005, -0.005], s: [0.131, 0.152, 0.141] }],
     front: 'M70,70 C68,40 84,32 100,32 C116,32 132,40 130,70 C126,54 116,46 100,46 C84,46 74,54 70,70 Z',
   },
   {
     id: 'classic',
     name: 'Raie sur le côté',
+    parts3d: [{ kind: 'cap', p: [0, 0.012, -0.01], s: [0.138, 0.16, 0.15] }, { kind: 'box', p: [0.025, 0.125, 0.03], s: [0.2, 0.05, 0.2], r: [0.15, 0, -0.18] }],
     front:
       'M67,78 C62,40 80,26 102,26 C124,26 140,42 133,78 C130,60 124,50 112,48 C98,58 82,52 76,48 C70,56 68,66 67,78 Z',
   },
   {
     id: 'quiff',
     name: 'Banane',
+    parts3d: [{ kind: 'cap', p: [0, 0.01, -0.01], s: [0.136, 0.156, 0.146] }, { kind: 'box', p: [0, 0.155, 0.06], s: [0.17, 0.09, 0.13], r: [-0.45, 0, 0] }],
     front:
       'M68,72 C62,38 78,18 104,14 C132,12 144,34 134,72 C130,54 122,46 108,46 C94,46 80,50 72,58 Z',
   },
   {
     id: 'curly',
     name: 'Bouclé volumineux',
+    parts3d: [{ kind: 'sphere', p: [0, 0.07, -0.05], s: [0.18, 0.16, 0.16] }, { kind: 'sphere', p: [0.11, 0.1, 0.04], s: [0.07, 0.07, 0.07] }, { kind: 'sphere', p: [-0.11, 0.1, 0.04], s: [0.07, 0.07, 0.07] }, { kind: 'sphere', p: [0, 0.15, 0.06], s: [0.08, 0.06, 0.07] }],
     back: 'M100,16 C140,14 152,44 150,72 C150,98 138,110 128,96 L72,96 C62,110 50,98 50,72 C48,44 60,14 100,16 Z',
     front:
       'M62,62 C60,34 80,24 100,24 C120,24 140,34 138,62 C134,56 128,52 122,56 C118,48 110,46 104,52 C98,44 88,46 84,54 C78,50 70,52 66,60 Z',
@@ -112,6 +130,7 @@ export const HAIR_STYLES: HairStyle[] = [
   {
     id: 'long',
     name: 'Long lisse',
+    parts3d: [{ kind: 'cap', p: [0, 0.012, -0.01], s: [0.138, 0.16, 0.15] }, { kind: 'box', p: [0, -0.12, -0.1], s: [0.27, 0.38, 0.07] }, { kind: 'box', p: [0.125, -0.06, -0.02], s: [0.03, 0.26, 0.14] }, { kind: 'box', p: [-0.125, -0.06, -0.02], s: [0.03, 0.26, 0.14] }],
     back: 'M64,64 C60,30 82,24 100,24 C118,24 140,30 136,64 L142,168 C122,176 78,176 58,168 Z',
     front:
       'M66,78 C62,36 80,28 100,28 C120,28 138,36 134,78 C128,56 116,46 100,46 C86,46 74,56 66,78 Z',
@@ -119,24 +138,28 @@ export const HAIR_STYLES: HairStyle[] = [
   {
     id: 'bob',
     name: 'Carré',
+    parts3d: [{ kind: 'cap', p: [0, 0.015, -0.005], s: [0.142, 0.165, 0.152] }, { kind: 'box', p: [0, -0.04, -0.035], s: [0.3, 0.17, 0.23] }],
     back: 'M62,64 C58,30 82,22 100,22 C118,22 142,30 138,64 L140,116 C128,122 116,118 112,112 L88,112 C84,118 72,122 60,116 Z',
     front: 'M64,70 C60,34 80,24 100,24 C120,24 140,34 136,70 L134,58 C120,53 80,53 66,58 Z',
   },
   {
     id: 'ponytail',
     name: 'Queue de cheval',
+    parts3d: [{ kind: 'cap', p: [0, 0.01, -0.01], s: [0.134, 0.155, 0.145] }, { kind: 'sphere', p: [0, 0.03, -0.15], s: [0.05, 0.05, 0.05] }, { kind: 'capsule', p: [0, -0.1, -0.2], s: [0.04, 0.2, 0.04], r: [0.35, 0, 0] }],
     back: 'M120,40 C152,40 160,82 152,132 C148,152 136,152 138,128 C142,96 138,70 124,60 Z',
     front: SLICK_FRONT,
   },
   {
     id: 'bun',
     name: 'Chignon',
+    parts3d: [{ kind: 'cap', p: [0, 0.01, -0.01], s: [0.134, 0.155, 0.145] }, { kind: 'sphere', p: [0, 0.12, -0.11], s: [0.075, 0.07, 0.075] }],
     back: 'M84,22 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0 Z',
     front: SLICK_FRONT,
   },
   {
     id: 'wavy',
     name: 'Long ondulé',
+    parts3d: [{ kind: 'cap', p: [0, 0.015, -0.01], s: [0.142, 0.165, 0.153] }, { kind: 'box', p: [0, -0.14, -0.09], s: [0.31, 0.42, 0.09], r: [0.08, 0, 0] }, { kind: 'sphere', p: [0.12, -0.33, -0.07], s: [0.06, 0.06, 0.06] }, { kind: 'sphere', p: [-0.12, -0.33, -0.07], s: [0.06, 0.06, 0.06] }, { kind: 'box', p: [0.13, -0.08, 0], s: [0.04, 0.3, 0.13] }, { kind: 'box', p: [-0.13, -0.08, 0], s: [0.04, 0.3, 0.13] }],
     back: 'M64,62 C56,30 82,22 100,22 C118,22 144,30 136,62 C148,90 134,110 146,140 C150,160 130,170 120,160 C110,170 90,170 80,160 C70,170 50,160 54,140 C66,110 52,90 64,62 Z',
     front:
       'M66,80 C60,36 84,24 104,26 C124,28 140,40 134,80 C130,62 124,52 116,48 C104,60 84,62 72,58 C68,64 66,72 66,80 Z',
@@ -144,6 +167,7 @@ export const HAIR_STYLES: HairStyle[] = [
   {
     id: 'mohawk',
     name: 'Crête',
+    parts3d: [{ kind: 'cap', p: [0, 0.003, -0.003], s: [0.128, 0.149, 0.138], shade: true }, { kind: 'box', p: [0, 0.155, -0.01], s: [0.045, 0.1, 0.27] }],
     shade: 'M70,70 C68,44 82,36 100,36 C118,36 132,44 130,70 C126,56 116,50 100,50 C84,50 74,56 70,70 Z',
     front: 'M90,52 C88,30 94,10 100,6 C106,10 112,30 110,52 Z',
   },

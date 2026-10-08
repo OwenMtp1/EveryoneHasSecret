@@ -12,8 +12,10 @@ Le dépôt était **vide** (aucun commit, aucun fichier) : projet démarré de z
 | Serveur | **Node.js 22 + Express + Socket.IO** | temps réel bidirectionnel, ack requête/réponse, reconnexion automatique |
 | Persistance META | **`node:sqlite`** (SQLite intégré) | zéro dépendance native, fichier unique ; remplaçable par Postgres |
 | État de partie | **mémoire serveur** (`GameInstance`) | simulation 20 Hz autoritaire ; seul le résumé de fin est persisté |
-| Client | **React 19 + Vite + Zustand** | écrans de menu en React, villa en **Canvas 2D** |
-| Rendu personnage | **SVG composé depuis les données** | une seule source pour éditeur, lobby, villa (converti en image) |
+| Client | **React 19 + Vite + Zustand** | interface (menus, HUD, panneaux) en React |
+| Rendu 3D | **Three.js 0.170** | villa, personnages, créateur, lobby, fond du menu ; caméra 3e personne + 1re personne (`V`) |
+| Personnages 3D | **procéduraux, depuis les données** | aucune ressource externe : coiffures décrites en primitives (`parts3d`), tenues en briques réutilisables |
+| Portraits UI | SVG composé depuis les mêmes données | petites vignettes (amis, relations, vote) |
 | Audio | **Web Audio procédural** | pluie / drone / sons d’UI sans assets (remplaçables) |
 | Tests | `node:test` + `tsx` | moteur (horloge injectée) + intégration multijoueur réelle |
 
@@ -59,7 +61,14 @@ src/
   client/
     store.ts                  état client (Zustand) + abonnements socket
     net/                      api REST, socket + call() typé
-    render/                   avatar SVG, rendu villa (canvas, caméra, brouillard, pluie, blackout)
+    three/                    ★ RENDU 3D ★
+      character3d.ts          personnage procédural animé (marche, attente, mort)
+      villa3d.ts              villa générée depuis le plan : sols, murs instanciés, plafonds, portes,
+                              fenêtres, mobilier, lampes par pièce, toit (vue du menu)
+      GameView3D.ts           scène de jeu : caméra 3e/1re personne avec collision murs, souris,
+                              déplacements relatifs à la caméra, interpolation, pluie, éclairs, coupure + lampes torches
+      sprites.ts              icônes d'objets et étiquettes de nom
+    render/                   avatar SVG (portraits) + plan 2D (touche M)
     ui/                       home, auth, character-creation, profile, friends, servers,
                               lobby, settings, game, investigation, common
 tests/
@@ -125,4 +134,6 @@ Les erreurs métier lèvent `UserError` (message affiché tel quel) ; toute autr
 - Une partie vit en mémoire : un redémarrage du serveur la perd (les comptes/amis/historique sont persistés).
 - Un seul processus serveur (pas de répartition horizontale des parties).
 - Un seul meurtre par partie (`maxMurders = 1`).
-- Pas de pathfinding/clic-pour-aller ; contrôles clavier (mobile jouable mais non optimisé).
+- Pas de pathfinding/clic-pour-aller ; contrôles clavier + souris (mobile non optimisé).
+- Visibilité serveur par pièce : à travers une porte ouverte, on ne voit pas encore les joueurs de la pièce voisine (ligne de vue à faire).
+- Personnages en primitives (style « figurine ») : à remplacer par des modèles riggés (glTF) sans changer les données.

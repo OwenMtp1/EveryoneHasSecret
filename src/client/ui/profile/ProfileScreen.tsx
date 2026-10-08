@@ -3,7 +3,7 @@ import { findOutfit, findHairStyle } from '@shared/content/character';
 import { api } from '../../net/api';
 import { useStore } from '../../store';
 import { MenuScreen } from '../common/Screen';
-import { Avatar } from '../common/Avatar';
+import { Stage3D } from '../common/Stage3D';
 
 export function ProfileScreen() {
   const user = useStore((s) => s.user);
@@ -21,7 +21,7 @@ export function ProfileScreen() {
   return (
     <MenuScreen title="PROFIL" wide>
       <div className="profile-layout">
-        <div className="profile-figure">{c && <Avatar character={c} size={200} className="idle" />}</div>
+        <div className="profile-figure">{c && <Stage3D actors={[{ key: 'me', character: c }]} rotatable />}</div>
         <div className="panel">
           <h3 className="profile-name">{c ? `${c.firstName} ${c.lastName}` : user?.username}</h3>
           <div className="muted">@{user?.username} · membre depuis {stats ? new Date(stats.createdAt).toLocaleDateString('fr-FR') : '…'}</div>

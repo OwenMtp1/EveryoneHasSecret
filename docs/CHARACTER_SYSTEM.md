@@ -21,7 +21,10 @@ Le même `Character` est utilisé par le profil, le lobby, la villa (image gén�
 - `fiber` sert d’indice médico-légal (fibres sous les ongles de la victime).
 - Les couleurs ne sont **jamais** codées dans les composants.
 
-## Rendu — `src/client/render/avatar.ts`
+## Rendu 3D — `src/client/three/character3d.ts`
+`buildCharacter(character)` assemble un personnage 3D (mètres, ~1,8 m) à partir des mêmes données : jambes/bras articulés (marche et attente animées), torse selon le style de haut, jupe/robe/manteau, détails (cravate, nœud, ceinture, écharpe, fermeture, logo), motifs en texture, tête et visage, **coiffure décrite en primitives** (`HairStyle.parts3d` : calotte, sphères, boîtes, capsules). Utilisé en jeu, dans le créateur, le lobby, le profil et l'épilogue (`ui/common/Stage3D.tsx`). Un corps est le même modèle couché et désaturé.
+
+## Portraits UI — `src/client/render/avatar.ts`
 `avatarSvg(character, { view: 'front'|'back', crop, dead })` compose le SVG couche par couche (ombre, cheveux arrière, jambes, chaussures, bras/manches, torse + motif, détails, tête, visage, cheveux avant). `avatarImage()` le met en cache comme image pour le canvas.
 
 ## Validation

@@ -14,6 +14,9 @@ Processus pour chaque tâche : lire ce fichier → dépendances → petite fonct
 ### V0.1 — vertical slice (ce lot)
 Parcours complet jouable : compte → personnage → menu → création/rejoindre → lobby → transition → villa → exploration → relations → objets → tension → opportunité → meurtre → découverte → rôles → enquête → preuves → discussion → vote → épilogue → retour lobby.
 
+### V0.2 — passage en 3D (demande du joueur)
+Rendu entièrement en 3D dans le navigateur (Three.js) : villa générée depuis le plan, personnages 3D procéduraux animés, caméra **troisième personne** par défaut et **première personne** avec `V`, souris pour orienter, collision caméra/murs, plafonds, fenêtres, lampes par pièce, pluie, éclairs, coupure de courant avec lampes torches ; créateur, profil, lobby, épilogue et fond du menu en 3D. Serveur et moteur de jeu inchangés.
+
 ### Problèmes découverts pendant le développement
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
 - Le serveur émet `session:state` dès la connexion : un client doit brancher ses écouteurs **avant** `connect` (corrigé dans les tests).
@@ -52,8 +55,9 @@ Parcours complet jouable : compte → personnage → menu → création/rejoindr
 - ✅ [P1] SURPRENDS-MOI (randomisation) · ✅ [P1] Rotation (glisser, vue de dos) · ✅ [P1] Animation idle · ✅ [P1] Modification depuis le profil
 - ⬜ [P2] Accessoires · ⬜ [P2] Barbe · ⬜ [P2] Lunettes · ⬜ [P2] Bijoux · ⬜ [P2] Tatouages
 - ⬜ [P2] Morphologies / tailles · ⬜ [P2] Expressions faciales en jeu (peur, colère)
-- ⬜ [P2] Sprites d’animation de marche (4 directions) au lieu du rebond
-- ⬜ [P3] Rendu 3D / 2.5D
+- ✅ [P0] Personnage 3D procédural (data-driven, coiffures en primitives `parts3d`) avec marche et attente animées
+- ⬜ [P1] Modèles riggés glTF (visages, mains, vêtements) branchés sur les mêmes données
+- ⬜ [P2] Animations d'interaction (ramasser, fouiller, se laver, s'effondrer)
 
 ## SOCIAL
 - ✅ [P0] Historique social (« X a aidé Y », « X a trahi Y », accusations, hostilités)
@@ -110,7 +114,9 @@ Parcours complet jouable : compte → personnage → menu → création/rejoindr
 ## MOVEMENT
 - ✅ [P0] Déplacement clavier (ZQSD/WASD/flèches), collisions, portes
 - ✅ [P0] Changement de pièce journalisé (PLAYER_ENTERED_ROOM / LEFT_ROOM)
-- ✅ [P1] Caméra qui suit + plan (touche M)
+- ✅ [P0] 3D : déplacements relatifs à la caméra, troisième personne + première personne (`V`), souris (verrouillage du pointeur), molette, collision caméra/murs
+- ✅ [P1] Plan 2D de la villa (touche M)
+- ⬜ [P1] Sensibilité souris / inversion dans les paramètres · ⬜ [P2] Manette
 - ⬜ [P1] Clic-pour-aller (pathfinding) · ⬜ [P1] Contrôles tactiles (joystick)
 - ⬜ [P2] Courir (bruyant) / marcher discrètement · ⬜ [P2] Se cacher (armoire)
 
@@ -219,8 +225,10 @@ Parcours complet jouable : compte → personnage → menu → création/rejoindr
 
 ## VISUAL
 - ✅ [P1] Direction artistique sombre/élégante (Cormorant + Inter, or ancien/cramoisi)
-- ✅ [P1] Villa top-down (sols par matériau, mobilier, portes, brouillard, pluie, blackout, traces, corps)
-- ⬜ [P2] Tileset illustré · ⬜ [P2] Animations de personnages · ⬜ [P3] Graphismes définitifs
+- ✅ [P0] Villa 3D (sols texturés par matériau, murs, plafonds, portes, fenêtres, mobilier composé, lampes, cheminée animée, traces au sol, corps)
+- ✅ [P1] Menu, créateur, lobby, profil et épilogue en 3D
+- ⬜ [P1] Ombres dynamiques (performance à mesurer) · ⬜ [P1] Ligne de vue : voir les joueurs à travers les portes ouvertes (filtrage serveur)
+- ⬜ [P2] Modèles 3D d'objets au lieu d'icônes · ⬜ [P2] Post-traitement (bloom, grain) · ⬜ [P3] Graphismes définitifs
 
 ## TECHNICAL
 - ✅ [P0] TypeScript partagé client/serveur, protocole typé

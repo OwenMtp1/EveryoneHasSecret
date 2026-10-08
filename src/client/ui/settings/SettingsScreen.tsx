@@ -22,10 +22,12 @@ export function SettingsScreen() {
         </label>
         <div className="field-label">Contrôles en partie</div>
         <ul className="controls-help">
-          <li><kbd>Z Q S D</kbd> / <kbd>W A S D</kbd> / flèches — se déplacer</li>
+          <li><kbd>Z Q S D</kbd> / <kbd>W A S D</kbd> / flèches — se déplacer (relatif à la caméra)</li>
+          <li>Souris — cliquer dans la vue pour orienter la caméra, <kbd>Échap</kbd> pour libérer · molette : distance</li>
+          <li><kbd>V</kbd> — troisième personne ↔ première personne</li>
           <li><kbd>E</kbd> — interagir avec l’élément le plus proche</li>
           <li><kbd>Entrée</kbd> — écrire dans le chat</li>
-          <li><kbd>M</kbd> — plan de la villa / caméra</li>
+          <li><kbd>M</kbd> — plan 2D de la villa</li>
           <li><kbd>1</kbd>–<kbd>4</kbd> — onglets (Inventaire, Relations, Carnet, Enquête)</li>
         </ul>
       </div>

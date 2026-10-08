@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { GAME_NAME } from '@shared/config';
 import { useStore } from './store';
 import { audio } from './audio';
-import { NightBackground } from './ui/common/NightBackground';
+import { MenuBackground3D } from './ui/common/MenuBackground3D';
 import { Toasts, ActionFlash } from './ui/common/Toasts';
 import { AuthScreen } from './ui/auth/AuthScreen';
 import { MainMenu } from './ui/home/MainMenu';
@@ -37,7 +37,7 @@ export function App() {
   const inGame = screen === 'game';
   return (
     <div className={`app screen-${screen}`}>
-      {!inGame && <NightBackground dim={screen !== 'menu' && screen !== 'auth'} />}
+      {!inGame && <MenuBackground3D dim={screen !== 'menu' && screen !== 'auth'} />}
       {screen === 'boot' && <div className="center-message">{GAME_NAME}</div>}
       {screen === 'auth' && <AuthScreen />}
       {screen === 'character' && <CharacterCreator />}

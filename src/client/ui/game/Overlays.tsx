@@ -3,7 +3,8 @@ import { ROOMS } from '@shared/content/villa';
 import { formatClock } from '@shared/config';
 import { useStore, attempt } from '../../store';
 import { call } from '../../net/socket';
-import { Avatar, Portrait } from '../common/Avatar';
+import { Portrait } from '../common/Avatar';
+import { Stage3D } from '../common/Stage3D';
 import { act, usePicker } from './helpers';
 
 /** L'opportunité n'apparaît que lorsque le monde l'a créée. Jamais de bouton « tuer » permanent. */
@@ -152,7 +153,9 @@ export function Epilogue() {
         <h2 className="epilogue-headline">{e.headline}</h2>
         {step >= 1 && culprit && (
           <div className="epilogue-culprit fade-in">
-            <Avatar character={culprit.character} size={120} />
+            <div className="epilogue-figure">
+              <Stage3D actors={[{ key: culprit.id, character: culprit.character }]} rotatable angle={0.5} />
+            </div>
             <div>
               <div className="muted">{e.caseType === 'murder' ? 'Le meurtrier' : 'Le voleur'}</div>
               <div className="culprit-name">{culprit.name}</div>

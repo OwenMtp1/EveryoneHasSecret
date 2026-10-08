@@ -43,7 +43,9 @@ Pour tester seul : ouvrez plusieurs fenêtres **privées** (une session par fen�
 
 ## Contrôles en partie
 
-`ZQSD` / `WASD` / flèches : se déplacer · `E` : interagir · `Entrée` : chat · `1`–`4` : onglets · `M` : plan de la villa · maintenir **Mon secret** pour le relire.
+Le jeu est en **3D** dans le navigateur (Three.js).
+
+`ZQSD` / `WASD` / flèches : se déplacer (relatif à la caméra) · **souris** : cliquer dans la vue pour orienter la caméra (`Échap` libère le pointeur), molette pour la distance · **`V`** : troisième ↔ première personne · `E` : interagir · `Entrée` : chat · `1`–`4` : onglets · `M` : plan 2D de la villa · maintenir **Mon secret** pour le relire.
 
 ## Documentation
 

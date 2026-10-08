@@ -4,6 +4,7 @@ import { roomName } from '@shared/content/villa';
 import { useStore, attempt } from '../../store';
 import { call, getSocket } from '../../net/socket';
 import { drawFrame, createRenderState, camera } from '../../render/villaRenderer';
+import { GameView3D } from '../../three/GameView3D';
 import { audio } from '../../audio';
 import { PHASE_LABEL, useChatFocus, usePicker } from './helpers';
 import { ActionBar } from './ActionBar';
@@ -15,117 +16,86 @@ import { NotebookTab } from './NotebookTab';
 import { InvestigationTab } from '../investigation/InvestigationTab';
 import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker } from './Overlays';
 
-const KEYS: Record<string, [number, number]> = {
-  KeyW: [0, -1],
-  KeyZ: [0, -1],
-  ArrowUp: [0, -1],
-  KeyS: [0, 1],
-  ArrowDown: [0, 1],
-  KeyA: [-1, 0],
-  KeyQ: [-1, 0],
-  ArrowLeft: [-1, 0],
-  KeyD: [1, 0],
-  ArrowRight: [1, 0],
-};
 
 export function GameScreen() {
   const game = useStore((s) => s.game);
   const reduced = useStore((s) => s.settings.reducedMotion);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<GameView3D | null>(null);
   const [room, setRoom] = useState<string | undefined>();
+  const [camMode, setCamMode] = useState<'third' | 'first'>('third');
+  const [showMap, setShowMap] = useState(false);
+  const [locked, setLocked] = useState(false);
   const tab = useChatFocus((s) => s.tab);
   const setTab = useChatFocus((s) => s.setTab);
   const [showSecret, setShowSecret] = useState(false);
-
   const hasGame = !!game;
-  // Boucle de rendu (démarre quand le canvas existe)
+
+  // Vue 3D (créée quand le conteneur existe)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
-    const rs = createRenderState();
-    let raf = 0;
-    let last = performance.now();
-    let lastRoom: string | undefined;
-    const loop = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
-      const view = useStore.getState().game;
-      const wrap = wrapRef.current;
-      if (view && wrap) {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const cw = wrap.clientWidth;
-        const ch = wrap.clientHeight;
-        if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
-          canvas.width = Math.round(cw * dpr);
-          canvas.height = Math.round(ch * dpr);
-        }
-        ctx.save();
-        ctx.scale(dpr, dpr);
-        const r = drawFrame(ctx, view, rs, cw, ch, dt, useStore.getState().settings.reducedMotion);
-        ctx.restore();
-        if (r !== lastRoom) {
-          lastRoom = r;
-          setRoom(r);
-        }
-      }
-      raf = requestAnimationFrame(loop);
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const v = new GameView3D(wrap, { reducedMotion: useStore.getState().settings.reducedMotion });
+    viewRef.current = v;
+    v.onInput = (dx, dy) => getSocket()?.emit('game:input', { dx, dy });
+    v.onModeChange = setCamMode;
+    const g0 = useStore.getState().game;
+    if (g0) v.setView(g0);
+    const unsub = useStore.subscribe((st) => st.game && v.setView(st.game));
+    const ro = new ResizeObserver(() => v.refreshSize());
+    ro.observe(wrap);
+    const onLock = () => setLocked(document.pointerLockElement === v.renderer.domElement);
+    document.addEventListener('pointerlockchange', onLock);
+    // Pièce courante (affichage)
+    const t = setInterval(() => {
+      const g = useStore.getState().game;
+      const me = g?.players.find((p) => p.id === g.you);
+      setRoom(me?.roomId);
+    }, 300);
+    return () => {
+      clearInterval(t);
+      unsub();
+      ro.disconnect();
+      document.removeEventListener('pointerlockchange', onLock);
+      v.dispose();
+      viewRef.current = null;
+      getSocket()?.emit('game:input', { dx: 0, dy: 0 });
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
   }, [hasGame]);
 
-  // Clavier → intentions de déplacement (le serveur simule)
+  // Clavier → intentions (relatives à la caméra) ; le serveur simule
   useEffect(() => {
-    const pressed = new Set<string>();
-    let lastSent = '';
-    const send = () => {
-      let dx = 0;
-      let dy = 0;
-      for (const k of pressed) {
-        const v = KEYS[k];
-        if (v) {
-          dx += v[0];
-          dy += v[1];
-        }
-      }
-      const key = `${dx},${dy}`;
-      if (key === lastSent) return;
-      lastSent = key;
-      getSocket()?.emit('game:input', { dx, dy });
-    };
     const typing = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
     };
     const down = (e: KeyboardEvent) => {
-      if (typing(e)) return;
+      if (typing(e) || e.repeat) {
+        if (!typing(e) && viewRef.current?.key(e.code, true)) e.preventDefault();
+        return;
+      }
       audio.unlock();
-      if (KEYS[e.code]) {
+      if (viewRef.current?.key(e.code, true)) {
         e.preventDefault();
-        pressed.add(e.code);
-        send();
       } else if (e.code === 'KeyE') {
         (document.querySelector('.action-bar .btn') as HTMLButtonElement | null)?.click();
       } else if (e.code === 'Enter') {
         e.preventDefault();
+        if (document.pointerLockElement) document.exitPointerLock();
         (document.querySelector('.chat-panel input') as HTMLInputElement | null)?.focus();
       } else if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
         setTab(Number(e.code.slice(-1)) - 1);
       } else if (e.code === 'KeyM') {
-        camera.overview = !camera.overview;
+        setShowMap((m) => !m);
       } else if (e.code === 'Escape') {
         usePicker.getState().close();
+        setShowMap(false);
       }
     };
     const up = (e: KeyboardEvent) => {
-      if (pressed.delete(e.code)) send();
+      viewRef.current?.key(e.code, false);
     };
-    const blur = () => {
-      pressed.clear();
-      send();
-    };
+    const blur = () => viewRef.current?.releaseAll();
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
@@ -133,7 +103,6 @@ export function GameScreen() {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
-      getSocket()?.emit('game:input', { dx: 0, dy: 0 });
     };
   }, [setTab]);
 
@@ -174,8 +143,12 @@ export function GameScreen() {
         <ChatPanel />
       </aside>
 
-      <main className="game-center" ref={wrapRef}>
-        <canvas ref={canvasRef} className="villa-canvas" />
+      <main className="game-center">
+        <div className="view3d" ref={wrapRef} />
+        <div className="cam-hint">
+          {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> changer · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'cliquer pour orienter la caméra'} · <kbd>M</kbd> plan
+        </div>
+        {showMap && <MapOverlay onClose={() => setShowMap(false)} />}
         {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
         <Announcement />
         <OpportunityPrompt />
@@ -203,6 +176,46 @@ export function GameScreen() {
       <TestimonyModal />
       <Picker />
       <Epilogue />
+    </div>
+  );
+}
+
+/** Plan 2D de la villa (touche M) — ne montre que ce que vous savez. */
+function MapOverlay({ onClose }: { onClose: () => void }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current!;
+    const ctx = canvas.getContext('2d')!;
+    const rs = createRenderState();
+    let raf = 0;
+    let last = performance.now();
+    camera.overview = true;
+    const loop = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const view = useStore.getState().game;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      if (canvas.width !== Math.round(cw * dpr)) {
+        canvas.width = Math.round(cw * dpr);
+        canvas.height = Math.round(ch * dpr);
+      }
+      if (view) {
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        drawFrame(ctx, view, rs, cw, ch, dt, true);
+        ctx.restore();
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div className="map-overlay" onClick={onClose}>
+      <canvas ref={ref} />
+      <div className="map-caption">PLAN DE LA VILLA — <kbd>M</kbd> pour fermer</div>
     </div>
   );
 }
