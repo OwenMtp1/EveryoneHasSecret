@@ -1,0 +1,27 @@
+import { useStore } from '../../store';
+import { MenuScreen } from '../common/Screen';
+
+export function PlayScreen() {
+  const go = useStore((s) => s.go);
+  return (
+    <MenuScreen title="JOUER">
+      <div className="play-cards">
+        <button className="play-card" onClick={() => go('create')}>
+          <span className="play-card-icon">🕯️</span>
+          <strong>CRÉER UNE PARTIE</strong>
+          <span>Ouvrez les portes de votre villa, publique ou privée.</span>
+        </button>
+        <button className="play-card" onClick={() => go('join')}>
+          <span className="play-card-icon">🗝️</span>
+          <strong>REJOINDRE AVEC UN CODE</strong>
+          <span>Un ami vous a donné un code ? Entrez.</span>
+        </button>
+        <button className="play-card" onClick={() => go('servers')}>
+          <span className="play-card-icon">🏚️</span>
+          <strong>PARTIES PUBLIQUES</strong>
+          <span>Rejoignez des inconnus. Ils ont tous un secret.</span>
+        </button>
+      </div>
+    </MenuScreen>
+  );
+}
