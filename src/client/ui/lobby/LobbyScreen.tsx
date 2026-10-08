@@ -72,7 +72,6 @@ export function LobbyScreen() {
               <Portrait character={p.character} size={34} />
               <span className="grow">
                 {p.character ? `${p.character.firstName} ${p.character.lastName}` : p.username}
-                {p.bot && <span className="chip chip-bot">IA</span>}
               </span>
               <span className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'READY ✓' : 'NOT READY'}</span>
               {isHost && !p.isHost && lobby.status === 'WAITING' && (
@@ -117,9 +116,6 @@ export function LobbyScreen() {
             </button>
           )}
           <div className="row-actions">
-            {isHost && lobby.status === 'WAITING' && lobby.players.length < lobby.maxPlayers && (
-              <button className="btn btn-sm" onClick={() => attempt(call('lobby:addBot'))}>+ INVITÉ IA</button>
-            )}
             <button className="btn btn-ghost btn-sm" onClick={() => setShowInvite(!showInvite)}>INVITE FRIENDS</button>
             {isHost && <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(!showSettings)}>Paramètres</button>}
             {isHost && <button className="btn btn-ghost btn-sm danger" onClick={() => confirm('Fermer la partie pour tout le monde ?') && attempt(call('lobby:close'))}>Fermer</button>}

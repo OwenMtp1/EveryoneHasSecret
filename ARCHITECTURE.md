@@ -57,8 +57,7 @@ src/
       relationships.ts        relations, historique social, trahisons
       investigation.ts        affaire, rôles dynamiques, outils, témoignages, vote, épilogue
       events/engine.ts        moteur de règles générique
-      bots.ts                 invités IA (mêmes actions validées que les humains)
-      pathfinding.ts          chemins sur la grille, portes entre pièces
+      pathfinding.ts          portes entre pièces (ligne de vue)
 
   client/
     store.ts                  état client (Zustand) + abonnements socket

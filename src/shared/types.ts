@@ -69,7 +69,6 @@ export type LobbyStatus = 'WAITING' | 'STARTING' | 'IN_GAME';
 
 export interface LobbyPlayerView {
   userId: string;
-  bot?: boolean;
   username: string;
   character: Character | null;
   ready: boolean;

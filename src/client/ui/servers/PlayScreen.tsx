@@ -1,5 +1,4 @@
-import { attempt, useStore } from '../../store';
-import { call } from '../../net/socket';
+import { useStore } from '../../store';
 import { MenuScreen } from '../common/Screen';
 
 export function PlayScreen() {
@@ -7,17 +6,6 @@ export function PlayScreen() {
   return (
     <MenuScreen title="JOUER">
       <div className="play-cards">
-        <button
-          className="play-card play-card-hero"
-          onClick={async () => {
-            const lobby = await attempt(call('lobby:quickplay', { bots: 4 }));
-            if (lobby) useStore.setState({ lobby, screen: 'lobby' });
-          }}
-        >
-          <span className="play-card-icon">⚡</span>
-          <strong>PARTIE RAPIDE</strong>
-          <span>Vous + 4 invités IA, nuit courte (~8 min). Idéal pour découvrir le jeu seul.</span>
-        </button>
         <button className="play-card" onClick={() => go('create')}>
           <span className="play-card-icon">🕯️</span>
           <strong>CRÉER UNE PARTIE</strong>

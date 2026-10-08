@@ -47,7 +47,6 @@ export function CreateGame() {
           <button className={duration === 'short' ? 'active' : ''} onClick={() => setDuration('short')}>Courte (~8 min)</button>
           <button className={duration === 'normal' ? 'active' : ''} onClick={() => setDuration('normal')}>Normale (~15 min)</button>
         </div>
-        <p className="hint">Dans le lobby, l’hôte peut compléter la table avec des invités IA.</p>
         <button className="btn btn-primary btn-lg" onClick={create} disabled={busy}>
           OUVRIR LES PORTES
         </button>

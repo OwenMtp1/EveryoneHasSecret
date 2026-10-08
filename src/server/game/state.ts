@@ -35,7 +35,6 @@ export interface PlayerState {
   id: string;
   name: string;
   character: Character;
-  bot: boolean;
   alive: boolean;
   connected: boolean;
   pos: Vec2;

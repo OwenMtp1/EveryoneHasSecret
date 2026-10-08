@@ -20,7 +20,7 @@ npm run build
 npm start            # → http://localhost:3001
 ```
 
-**Jouer seul** : menu **JOUER → PARTIE RAPIDE** (vous + 4 invités IA, nuit courte). À plusieurs : une fenêtre privée par joueur, ou de vrais amis ; l’hôte peut compléter la table avec des invités IA.
+Le jeu se joue uniquement entre joueurs humains (minimum 2, idéal 4 à 6). Pour tester seul : une fenêtre privée par joueur.
 
 ### Variables d’environnement
 
