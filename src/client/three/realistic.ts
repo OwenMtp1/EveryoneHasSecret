@@ -82,6 +82,20 @@ export function realisticReady() {
 
 const boneKey = (name: string) => name.replace(/^mixamorig:?/, '');
 
+/** Os des membres → os enfant qui donne leur direction (pour aligner les poses de repos). */
+const LIMB_CHILD: Record<string, string> = {
+  LeftShoulder: 'LeftArm',
+  RightShoulder: 'RightArm',
+  LeftArm: 'LeftForeArm',
+  RightArm: 'RightForeArm',
+  LeftForeArm: 'LeftHand',
+  RightForeArm: 'RightHand',
+  LeftUpLeg: 'LeftLeg',
+  RightUpLeg: 'RightLeg',
+  LeftLeg: 'LeftFoot',
+  RightLeg: 'RightFoot',
+};
+
 /**
  * Transfert d'animation en espace monde entre deux squelettes aux poses de repos différentes.
  * Pour chaque os : écart monde de la source par rapport à SA pose de repos, réappliqué à la pose
@@ -101,6 +115,21 @@ function bakeRetarget(srcScene: THREE.Object3D, clip: THREE.AnimationClip, tgtSc
   for (const [k, b] of srcBones) restSrc.set(k, b.getWorldQuaternion(new THREE.Quaternion()));
   const restTgtWorld = new Map<THREE.Object3D, THREE.Quaternion>();
   for (const b of tgtBones) restTgtWorld.set(b, b.getWorldQuaternion(new THREE.Quaternion()));
+  // Les deux squelettes n'ont pas la même pose de repos (pose en T pour les animations, pose en A pour
+  // le modèle homme) : pour les membres, on aligne d'abord la direction de repos de l'os cible sur celle
+  // de la source, sinon l'écart de pose se retrouve dans l'animation (bras tordus, mains retournées).
+  const srcPos = (k: string) => srcBones.get(k)!.getWorldPosition(new THREE.Vector3());
+  for (const b of tgtBones) {
+    const key = boneKey(b.name);
+    const childKey = LIMB_CHILD[key];
+    if (!childKey || !srcBones.has(key) || !srcBones.has(childKey)) continue;
+    const child = b.children.find((c) => boneKey(c.name) === childKey);
+    if (!child) continue;
+    const tDir = child.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
+    const sDir = srcPos(childKey).sub(srcPos(key)).normalize();
+    const align = new THREE.Quaternion().setFromUnitVectors(tDir, sDir);
+    restTgtWorld.set(b, align.multiply(restTgtWorld.get(b)!));
+  }
   const parentRest = new Map<THREE.Object3D, THREE.Quaternion>();
   for (const b of tgtBones) if (b.parent && !tgtSet.has(b.parent)) parentRest.set(b, b.parent.getWorldQuaternion(new THREE.Quaternion()));
 

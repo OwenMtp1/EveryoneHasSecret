@@ -7,6 +7,19 @@ import { api, tokenStore } from './net/api';
 import { call, connectSocket, disconnectSocket } from './net/socket';
 import { audio } from './audio';
 import { introStateAt, type GameIntroState, type IntroPlan } from '@shared/content/intro';
+/**
+ * Vue de partie « temps réel », hors React : la vue 3D s'y abonne et reçoit chaque mise à jour
+ * réseau sans faire re-rendre l'interface.
+ */
+export const liveGame = {
+  current: null as GameSelfView | null,
+  listeners: new Set<(v: GameSelfView) => void>(),
+  subscribe(fn: (v: GameSelfView) => void) {
+    liveGame.listeners.add(fn);
+    return () => void liveGame.listeners.delete(fn);
+  },
+};
+
 
 export type Screen =
   | 'boot'
@@ -157,16 +170,27 @@ export const useStore = create<AppState>((set, get) => ({
     let pendingFull: GameSelfView | null = null;
     let pendingSnap: GameSnapshot | null = null;
     let scheduled = false;
+    let lastUiAt = 0;
     const flush = () => {
       scheduled = false;
       const st = get();
-      let next = pendingFull ?? st.game;
+      let next = pendingFull ?? liveGame.current ?? st.game;
       if (pendingSnap && next) next = { ...next, ...pendingSnap };
       const hadFull = !!pendingFull;
       pendingFull = null;
       pendingSnap = null;
       if (!next) return;
+      // La 3D reçoit TOUTES les mises à jour…
+      liveGame.current = next;
+      for (const fn of liveGame.listeners) fn(next);
+      // …l'interface React seulement quand c'est utile : vue complète (événement, inventaire, relations…),
+      // changement d'heure/phase/coupure/opportunité, ou au plus 4 fois par seconde pour les positions.
       const prev = st.game;
+      const now = performance.now();
+      const important =
+        hadFull || !prev || prev.clock !== next.clock || prev.phase !== next.phase || prev.blackout !== next.blackout || !!prev.opportunity !== !!next.opportunity;
+      if (!important && now - lastUiAt < 250) return;
+      lastUiAt = now;
       if (prev && next.feed.length && prev.feed[prev.feed.length - 1]?.id !== next.feed[next.feed.length - 1]?.id) {
         if (next.feed[next.feed.length - 1].style === 'danger') audio.danger();
       }
@@ -191,6 +215,7 @@ export const useStore = create<AppState>((set, get) => ({
     s.on('game:ended', () => {
       pendingFull = null;
       pendingSnap = null;
+      liveGame.current = null;
       set({ game: null, inGame: false });
     });
   },

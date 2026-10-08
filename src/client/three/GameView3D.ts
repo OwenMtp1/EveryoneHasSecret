@@ -19,7 +19,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { roomAt as roomAtPos, buildWorldGrid } from '@shared/content/villa';
+import { roomAt as roomAtPos, buildWorldGrid, doorAt } from '@shared/content/villa';
+import { GAME_CONFIG } from '@shared/config';
 
 type CamMode = 'third' | 'first';
 
@@ -31,8 +32,21 @@ interface Actor {
   rotY: number;
   tag: THREE.Sprite;
   key: string;
+  /** objet personnage de la dernière vue (évite de recalculer la clé à chaque image) */
+  charRef: unknown;
   light?: THREE.SpotLight;
 }
+
+/**
+ * Niveaux de qualité, ajustés automatiquement selon la fluidité mesurée :
+ * 0 = complet · 1 = sans halo, résolution 1× · 2 = sans ombres, résolution réduite, pluie allégée.
+ */
+const QUALITY = [
+  { pixelRatio: 1.5, bloom: true, shadows: true, rain: 1 },
+  { pixelRatio: 1, bloom: false, shadows: true, rain: 0.6 },
+  { pixelRatio: 0.75, bloom: false, shadows: false, rain: 0.35 },
+] as const;
+const QUALITY_KEY = 'ehas.quality';
 
 const MOVE_KEYS: Record<string, [number, number]> = {
   KeyW: [0, 1], KeyZ: [0, 1], ArrowUp: [0, 1],
@@ -65,6 +79,13 @@ export class GameView3D {
   private wasBlackout = false;
   private flash = 0;
   private nextLightning = 8;
+  private quality = 0;
+  private frameTimes: number[] = [];
+  private slowWindows = 0;
+  private fastWindows = 0;
+  private lastFrameAt = performance.now();
+  /** position prédite localement de notre personnage (réponse immédiate aux touches) */
+  private pred: THREE.Vector3 | null = null;
 
   mode: CamMode = 'third';
   /** 0 = regarde vers le sud (+z) ; π = vers le nord, l'intérieur de la villa depuis le hall */
@@ -80,7 +101,11 @@ export class GameView3D {
 
   constructor(private container: HTMLElement, opts: { reducedMotion?: boolean } = {}) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    try {
+      this.quality = Math.min(QUALITY.length - 1, Math.max(0, Number(localStorage.getItem(QUALITY_KEY) ?? 0) || 0));
+    } catch {
+      this.quality = 0;
+    }
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -98,7 +123,7 @@ export class GameView3D {
     this.moon.position.set(WORLD_W / 2 - 18, 32, -14);
     this.moon.target.position.set(WORLD_W / 2, 0, WORLD_H / 2);
     this.moon.castShadow = true;
-    this.moon.shadow.mapSize.set(2048, 2048);
+    this.moon.shadow.mapSize.set(1024, 1024);
     Object.assign(this.moon.shadow.camera, { left: -32, right: 32, top: 24, bottom: -24, near: 1, far: 90 });
     this.moon.shadow.bias = -0.0008;
     this.scene.add(this.moon, this.moon.target);
@@ -117,6 +142,7 @@ export class GameView3D {
     this.scene.add(this.villa.group);
     this.rain = this.buildRain(opts.reducedMotion ? 0 : 2600);
     this.scene.add(this.rain);
+    this.applyQuality();
 
     this.bindInput();
     this.resize();
@@ -249,27 +275,33 @@ export class GameView3D {
         continue;
       }
       seen.add(p.id);
-      const key = `${JSON.stringify(p.character)}|${realisticReady()}`;
       let a = this.actors.get(p.id);
-      if (a && a.key !== key) {
-        this.removeActor(p.id);
-        a = undefined;
+      if (a && a.charRef !== p.character) {
+        // nouvelle vue : on ne reconstruit que si l'apparence a vraiment changé
+        const key = `${JSON.stringify(p.character)}|${realisticReady()}`;
+        if (a.key !== key) {
+          this.removeActor(p.id);
+          a = undefined;
+        } else a.charRef = p.character;
       }
       if (!a) {
         const c3d = buildCharacter(p.character);
         const tag = labelSprite(p.name.split(' ')[0]);
         this.scene.add(c3d.root);
         this.scene.add(tag);
-        a = { c3d, pos: new THREE.Vector3(p.pos.x, 0, p.pos.y), rotY: p.id === this.view!.you ? this.yaw : 0, tag, key };
+        a = { c3d, pos: new THREE.Vector3(p.pos.x, 0, p.pos.y), rotY: p.id === this.view!.you ? this.yaw : 0, tag, key: `${JSON.stringify(p.character)}|${realisticReady()}`, charRef: p.character };
         this.actors.set(p.id, a);
       }
-      const target = new THREE.Vector3(p.pos.x, 0, p.pos.y);
-      if (a.pos.distanceTo(target) > 3) a.pos.copy(target);
-      const before = a.pos.clone();
-      a.pos.lerp(target, Math.min(1, dt * 12));
-      const delta = a.pos.clone().sub(before);
-      const speed = delta.length() / Math.max(dt, 1e-3);
       const isMe = p.id === this.view!.you;
+      _target.set(p.pos.x, 0, p.pos.y);
+      _before.copy(a.pos);
+      if (isMe) a.pos.copy(this.predict(_target, dt));
+      else {
+        if (a.pos.distanceTo(_target) > 3) a.pos.copy(_target);
+        a.pos.lerp(_target, Math.min(1, dt * 12));
+      }
+      const delta = _delta.copy(a.pos).sub(_before);
+      const speed = delta.length() / Math.max(dt, 1e-3);
       if (isMe && this.mode === 'first') a.rotY = this.yaw;
       else if (speed > 0.3) a.rotY = lerpAngle(a.rotY, Math.atan2(delta.x, delta.z), Math.min(1, dt * 12));
       a.c3d.root.position.copy(a.pos);
@@ -320,6 +352,49 @@ export class GameView3D {
         this.scene.remove(m);
         this.allyMarkers.delete(id);
       }
+  }
+
+  // ───────────── prédiction de notre déplacement ─────────────
+
+  /** Mêmes règles que le serveur (GameInstance.fits) : murs, meubles, portes verrouillées. */
+  private passable(x: number, y: number) {
+    const g = this.grid;
+    const tx = Math.floor(x);
+    const ty = Math.floor(y);
+    if (tx < 0 || ty < 0 || tx >= g.w || ty >= g.h) return false;
+    const idx = ty * g.w + tx;
+    if (!g.rooms[idx] || g.blocked[idx]) return false;
+    const door = doorAt(g, tx, ty);
+    return !door?.lockedBy || !!this.view?.unlockedDoors.includes(door.id);
+  }
+
+  private fits(x: number, y: number) {
+    const r = GAME_CONFIG.playerRadius;
+    return this.passable(x - r, y - r) && this.passable(x + r, y - r) && this.passable(x - r, y + r) && this.passable(x + r, y + r);
+  }
+
+  /**
+   * Notre personnage avance tout de suite (pas d'attente du serveur), puis se recale en douceur
+   * sur la position officielle. Écart trop grand (téléportation, collision refusée) → recalage net.
+   */
+  private predict(server: THREE.Vector3, dt: number): THREE.Vector3 {
+    if (!this.pred || !this.view?.alive) return (this.pred = server.clone());
+    const p = this.pred;
+    const { x: dx, y: dz } = this.lastSent;
+    const moving = Math.hypot(dx, dz) > 0.01;
+    if (moving) {
+      const len = Math.hypot(dx, dz);
+      const vx = (dx / len) * GAME_CONFIG.moveSpeed * dt;
+      const vz = (dz / len) * GAME_CONFIG.moveSpeed * dt;
+      if (this.fits(p.x + vx, p.z)) p.x += vx;
+      if (this.fits(p.x, p.z + vz)) p.z += vz;
+    }
+    const err = server.distanceTo(p);
+    if (err > 2) p.copy(server);
+    else if (!moving) p.lerp(server, Math.min(1, dt * 6));
+    // en mouvement, le serveur a toujours un temps de retard : on ne corrige que les vrais écarts
+    else if (err > 0.9) p.lerp(server, Math.min(1, dt * 2));
+    return p;
   }
 
   private removeActor(id: string) {
@@ -494,7 +569,7 @@ export class GameView3D {
       o.visual.position.copy(o.base);
       if (!o.modeled) o.visual.position.y += Math.sin(t * 2 + o.base.x) * 0.05;
       (o.ring.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + o.base.x) * 0.2;
-      o.label.visible = !!mePos && mePos.distanceTo(new THREE.Vector3(o.base.x, 0, o.base.z)) < 2.6;
+      o.label.visible = !!mePos && Math.hypot(mePos.x - o.base.x, mePos.z - o.base.z) < 2.6;
     }
     // Étiquettes proches : empilées pour rester lisibles
     const shown = [...this.objects.values()].filter((o) => o.label.visible).sort((a, b) => a.base.x - b.base.x || a.base.z - b.base.z);
@@ -509,6 +584,7 @@ export class GameView3D {
       this.flash = 0.6 + Math.random() * 0.4;
       this.nextLightning = t + 10 + Math.random() * 18;
     }
+    this.trackPerformance();
     const blackout = this.view?.blackout;
     this.hemi.intensity = (blackout ? 0.06 : 0.32) + this.flash * 2.2;
     this.moon.intensity = (blackout ? 0.18 : 0.6) + this.flash * 1.8;
@@ -517,9 +593,60 @@ export class GameView3D {
     this.updateCamera();
     // Ombres de la lampe de la pièce où l'on se trouve
     const me = this.view ? this.actors.get(this.view.you) : undefined;
-    this.villa.focusRoom(me ? roomAtPos(this.grid, me.pos.x, me.pos.z)?.id : undefined);
-    this.composer.render();
+    if (me) this.villa.focus(me.pos.x, me.pos.z, roomAtPos(this.grid, me.pos.x, me.pos.z)?.id);
+    else this.villa.focus(this.camera.position.x, this.camera.position.z);
+    if (QUALITY[this.quality].bloom) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   };
+
+  // ───────────── qualité adaptative ─────────────
+
+  private applyQuality() {
+    const q = QUALITY[this.quality];
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
+    if (this.renderer.shadowMap.enabled !== q.shadows) {
+      this.renderer.shadowMap.enabled = q.shadows;
+      this.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        if (m) for (const x of Array.isArray(m) ? m : [m]) x.needsUpdate = true;
+      });
+    }
+    this.moon.castShadow = q.shadows;
+    this.villa.setShadows(q.shadows);
+    this.rain.geometry.setDrawRange(0, Math.floor((this.rain.geometry.getAttribute('position').count * q.rain) / 2) * 2);
+    this.resize();
+  }
+
+  /**
+   * Fenêtres de 2 s : si l'image dépasse ~28 ms en moyenne deux fois de suite, on baisse d'un cran ;
+   * si tout reste très fluide (< 12 ms) pendant 10 s, on remonte d'un cran.
+   */
+  private trackPerformance() {
+    const now = performance.now();
+    const dt = (now - this.lastFrameAt) / 1000; // durée réelle (non bornée) de l'image
+    this.lastFrameAt = now;
+    if (document.hidden || dt > 1) return; // onglet en arrière-plan : mesure ignorée
+    this.frameTimes.push(dt);
+    const total = this.frameTimes.reduce((a, b) => a + b, 0);
+    if (total < 2) return;
+    const avg = total / this.frameTimes.length;
+    this.frameTimes = [];
+    this.slowWindows = avg > 0.028 ? this.slowWindows + 1 : 0;
+    this.fastWindows = avg < 0.012 ? this.fastWindows + 1 : 0;
+    const next = this.slowWindows >= 2 ? this.quality + 1 : this.fastWindows >= 5 ? this.quality - 1 : this.quality;
+    if (next !== this.quality && next >= 0 && next < QUALITY.length) {
+      this.quality = next;
+      this.slowWindows = 0;
+      this.fastWindows = 0;
+      try {
+        localStorage.setItem(QUALITY_KEY, String(this.quality));
+      } catch {
+        /* stockage indisponible */
+      }
+      this.applyQuality();
+    }
+  }
 
   private resize = () => {
     const w = this.container.clientWidth || 1;
@@ -551,6 +678,10 @@ export class GameView3D {
     this.renderer.domElement.remove();
   }
 }
+
+const _target = new THREE.Vector3();
+const _before = new THREE.Vector3();
+const _delta = new THREE.Vector3();
 
 function lerpAngle(a: number, b: number, t: number) {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;

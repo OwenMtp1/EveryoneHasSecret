@@ -356,10 +356,11 @@ function buildFurniture(f: FurnitureDef, fires: THREE.Object3D[], pendulums: THR
       const fire = box(g, [0.4, 0.3, 0.12], new THREE.MeshStandardMaterial({ color: '#ff7a2a', emissive: '#ff6a1a', emissiveIntensity: 2.4 }), [0, 0.3, back + 0.32]);
       fire.castShadow = false;
       fires.push(fire);
-      const light = new THREE.PointLight('#ff8a3a', 6, 7, 1.6);
+      // source de lumière (allumée par le réservoir de lampes de la villa quand on est proche)
+      const light = new THREE.Object3D();
       light.position.set(0, 0.6, back + 0.8);
+      light.userData.light = { color: '#ff8a3a', intensity: 6, distance: 7, decay: 1.6, fire: true } satisfies LightSourceDef;
       g.add(light);
-      fires.push(light);
       box(g, [1.0, 0.75, 0.04], MAT.metal('#b8913e', 0.35), [0, 1.85, back + 0.02]);
       const canvas = new THREE.Mesh(new THREE.PlaneGeometry(0.88, 0.63), new THREE.MeshStandardMaterial({ map: paintingTexture(), roughness: 0.8 }));
       canvas.position.set(0, 1.85, back + 0.045);
@@ -482,14 +483,67 @@ export interface Villa3D {
   colliders: THREE.Object3D[];
   setBlackout(on: boolean): void;
   setUnlocked(ids: string[]): void;
-  /** la lampe de la pièce où se trouve le joueur projette des ombres */
-  focusRoom(roomId: string | undefined): void;
   update(t: number): void;
+  /** les lampes réelles sont attribuées aux sources les plus proches de ce point (joueur ou caméra) */
+  focus(x: number, z: number, roomId?: string): void;
+  /** ombres de la lampe de la pièce courante (désactivables pour les machines modestes) */
+  setShadows(on: boolean): void;
   /** vitres éclairées vues de l'extérieur (vue avec toit) : matériau propre à chacune */
   exteriorWindows: { mesh: THREE.Mesh; x: number; z: number; ry: number }[];
 }
 
 const ROOM_LIGHT = 14;
+/** Nombre de vraies lampes (sans ombre) actives en même temps : le coût d'éclairage reste constant. */
+const LIGHT_POOL = 4;
+
+interface LightSourceDef {
+  color: string;
+  intensity: number;
+  distance: number;
+  decay: number;
+  fire?: boolean;
+}
+interface LightSource extends LightSourceDef {
+  pos: THREE.Vector3;
+  room?: string;
+  shadowable?: boolean;
+}
+
+/**
+ * Fusionne tout le décor immobile par matériau (et par réglage d'ombre) : quelques dizaines d'appels
+ * de dessin au lieu de plusieurs centaines. Les objets de `keep` (collisions, portes, balanciers,
+ * vitres animées) restent indépendants. Les animations portées par les matériaux (feu, eau, écrans,
+ * ampoules) continuent de fonctionner puisque le matériau est partagé.
+ */
+function mergeStatic(root: THREE.Object3D, keep: Set<THREE.Object3D>) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map<string, { mat: THREE.Material; cast: boolean; receive: boolean; geos: THREE.BufferGeometry[]; meshes: THREE.Mesh[] }>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || keep.has(m) || (m as THREE.InstancedMesh).isInstancedMesh || Array.isArray(m.material)) return;
+    const g = m.geometry;
+    if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv || g.morphAttributes.position) return;
+    const key = `${m.material.uuid}|${m.castShadow}|${m.receiveShadow}`;
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, (b = { mat: m.material, cast: m.castShadow, receive: m.receiveShadow, geos: [], meshes: [] }));
+    const local = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
+    const gg = (g.index ? g.toNonIndexed() : g.clone()).applyMatrix4(local);
+    for (const name of Object.keys(gg.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') gg.deleteAttribute(name);
+    b.geos.push(gg);
+    b.meshes.push(m);
+  });
+  for (const b of buckets.values()) {
+    if (b.meshes.length < 2) continue;
+    const merged = mergeGeometries(b.geos);
+    if (!merged) continue;
+    for (const m of b.meshes) m.removeFromParent();
+    const mesh = new THREE.Mesh(merged, b.mat);
+    mesh.castShadow = b.cast;
+    mesh.receiveShadow = b.receive;
+    root.add(mesh);
+  }
+}
 
 /** Axe de l'allée d'accès (cinématique) : aucun arbre dans ce couloir. */
 export const DRIVEWAY_X = 21;
@@ -709,7 +763,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   }
 
   // ── Plafonds, lampes, lumières ──
-  const roomLights = new Map<string, THREE.PointLight>();
+  const sources: LightSource[] = [];
   const bulbMats = new Set<THREE.MeshStandardMaterial>();
   if (inGame)
     for (const r of ROOMS) {
@@ -730,29 +784,32 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     const lamp = lampMesh(st.lamp, WALL_H, bulbMats);
     lamp.position.set(cx, 0, cz);
     group.add(lamp);
-    const light = new THREE.PointLight(st.light, ROOM_LIGHT, Math.max(r.rect.w, r.rect.h) * 1.5, 1.5);
-    light.position.set(cx, WALL_H - 0.85, cz);
-    group.add(light);
-    roomLights.set(r.id, light);
+    sources.push({ color: st.light, intensity: ROOM_LIGHT, distance: Math.max(r.rect.w, r.rect.h) * 1.5, decay: 1.5, pos: new THREE.Vector3(cx, WALL_H - 0.85, cz), room: r.id, shadowable: true });
   }
-  // Lampe « active » : seule source intérieure qui projette des ombres (celle de la pièce du joueur).
-  // Le nombre de lumières reste constant → pas de recompilation des shaders.
-  const shadowLamp = new THREE.PointLight('#ffc98a', 0, 10, 1.5);
+  // Éclairage à coût constant : un petit réservoir de lampes est attribué aux sources les plus proches
+  // du joueur (ou de la caméra) ; la lampe de la pièce courante est un projecteur vers le bas qui
+  // porte les ombres (une seule carte d'ombre, au lieu des 6 faces d'une lampe ponctuelle).
+  const pool = Array.from({ length: LIGHT_POOL }, () => {
+    const l = new THREE.PointLight('#ffc98a', 0, 8, 1.5);
+    group.add(l);
+    return { light: l, src: null as LightSource | null };
+  });
+  const shadowLamp = new THREE.SpotLight('#ffc98a', 0, 14, 1.25, 0.6, 1.5);
   shadowLamp.castShadow = inGame;
-  shadowLamp.shadow.mapSize.set(512, 512);
-  shadowLamp.shadow.bias = -0.003;
-  shadowLamp.shadow.radius = 4;
-  group.add(shadowLamp);
+  shadowLamp.shadow.mapSize.set(1024, 1024);
+  shadowLamp.shadow.bias = -0.002;
+  shadowLamp.shadow.camera.near = 0.2;
+  group.add(shadowLamp, shadowLamp.target);
+  let shadowSrc: LightSource | null = null;
   let focused: string | undefined;
   let blackout = false;
+  const lastFocus = new THREE.Vector2(Infinity, Infinity);
 
   // ── Extérieur : lanternes, perron, bancs ──
   for (const [x, z] of [[18.6, 23.3], [23.4, 23.3], [4, 1.4], [26, 1.4], [38, 1.4]] as const) {
     cyl(group, 0.05, 0.07, 2.4, MAT.paint('#151515', 0.5), [x, 1.2, z]);
     box(group, [0.22, 0.32, 0.22], MAT.glow('#ffd29a', 2.2), [x, 2.5, z]);
-    const l = new THREE.PointLight('#ffb66b', 10, 9, 1.6);
-    l.position.set(x, 2.45, z);
-    group.add(l);
+    sources.push({ color: '#ffb66b', intensity: 10, distance: 9, decay: 1.6, pos: new THREE.Vector3(x, 2.45, z) });
   }
   box(group, [3, 0.12, 1.2], MAT.marble(2, 1), [21, 0.06, 23.6]);
   for (const x of [15, 26]) {
@@ -782,14 +839,55 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     for (const x of [12.5, 35.5]) box(group, [1.2, 4, 1.2], MAT.brick(1, 2.6), [x, WALL_H + 3.5, 9]);
   }
 
+  // sources déclarées par le mobilier (cheminées…)
+  group.updateMatrixWorld(true);
+  const keep = new Set<THREE.Object3D>([...colliders, ...exteriorWindows.map((w) => w.mesh)]);
+  for (const p of pendulums) p.traverse((o) => keep.add(o));
+  mergeStatic(group, keep);
+  group.traverse((o) => {
+    const def = o.userData.light as LightSourceDef | undefined;
+    if (!def) return;
+    const pos = o.getWorldPosition(new THREE.Vector3());
+    sources.push({ ...def, pos, room: roomAtTile(Math.floor(pos.x), Math.floor(pos.z))?.id });
+  });
+  const level = (src: LightSource) => (src.fire ? src.intensity : blackout ? 0 : src.intensity);
+  const assign = (x: number, z: number) => {
+    shadowSrc = sources.find((src) => src.shadowable && src.room === focused) ?? null;
+    const ranked = sources
+      .filter((src) => src !== shadowSrc)
+      .map((src) => ({ src, d: Math.hypot(src.pos.x - x, src.pos.z - z) - (src.room && src.room === focused ? 100 : 0) }))
+      .sort((p, q) => p.d - q.d);
+    pool.forEach((p, i) => {
+      const src = ranked[i]?.src ?? null;
+      p.src = src;
+      if (!src) {
+        p.light.intensity = 0;
+        return;
+      }
+      p.light.position.copy(src.pos);
+      p.light.color.set(src.color);
+      p.light.distance = src.distance;
+      p.light.decay = src.decay;
+      p.light.intensity = level(src);
+    });
+    if (shadowSrc) {
+      shadowLamp.position.copy(shadowSrc.pos);
+      shadowLamp.target.position.set(shadowSrc.pos.x, 0, shadowSrc.pos.z);
+      shadowLamp.color.set(shadowSrc.color);
+      shadowLamp.distance = shadowSrc.distance;
+      shadowLamp.intensity = level(shadowSrc) * 1.6;
+    } else shadowLamp.intensity = 0;
+  };
+  // sans focus explicite (vues extérieures), on éclaire autour de l'entrée
+  assign(WORLD_W / 2, WORLD_H);
+
   return {
     group,
     colliders,
     exteriorWindows,
     setBlackout(on) {
       blackout = on;
-      for (const [id, l] of roomLights) l.intensity = on || id === focused ? 0 : ROOM_LIGHT;
-      shadowLamp.intensity = on || !focused ? 0 : ROOM_LIGHT;
+      assign(lastFocus.x, lastFocus.y);
       for (const m of bulbMats) m.emissiveIntensity = on ? 0 : m.side === THREE.DoubleSide ? 0.5 : 3;
       glowMat.emissiveIntensity = on ? 0.02 : 1.1;
       for (const s of screens) (s.material as THREE.MeshStandardMaterial).emissiveIntensity = on ? 0 : 0.9;
@@ -806,24 +904,19 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
         lockedDoors.delete(id);
       }
     },
-    focusRoom(roomId) {
-      if (roomId === focused) return;
-      if (focused && roomLights.has(focused)) roomLights.get(focused)!.intensity = blackout ? 0 : ROOM_LIGHT;
-      focused = roomId && roomLights.has(roomId) ? roomId : undefined;
-      if (focused) {
-        const l = roomLights.get(focused)!;
-        shadowLamp.position.copy(l.position);
-        shadowLamp.color.copy(l.color);
-        shadowLamp.distance = l.distance;
-        shadowLamp.intensity = blackout ? 0 : ROOM_LIGHT;
-        l.intensity = 0;
-      } else shadowLamp.intensity = 0;
+    focus(x, z, roomId) {
+      // réattribution seulement quand on change de pièce ou qu'on a bougé d'au moins 1,5 m
+      if (roomId === focused && Math.hypot(x - lastFocus.x, z - lastFocus.y) < 1.5) return;
+      focused = roomId;
+      lastFocus.set(x, z);
+      assign(x, z);
+    },
+    setShadows(on) {
+      shadowLamp.castShadow = inGame && on;
     },
     update(t) {
-      for (const f of fires) {
-        if ((f as THREE.PointLight).isPointLight) (f as THREE.PointLight).intensity = blackout ? 5 : 5 + Math.sin(t * 11) * 1.2 + Math.sin(t * 17.3) * 0.8;
-        else ((f as THREE.Mesh).material as THREE.MeshStandardMaterial).emissiveIntensity = 2.2 + Math.sin(t * 13) * 0.4;
-      }
+      for (const f of fires) ((f as THREE.Mesh).material as THREE.MeshStandardMaterial).emissiveIntensity = 2.2 + Math.sin(t * 13) * 0.4;
+      for (const p of pool) if (p.src?.fire) p.light.intensity = p.src.intensity - 1 + Math.sin(t * 11) * 1.2 + Math.sin(t * 17.3) * 0.8;
       for (const p of pendulums) p.rotation.z = Math.sin(t * Math.PI) * 0.12;
       for (const w of waters) {
         const m = w.material as THREE.MeshStandardMaterial;

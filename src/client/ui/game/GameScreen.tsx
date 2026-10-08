@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatClock } from '@shared/config';
 import { roomName } from '@shared/content/villa';
-import { useStore, attempt } from '../../store';
+import { useStore, attempt, liveGame } from '../../store';
 import { call, getSocket } from '../../net/socket';
 import { drawFrame, createRenderState, camera } from '../../render/villaRenderer';
 import { GameView3D } from '../../three/GameView3D';
@@ -45,9 +45,9 @@ export function GameScreen() {
     if (dbg) dbg.view3d = v; // accroche de test (?debug)
     v.onInput = (dx, dy) => getSocket()?.emit('game:input', { dx, dy });
     v.onModeChange = setCamMode;
-    const g0 = useStore.getState().game;
+    const g0 = liveGame.current ?? useStore.getState().game;
     if (g0) v.setView(g0);
-    const unsub = useStore.subscribe((st) => st.game && v.setView(st.game));
+    const unsub = liveGame.subscribe((g) => v.setView(g));
     const ro = new ResizeObserver(() => v.refreshSize());
     ro.observe(wrap);
     const onLock = () => setLocked(document.pointerLockElement === v.renderer.domElement);

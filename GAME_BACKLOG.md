@@ -53,6 +53,14 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 ### V0.10 — cinématique d'arrivée (Villa Beaumont)
 Scène 3D temps réel de 20 s (réglable) qui masque le chargement : les **vrais personnages** des joueurs arrivent en **berline (2–4)** ou en **minibus (5–8)**, conducteur tiré au sort par le serveur, animations variées (discute, rit, danse, regarde dehors), le conducteur montre la villa, la caméra sort par le pare-brise et révèle véhicule + route + villa ; fenêtres qui s'allument, silhouette furtive derrière un rideau ; textes tapés en bas ; 5 couches sonores. États `INTRO_START → … → GAME_START` cadencés par le serveur, composition figée, reprise à la reconnexion. Détails : `docs/INTRO_CINEMATIC.md`. Tests 2/4/5/8 joueurs.
 
+### V0.11 — bras naturels et optimisation
+- **Bras de l'homme** : les animations étaient transférées depuis un squelette en pose en T vers un modèle en pose en A → bras tordus, paume en l'air. Les poses de repos des membres sont maintenant alignées avant le transfert.
+- **Éclairage à coût constant** : 4 lampes réutilisées (attribuées aux sources les plus proches) au lieu d'une vingtaine ; l'ombre de la pièce vient d'un projecteur (1 passe) au lieu d'une lampe ponctuelle (6 passes) ; ombre de lune 1024.
+- **Décor fusionné** par matériau : ~900 → ~110 appels de dessin par image.
+- **Qualité adaptative** (complet → sans halo → sans ombres/résolution réduite), selon la fluidité mesurée ; remonte si tout est fluide ; mémorisée.
+- **Déplacement prédit** côté client (mêmes collisions que le serveur), recalage en douceur → plus de latence ressentie.
+- **Interface** : la 3D reçoit chaque mise à jour réseau, React seulement les changements utiles (≤ 4/s pour les positions) au lieu de 12 re-rendus complets par seconde.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
