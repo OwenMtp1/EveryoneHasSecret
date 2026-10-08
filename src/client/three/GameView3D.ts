@@ -11,6 +11,7 @@ import { ROOMS, WORLD_H, WORLD_W } from '@shared/content/villa';
 import { buildCharacter, type Character3D } from './character3d';
 import { buildVilla, type Villa3D } from './villa3d';
 import { labelSprite, emojiSprite } from './sprites';
+import { realisticReady } from './realistic';
 
 type CamMode = 'third' | 'first';
 
@@ -43,7 +44,7 @@ export class GameView3D {
   private rain: THREE.LineSegments;
   private hemi: THREE.HemisphereLight;
   private moon: THREE.DirectionalLight;
-  private selfLight = new THREE.PointLight('#ffd9a8', 1.2, 3.5, 1.5);
+  private selfLight = new THREE.PointLight('#ffd9a8', 2.2, 4.5, 1.4);
   private raycaster = new THREE.Raycaster();
   private clock = new THREE.Clock();
   private raf = 0;
@@ -215,7 +216,7 @@ export class GameView3D {
         continue;
       }
       seen.add(p.id);
-      const key = JSON.stringify(p.character);
+      const key = `${JSON.stringify(p.character)}|${realisticReady()}`;
       let a = this.actors.get(p.id);
       if (a && a.key !== key) {
         this.removeActor(p.id);
@@ -226,7 +227,7 @@ export class GameView3D {
         const tag = labelSprite(p.name.split(' ')[0]);
         this.scene.add(c3d.root);
         this.scene.add(tag);
-        a = { c3d, pos: new THREE.Vector3(p.pos.x, 0, p.pos.y), rotY: 0, tag, key };
+        a = { c3d, pos: new THREE.Vector3(p.pos.x, 0, p.pos.y), rotY: p.id === this.view!.you ? this.yaw : 0, tag, key };
         this.actors.set(p.id, a);
       }
       const target = new THREE.Vector3(p.pos.x, 0, p.pos.y);
@@ -432,7 +433,7 @@ export class GameView3D {
     const blackout = this.view?.blackout;
     this.hemi.intensity = (blackout ? 0.08 : 0.55) + this.flash * 2.2;
     this.moon.intensity = (blackout ? 0.12 : 0.5) + this.flash * 1.5;
-    this.selfLight.intensity = blackout ? 0.6 : 1.2;
+    this.selfLight.intensity = blackout ? 0.8 : 2.2;
     this.flash = Math.max(0, this.flash - dt * 4);
     this.updateCamera();
     this.renderer.render(this.scene, this.camera);

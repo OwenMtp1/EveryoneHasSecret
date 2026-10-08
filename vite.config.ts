@@ -7,7 +7,7 @@ const serverPort = Number(process.env.PORT ?? 3001);
 export default defineConfig({
   plugins: [react()],
   root: 'src/client',
-  publicDir: false,
+  publicDir: fileURLToPath(new URL('./public', import.meta.url)),
   resolve: {
     alias: { '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)) },
   },

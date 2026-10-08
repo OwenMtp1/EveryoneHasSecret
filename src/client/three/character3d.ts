@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import type { Character } from '@shared/types';
 import { findHairColor, findHairStyle, findOutfit, findSkinTone, type HairPart3D, type Outfit } from '@shared/content/character';
+import { buildRealistic } from './realistic';
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
 function geo(key: string, make: () => THREE.BufferGeometry) {
@@ -59,7 +60,21 @@ export interface Character3D {
   dispose(): void;
 }
 
+/** Personnage réaliste si les modèles sont chargés, sinon modèle procédural (repli). */
 export function buildCharacter(c: Character): Character3D {
+  const r = buildRealistic(c);
+  if (!r) return buildProcedural(c);
+  return {
+    root: r.root,
+    head: r.head,
+    update: r.update,
+    setVisibleBody: r.setVisible,
+    setDead: (d) => d && r.setDead(),
+    dispose: r.dispose,
+  };
+}
+
+export function buildProcedural(c: Character): Character3D {
   const fem = c.appearance === 'feminine';
   const skinColor = findSkinTone(c.skinTone).color;
   const hairColor = findHairColor(c.hairColor).color;

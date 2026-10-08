@@ -68,6 +68,9 @@ export function CharacterCreator() {
           <span>Glissez pour tourner</span>
           <button className="btn btn-ghost btn-sm" onClick={() => setAngle((a) => a + Math.PI / 4)}>⟳</button>
         </div>
+        <p className="creator-note">
+          Modèles réalistes provisoires : la teinte de peau et les couleurs de tenue s’appliquent à l’homme ; les coiffures et coupes de tenue arriveront avec les modèles personnalisables (étape 2).
+        </p>
         <div className="creator-name">{c.firstName || 'Prénom'} {c.lastName || 'Nom'}</div>
       </div>
 

@@ -17,6 +17,9 @@ Parcours complet jouable : compte → personnage → menu → création/rejoindr
 ### V0.2 — passage en 3D (demande du joueur)
 Rendu entièrement en 3D dans le navigateur (Three.js) : villa générée depuis le plan, personnages 3D procéduraux animés, caméra **troisième personne** par défaut et **première personne** avec `V`, souris pour orienter, collision caméra/murs, plafonds, fenêtres, lampes par pièce, pluie, éclairs, coupure de courant avec lampes torches ; créateur, profil, lobby, épilogue et fond du menu en 3D. Serveur et moteur de jeu inchangés.
 
+### V0.3 — personnages réalistes, étape 1
+Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec animations capturées (attente, marche, course) transférées en espace monde depuis le mannequin Mixamo ; mélange des animations selon la vitesse ; teinte de peau et couleurs de tenue appliquées à l'homme. Repli automatique sur le personnage procédural. Voir `public/models/README.md`.
+
 ### Problèmes découverts pendant le développement
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
 - Le serveur émet `session:state` dès la connexion : un client doit brancher ses écouteurs **avant** `connect` (corrigé dans les tests).
@@ -56,7 +59,10 @@ Rendu entièrement en 3D dans le navigateur (Three.js) : villa générée depuis
 - ⬜ [P2] Accessoires · ⬜ [P2] Barbe · ⬜ [P2] Lunettes · ⬜ [P2] Bijoux · ⬜ [P2] Tatouages
 - ⬜ [P2] Morphologies / tailles · ⬜ [P2] Expressions faciales en jeu (peur, colère)
 - ✅ [P0] Personnage 3D procédural (data-driven, coiffures en primitives `parts3d`) avec marche et attente animées
-- ⬜ [P1] Modèles riggés glTF (visages, mains, vêtements) branchés sur les mêmes données
+- ✅ [P0] Étape 1 — modèles réalistes riggés + animations (attente, marche, course), transfert d'animation en espace monde
+- ⬜ [P0] Étape 2 — pipeline MakeHuman (CC0) → Blender (bpy) → glTF : corps H/F, morphologies, teintes de peau, 10 coiffures et 20 tenues modulaires sur un squelette commun
+- ⬜ [P0] Licence : remplacer les modèles provisoires (Mixamo / Ready Player Me) avant toute sortie publique
+- ⬜ [P1] Visages expressifs (morph targets : clignement, parole, peur)
 - ⬜ [P2] Animations d'interaction (ramasser, fouiller, se laver, s'effondrer)
 
 ## SOCIAL
