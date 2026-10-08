@@ -4,7 +4,7 @@
  * Aucun modèle externe : chaque coiffure/tenue est une combinaison de primitives décrites en données.
  */
 import * as THREE from 'three';
-import type { Character } from '@shared/types';
+import type { Character, GestureKind } from '@shared/types';
 import { findHairColor, findHairStyle, findOutfit, findSkinTone, type HairPart3D, type Outfit } from '@shared/content/character';
 import { buildRealistic } from './realistic';
 
@@ -56,7 +56,9 @@ export interface Character3D {
   /** anime : dt (s), vitesse horizontale (m/s) */
   update(dt: number, speed: number): void;
   setVisibleBody(v: boolean): void;
-  setDead(dead: boolean): void;
+  /** animated : la chute est jouée (le joueur était visible au moment de la mort) */
+  setDead(dead: boolean, animated?: boolean): void;
+  gesture(kind: GestureKind): void;
   dispose(): void;
 }
 
@@ -69,7 +71,8 @@ export function buildCharacter(c: Character): Character3D {
     head: r.head,
     update: r.update,
     setVisibleBody: r.setVisible,
-    setDead: (d) => d && r.setDead(),
+    setDead: (d, animated) => d && r.setDead(!!animated),
+    gesture: r.gesture,
     dispose: r.dispose,
   };
 }
@@ -210,6 +213,7 @@ export function buildProcedural(c: Character): Character3D {
 
   let phase = Math.random() * 10;
   let walkBlend = 0;
+  let gestureT = 1;
   return {
     root,
     head,
@@ -228,6 +232,15 @@ export function buildProcedural(c: Character): Character3D {
       arms[1].rotation.z = 0.06 + idle * 0.02;
       body.position.y = Math.abs(Math.sin(w)) * 0.035 * walkBlend + idle * 0.004;
       head.rotation.y = Math.sin(phase * 0.6) * 0.08 * (1 - walkBlend);
+      if (gestureT < 1) {
+        gestureT = Math.min(1, gestureT + dt / 1.2);
+        const e = Math.sin(Math.PI * gestureT);
+        body.rotation.x = 0.35 * e;
+        arms[1].rotation.x = -1.1 * e;
+      }
+    },
+    gesture() {
+      gestureT = 0;
     },
     setVisibleBody(v) {
       body.visible = v;

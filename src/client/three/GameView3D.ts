@@ -18,6 +18,7 @@ type CamMode = 'third' | 'first';
 
 interface Actor {
   c3d: Character3D;
+  gestureSeq?: number;
   pos: THREE.Vector3;
   rotY: number;
   tag: THREE.Sprite;
@@ -186,7 +187,10 @@ export class GameView3D {
     this.view = v;
   }
 
+  private lastDt = 0;
+
   private sync(dt: number) {
+    this.lastDt = dt;
     const v = this.view;
     if (!v) return;
     this.villa.setUnlocked(v.unlockedDoors);
@@ -195,8 +199,9 @@ export class GameView3D {
       if (v.blackout) this.flash = 1;
       this.wasBlackout = v.blackout;
     }
-    this.syncPlayers(v.players, dt);
+    // Les corps d'abord : on sait encore si la victime était visible (chute animée)
     this.syncBodies(v.bodies);
+    this.syncPlayers(v.players, dt);
     this.syncObjects(v.objects);
     this.syncTraces(v.traces);
   }
@@ -242,6 +247,10 @@ export class GameView3D {
       else if (speed > 0.3) a.rotY = lerpAngle(a.rotY, Math.atan2(delta.x, delta.z), Math.min(1, dt * 12));
       a.c3d.root.position.copy(a.pos);
       a.c3d.root.rotation.y = a.rotY;
+      if (p.gesture && p.gesture.seq !== a.gestureSeq) {
+        a.gestureSeq = p.gesture.seq;
+        a.c3d.gesture(p.gesture.kind);
+      }
       a.c3d.update(dt, speed);
       a.tag.position.set(a.pos.x, 2.12, a.pos.z);
       a.tag.visible = !isMe;
@@ -290,12 +299,15 @@ export class GameView3D {
       seen.add(b.id);
       if (this.bodies.has(b.id)) continue;
       const c3d = buildCharacter(b.character);
-      c3d.setDead(true);
+      // Si on voyait la victime à l'instant, elle s'effondre sous nos yeux
+      const witnessed = this.actors.get(b.playerId);
+      c3d.setDead(true, !!witnessed);
       c3d.root.position.set(b.pos.x, 0, b.pos.y);
-      c3d.root.rotation.y = (b.pos.x * 7) % (Math.PI * 2);
+      c3d.root.rotation.y = witnessed ? witnessed.rotY : (b.pos.x * 7) % (Math.PI * 2);
       this.scene.add(c3d.root);
       this.bodies.set(b.id, c3d);
     }
+    for (const [, c] of this.bodies) c.update(this.lastDt, 0);
     for (const [id, c] of this.bodies)
       if (!seen.has(id)) {
         this.scene.remove(c.root);

@@ -22,6 +22,7 @@ import type {
   Phase,
   TraceView,
   Character,
+  GestureKind,
 } from '@shared/types';
 import type { GameAction } from '@shared/protocol';
 import { GAME_CONFIG, META_CONFIG, formatClock } from '@shared/config';
@@ -114,6 +115,12 @@ export class GameInstance {
   readonly investigation: InvestigationSystem;
 
   private seq = 0;
+  private gestureSeq = 0;
+
+  /** Geste visible d'un joueur (ramasser, fouiller…) : pur retour visuel pour les témoins. */
+  gesture(p: PlayerState, kind: GestureKind, ms = 1500) {
+    p.gesture = { kind, seq: ++this.gestureSeq, until: this.now() + ms };
+  }
   private timers: NodeJS.Timeout[] = [];
   private lastSecondTick = 0;
   private lastSimAt = 0;
@@ -163,6 +170,7 @@ export class GameInstance {
         metrics: { objectsTouched: 0, socialActions: 0, examinations: 0 },
         motiveAgainst: new Set(),
         pendingTestimony: null,
+        gesture: null,
         dirty: true,
       };
       p.roomHistory.push({ clock: this.clock(), roomId: p.roomId });
@@ -671,6 +679,7 @@ export class GameInstance {
           roomId: p.roomId,
           hasLight: this.hasLight(p),
           stained: p.stained,
+          gesture: p.gesture && p.gesture.until > this.now() ? { kind: p.gesture.kind, seq: p.gesture.seq } : undefined,
         };
       if (allies.has(p.id)) return { ...base, pos: { x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2) }, roomId: p.roomId, viaAlliance: true };
       return base;

@@ -2,6 +2,7 @@
  * État interne d'une partie — VÉRITÉ SERVEUR. Jamais envoyé tel quel aux clients.
  */
 import type {
+  GestureKind,
   BoardEntry,
   Character,
   ChatMessage,
@@ -65,6 +66,7 @@ export interface PlayerState {
   roomTime: Record<string, number>;
   metrics: { objectsTouched: number; socialActions: number; examinations: number };
   motiveAgainst: Set<string>;
+  gesture: { kind: GestureKind; seq: number; until: number } | null;
   pendingTestimony: { requestId: string; question: string; fromId: string; fromName: string } | null;
   vote?: string;
   dirty: boolean;

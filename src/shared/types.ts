@@ -151,7 +151,11 @@ export interface GamePlayerView {
   stained?: boolean;
   /** Visible car allié (position partagée). */
   viaAlliance?: boolean;
+  /** Geste en cours (visible seulement par ceux qui voient le joueur). */
+  gesture?: { kind: GestureKind; seq: number };
 }
+
+export type GestureKind = 'take' | 'drop' | 'hide' | 'search' | 'give' | 'examine' | 'use' | 'wash' | 'clean' | 'destroy' | 'attack';
 
 export interface ObjectView {
   id: string;

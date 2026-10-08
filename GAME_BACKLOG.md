@@ -31,6 +31,11 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - **Stabilité** : les vues réseau sont regroupées en une mise à jour par image (corrige une erreur « Maximum update depth » quand le rendu est lent).
 - Objets jamais superposés sur la même case.
 
+### V0.6 — animations d'action
+- **Gestes procéduraux** joués par-dessus les animations capturées, en espace monde (indépendants des squelettes) : ramasser, poser, cacher, fouiller, donner, examiner, utiliser, se laver les mains, nettoyer, brûler, frapper.
+- **Chute de la victime** animée si elle était visible au moment de la mort.
+- Le serveur n'envoie un geste qu'aux joueurs qui voient son auteur : la vérité reste protégée.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
@@ -75,7 +80,8 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ⬜ [P0] Étape 2 — pipeline MakeHuman (CC0) → Blender (bpy) → glTF : corps H/F, morphologies, teintes de peau, 10 coiffures et 20 tenues modulaires sur un squelette commun
 - ⬜ [P0] Licence : remplacer les modèles provisoires (Mixamo / Ready Player Me) avant toute sortie publique
 - ⬜ [P1] Visages expressifs (morph targets : clignement, parole, peur)
-- ⬜ [P2] Animations d'interaction (ramasser, fouiller, se laver, s'effondrer)
+- ✅ [P1] Animations d'interaction (ramasser, fouiller, se laver, frapper, s'effondrer) — procédurales
+- ⬜ [P2] Animations capturées dédiées (mocap) pour remplacer les gestes procéduraux
 
 ## SOCIAL
 - ✅ [P0] Historique social (« X a aidé Y », « X a trahi Y », accusations, hostilités)

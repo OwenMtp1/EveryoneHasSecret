@@ -14,6 +14,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Appearance, Character } from '@shared/types';
 import { findHairColor, findOutfit, findSkinTone } from '@shared/content/character';
+import type { GestureKind } from '@shared/types';
+import { GesturePlayer, findRig } from './gestures';
 
 interface BaseModel {
   scene: THREE.Group;
@@ -156,7 +158,8 @@ export interface RealisticInstance {
   head: THREE.Object3D;
   update(dt: number, speed: number): void;
   setVisible(v: boolean): void;
-  setDead(): void;
+  setDead(animated: boolean): void;
+  gesture(kind: GestureKind): void;
   dispose(): void;
 }
 
@@ -225,12 +228,24 @@ export function buildRealistic(c: Character): RealisticInstance | null {
     if (/Head$/.test(o.name) && (o as THREE.Bone).isBone) head = o;
   });
   let dead = false;
+  /** progression de la chute (1 = au sol) */
+  let fall = 1;
+  const gestures = new GesturePlayer(findRig(model), root);
 
   return {
     root,
     head,
     update(dt, speed) {
-      if (dead) return;
+      if (dead) {
+        if (fall < 1) {
+          fall = Math.min(1, fall + dt / 0.85);
+          const e = fall * fall; // accélère comme une chute
+          pose.rotation.x = (-Math.PI / 2) * e;
+          pose.position.set(0, 0.12 * e, 0.85 * e);
+          mixer.update(dt * 0.5);
+        }
+        return;
+      }
       const tWalk = speed > 0.3 ? (speed > 2.6 ? 0 : 1) : 0;
       const tRun = speed > 2.6 ? 1 : 0;
       const k = Math.min(1, dt * 8);
@@ -242,19 +257,24 @@ export function buildRealistic(c: Character): RealisticInstance | null {
       run.timeScale = THREE.MathUtils.clamp(speed / 4, 0.7, 1.3);
       walk.timeScale = THREE.MathUtils.clamp(speed / 1.5, 0.6, 1.5);
       mixer.update(dt);
+      gestures.apply(dt);
+    },
+    gesture(kind) {
+      if (!dead) gestures.play(kind);
     },
     setVisible(v) {
       model.visible = v;
       blob.visible = v;
     },
-    setDead() {
+    setDead(animated) {
       dead = true;
       idle.setEffectiveWeight(1);
       walk.setEffectiveWeight(0);
       run.setEffectiveWeight(0);
       mixer.update(0.01);
-      pose.rotation.x = -Math.PI / 2;
-      pose.position.set(0, 0.12, 0.85);
+      fall = animated ? 0 : 1;
+      pose.rotation.x = animated ? 0 : -Math.PI / 2;
+      pose.position.set(0, animated ? 0 : 0.12, animated ? 0 : 0.85);
       for (const m of materials) (m as THREE.MeshStandardMaterial).color?.lerp(new THREE.Color('#8a8a8a'), 0.45);
     },
     dispose() {

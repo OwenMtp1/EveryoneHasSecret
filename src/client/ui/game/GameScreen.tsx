@@ -38,6 +38,8 @@ export function GameScreen() {
     if (!wrap) return;
     const v = new GameView3D(wrap, { reducedMotion: useStore.getState().settings.reducedMotion });
     viewRef.current = v;
+    const dbg = (window as unknown as { __ehas?: Record<string, unknown> }).__ehas;
+    if (dbg) dbg.view3d = v; // accroche de test (?debug)
     v.onInput = (dx, dy) => getSocket()?.emit('game:input', { dx, dy });
     v.onModeChange = setCamMode;
     const g0 = useStore.getState().game;

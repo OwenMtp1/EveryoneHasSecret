@@ -4,6 +4,7 @@
  * Chaque action : valide → applique → journalise (vérité) → perception des témoins.
  */
 import type { GameAction } from '@shared/protocol';
+import type { GestureKind } from '@shared/types';
 import { DOORS, FURNITURE, furnitureById, roomName } from '@shared/content/villa';
 import { GAME_CONFIG, formatClock } from '@shared/config';
 import type { GameInstance } from './GameInstance';
@@ -92,6 +93,17 @@ export class ActionSystem {
   handle(p: PlayerState, a: GameAction): string | undefined {
     if (!p.alive && a.type !== 'vote') throw new UserError('Vous n’êtes plus de ce monde.');
     if (this.g.ended) throw new UserError('La partie est terminée.');
+    const msg = this.dispatch(p, a);
+    const GESTURE: Partial<Record<GameAction['type'], GestureKind>> = {
+      take: 'take', drop: 'drop', hide: 'hide', give: 'give', use: 'use', examine: 'examine',
+      search: 'search', clean: 'clean', destroy: 'destroy', wash: 'wash', act: 'attack',
+    };
+    const g = GESTURE[a.type];
+    if (g) this.g.gesture(p, g, g === 'search' || g === 'wash' ? 1900 : 1400);
+    return msg;
+  }
+
+  private dispatch(p: PlayerState, a: GameAction): string | undefined {
     switch (a.type) {
       case 'take':
         return this.take(p, a.objectId);
