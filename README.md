@@ -13,7 +13,7 @@ npm install
 npm run dev          # serveur (3001) + client Vite (5173) → http://localhost:5173
 ```
 
-Production (un seul processus sert l’API, le temps réel et le client compilé) :
+Production locale (un seul processus sert l’API, le temps réel et le client compilé) :
 
 ```bash
 npm run build
@@ -40,6 +40,10 @@ Le jeu se joue uniquement entre joueurs humains (minimum 2, idéal 4 à 6). Pour
 | `npm start` | Lance le serveur de production |
 | `npm run typecheck` | Vérification TypeScript (client + serveur + tests) |
 | `npm test` | Tests moteur + test d’intégration multijoueur (4 clients Socket.IO réels) |
+
+## Mettre en ligne
+
+Voir [DEPLOY.md](DEPLOY.md) : Render en quelques clics (`render.yaml`), Docker (`Dockerfile`) ou serveur personnel.
 
 ## Contrôles en partie
 

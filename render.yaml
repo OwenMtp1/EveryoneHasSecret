@@ -1,0 +1,18 @@
+# Déploiement Render (Blueprint) : Dashboard → New → Blueprint → choisir ce dépôt.
+services:
+  - type: web
+    name: everyone-has-a-secret
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: EHAS_DB
+        # Offre gratuite : disque éphémère (comptes remis à zéro à chaque redéploiement).
+        # Pour conserver les données : passer en offre payante et ajouter un disque monté sur /var/data,
+        # puis EHAS_DB=/var/data/ehas.sqlite.
+        value: /tmp/ehas.sqlite

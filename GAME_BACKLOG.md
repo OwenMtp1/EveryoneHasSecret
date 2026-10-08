@@ -36,6 +36,9 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - **Chute de la victime** animée si elle était visible au moment de la mort.
 - Le serveur n'envoie un geste qu'aux joueurs qui voient son auteur : la vérité reste protégée.
 
+### V0.7 — prêt pour la mise en ligne
+`render.yaml`, `Dockerfile`, `DEPLOY.md` ; `tsx` passe en dépendance de production ; démarrage compatible Node 22.x.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
 - `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
@@ -260,7 +263,8 @@ Modèles humains riggés et texturés (homme Ready Player Me, femme Mixamo) avec
 - ✅ [P0] Contenu data-driven (personnages, villa, objets, secrets, rôles, événements, scénarios)
 - ✅ [P0] Tests moteur + intégration multijoueur ; build de production servi par le serveur
 - ⬜ [P1] CI (typecheck + tests + build) · ⬜ [P1] Lint/format (ESLint, Prettier)
-- ⬜ [P1] Migrations de schéma versionnées · ⬜ [P2] Docker / déploiement · ⬜ [P2] Outil de replay depuis le journal de vérité
+- ✅ [P1] Déploiement : `render.yaml` (Render), `Dockerfile`, guide `DEPLOY.md`
+- ⬜ [P1] Base persistante en ligne (disque Render payant ou Postgres) · ⬜ [P1] Migrations de schéma versionnées · ⬜ [P2] Outil de replay depuis le journal de vérité
 - ⬜ [P2] Contenu en JSON chargé à chaud (éditeur de contenu)
 
 ## SECURITY
