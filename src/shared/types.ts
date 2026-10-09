@@ -443,7 +443,8 @@ export interface GameSnapshot {
   clock: number;
   phase: Phase;
   blackout: boolean;
-  players: GamePlayerView[];
+  /** sans `character` (repris de la dernière vue complète) */
+  players: Omit<GamePlayerView, 'character'>[];
   objects: ObjectView[];
   bodies: BodyView[];
   traces: TraceView[];

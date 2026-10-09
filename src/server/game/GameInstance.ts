@@ -818,7 +818,12 @@ export class GameInstance {
     };
   }
 
+  /** Instantané fréquent (12 Hz) : sans la description des personnages, déjà connue par la vue complète. */
   buildSnapshot(p: PlayerState): GameSnapshot {
+    return { ...this.buildDynamic(p), players: this.visiblePlayers(p).map(({ character: _c, ...rest }) => rest) };
+  }
+
+  private buildDynamic(p: PlayerState) {
     return {
       clock: this.clock(),
       phase: this.phase,
@@ -832,7 +837,7 @@ export class GameInstance {
   }
 
   buildSelfView(p: PlayerState): GameSelfView {
-    const snap = this.buildSnapshot(p);
+    const snap = this.buildDynamic(p);
     const inv = p.inventory.map((id) => this.objectView(this.objects.get(id)!, p));
     const cs = this.caseSystem;
     return {

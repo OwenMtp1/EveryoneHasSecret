@@ -93,6 +93,8 @@ export function createApp(opts: { dbPath?: string; store?: MetaStore; auth?: Aut
     // Même origine par défaut (pages servies par ce serveur) ; origines supplémentaires explicites seulement.
     cors: allowed.length ? { origin: allowed } : undefined,
     maxHttpBufferSize: 64_000,
+    // compression des messages volumineux (vues de partie) : ~3× moins de données envoyées
+    perMessageDeflate: { threshold: 1024 },
   });
 
   const toUser = (userId: string, event: string, payload?: unknown) => {

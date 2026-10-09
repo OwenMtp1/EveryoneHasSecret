@@ -56,7 +56,11 @@ async function client(name: string): Promise<Client> {
   const s = io(BASE, { auth: { token: reg.token }, transports: ['websocket'], forceNew: true });
   const c: Client = { name, token: reg.token, id: reg.user.id, s };
   s.on('game:full', (v: GameSelfView) => (c.view = v));
-  s.on('game:snapshot', (v: Partial<GameSelfView>) => c.view && (c.view = { ...c.view, ...v }));
+  s.on('game:snapshot', (v: Partial<GameSelfView>) => {
+    if (!c.view) return;
+    const chars = new Map(c.view.players.map((p) => [p.id, p.character]));
+    c.view = { ...c.view, ...v, players: (v.players ?? c.view.players).map((p) => ({ ...p, character: chars.get(p.id)! })) };
+  });
   s.on('lobby:state', (l: LobbyView | null) => (c.lobby = l));
   s.on('lobby:intro', (p: { plan: { id: string }; loading: boolean }) => {
     if (p.loading && name !== 'host') s.emit('lobby:intro-ready', { planId: p.plan.id });

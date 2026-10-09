@@ -222,7 +222,12 @@ export const useStore = create<AppState>((set, get) => ({
       scheduled = false;
       const st = get();
       let next = pendingFull ?? liveGame.current ?? st.game;
-      if (pendingSnap && next) next = { ...next, ...pendingSnap };
+      if (pendingSnap && next) {
+        // l'instantané ne répète pas la description des personnages : on la reprend de la vue précédente
+        const chars = new Map(next.players.map((p) => [p.id, p.character]));
+        const snap = pendingSnap;
+        next = { ...next, ...snap, players: snap.players.map((p) => ({ ...p, character: chars.get(p.id)! })).filter((p) => p.character) };
+      }
       const hadFull = !!pendingFull;
       pendingFull = null;
       pendingSnap = null;

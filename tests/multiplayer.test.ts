@@ -85,7 +85,11 @@ async function makeClient(username: string): Promise<Client> {
   const socket = await connect(reg.data.token);
   const client: Client = { token: reg.data.token, id: reg.data.user.id, name: username, socket };
   socket.on('game:full', (v: GameSelfView) => (client.lastFull = v));
-  socket.on('game:snapshot', (s: Partial<GameSelfView>) => client.lastFull && (client.lastFull = { ...client.lastFull, ...s }));
+  socket.on('game:snapshot', (s: Partial<GameSelfView>) => {
+    if (!client.lastFull) return;
+    const chars = new Map(client.lastFull.players.map((p) => [p.id, p.character]));
+    client.lastFull = { ...client.lastFull, ...s, players: (s.players ?? client.lastFull.players).map((p) => ({ ...p, character: chars.get(p.id)! })) };
+  });
   socket.on('lobby:state', (l: LobbyView | null) => (client.lobby = l));
   return client;
 }
@@ -210,6 +214,26 @@ test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchr
   assert.equal(session!.inGame, true);
   assert.equal(full!.you, d.id);
   await waitFor(() => host.lastFull!.players.find((x) => x.id === d.id)?.connected === true);
+
+  // Joueur d'une AUTRE partie / sans partie : aucun accès à celle-ci
+  const outsider = await makeClient('outsider');
+  await assert.rejects(call(outsider.socket, 'game:action', { type: 'examine', objectId: 'x' }), /Aucune partie/);
+  await assert.rejects(call(outsider.socket, 'game:chat', { channel: 'general', text: 'coucou' }), /Aucune partie/);
+  await assert.rejects(call(outsider.socket, 'lobby:pick', 'f10'), /aucune partie/i);
+  await assert.rejects(call(outsider.socket, 'lobby:start'), /aucune partie/i);
+  await assert.rejects(call(outsider.socket, 'lobby:join', { lobbyId: lobby.id }), /code|commencé/);
+  outsider.socket.emit('game:input', { dx: 1, dy: 0 }); // ignoré sans erreur
+  assert.ok(!JSON.stringify(outsider.lobby ?? {}).includes(lobby.code));
+  // Socket sans jeton : refusé
+  await assert.rejects(
+    new Promise((resolve, reject) => {
+      const s = ioc(base, { auth: {}, transports: ['websocket'], forceNew: true });
+      s.on('connect', () => (s.disconnect(), resolve(null)));
+      s.on('connect_error', (e) => (s.disconnect(), reject(e)));
+    }),
+    /unauthorized/,
+  );
+  outsider.socket.disconnect();
 
   for (const p of [host, b, c]) p.socket.disconnect();
   s2.disconnect();
