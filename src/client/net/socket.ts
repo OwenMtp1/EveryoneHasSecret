@@ -1,13 +1,21 @@
 import { io, type Socket } from 'socket.io-client';
 import type { AckResult, ClientToServerEvents, ServerToClientEvents } from '@shared/protocol';
+import { getAccessToken } from './auth';
 
 export type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: GameSocket | null = null;
 
-export function connectSocket(token: string): GameSocket {
+/** Le jeton est relu à CHAQUE (re)connexion : une session renouvelée entre-temps reste valide. */
+export function connectSocket(): GameSocket {
   socket?.disconnect();
-  socket = io({ auth: { token }, transports: ['websocket', 'polling'], reconnectionDelayMax: 4000 });
+  socket = io({
+    auth: (cb) => {
+      getAccessToken().then((token) => cb({ token }), () => cb({ token: null }));
+    },
+    transports: ['websocket', 'polling'],
+    reconnectionDelayMax: 4000,
+  });
   return socket;
 }
 

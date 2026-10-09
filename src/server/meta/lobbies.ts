@@ -5,17 +5,21 @@
 import type { LobbyView, LobbyVisibility, ServerFilters, ServerListEntry, EpilogueView } from '@shared/types';
 import { GAME_NAME, META_CONFIG, NIGHT_DURATIONS, isNightDuration, type NightDuration } from '@shared/config';
 import { buildIntroPlan, introSchedule, type IntroPlan } from '@shared/content/intro';
+import { castById } from '@shared/content/cast';
+import { characterFromCast } from '@shared/content/character';
 import { GameInstance } from '../game/GameInstance';
-import type { AuthService } from './auth';
 import type { ProfileService } from './profiles';
 import type { FriendService } from './friends';
 import type { NotificationService } from './notifications';
 import type { PresenceService } from './presence';
-import type { DB } from './db';
+import type { MetaStore } from './store';
 import { lobbyCode, newId, shortId, UserError } from '../util';
 
 interface LobbyPlayer {
   userId: string;
+  username: string;
+  /** personnage réservé (unique dans le salon, garanti ici côté serveur) */
+  castId: string | null;
   ready: boolean;
   joinedAt: number;
   connected: boolean;
@@ -32,6 +36,7 @@ interface Lobby {
   players: LobbyPlayer[];
   chat: { id: string; userId: string | null; name: string; text: string; at: number }[];
   game: GameInstance | null;
+  version: number;
   /** joueurs encore « dans » la partie (avant retour au lobby) */
   inGame: Set<string>;
   /** cinématique en cours : composition figée, états cadencés par le serveur */
@@ -56,8 +61,7 @@ export class LobbyManager {
   loadTimeoutMs = Number(process.env.EHAS_LOAD_TIMEOUT_MS ?? 30000);
 
   constructor(
-    private db: DB,
-    private auth: AuthService,
+    private store: MetaStore,
     private profiles: ProfileService,
     private friends: FriendService,
     private notifications: NotificationService,
@@ -79,15 +83,18 @@ export class LobbyManager {
     return id ? this.lobbies.get(id) : undefined;
   }
 
-  private nameOf(userId: string) {
-    const u = this.auth.getUser(userId);
-    return this.profiles.displayName(userId, u?.username ?? '???');
+  /** Nom affiché : le personnage choisi, sinon le pseudo. */
+  private nameOf(l: Lobby, userId: string) {
+    const p = l.players.find((x) => x.userId === userId);
+    const c = castById(p?.castId);
+    return c ? `${c.firstName} ${c.lastName}` : (p?.username ?? '???');
   }
 
   view(l: Lobby, forUser?: string): LobbyView {
     const readyCount = l.players.filter((p) => p.ready || p.userId === l.hostId).length;
     return {
       id: l.id,
+      version: l.version,
       name: l.name,
       code: l.code,
       hostId: l.hostId,
@@ -101,11 +108,13 @@ export class LobbyManager {
         l.status === 'WAITING' &&
         !l.game &&
         l.players.length >= META_CONFIG.minPlayersToStart &&
-        readyCount === l.players.length,
+        readyCount === l.players.length &&
+        l.players.every((p) => p.castId),
       players: l.players.map((p) => ({
         userId: p.userId,
-        username: this.auth.getUser(p.userId)?.username ?? '???',
-        character: this.profiles.getCharacter(p.userId),
+        username: p.username,
+        castId: p.castId,
+        character: p.castId ? characterFromCast(castById(p.castId)!) : null,
         ready: p.ready,
         isHost: p.userId === l.hostId,
         connected: p.connected,
@@ -130,8 +139,8 @@ export class LobbyManager {
     return l?.game && l.inGame.has(userId) ? l.game : null;
   }
 
-  list(userId: string, filters: ServerFilters = {}): ServerListEntry[] {
-    const friendIds = new Set(this.friends.friendIds(userId));
+  async list(userId: string, filters: ServerFilters = {}): Promise<ServerListEntry[]> {
+    const friendIds = new Set(await this.friends.friendIds(userId));
     const out: ServerListEntry[] = [];
     for (const l of this.lobbies.values()) {
       if (l.visibility !== 'PUBLIC') continue;
@@ -143,7 +152,7 @@ export class LobbyManager {
       out.push({
         id: l.id,
         name: l.name,
-        hostName: this.nameOf(l.hostId),
+        hostName: this.nameOf(l, l.hostId),
         playerCount: l.players.length,
         maxPlayers: l.maxPlayers,
         status: l.game ? 'IN_GAME' : l.status,
@@ -156,11 +165,15 @@ export class LobbyManager {
   // ───────────── diffusion ─────────────
 
   private broadcast(l: Lobby) {
+    l.version++;
     for (const p of l.players) this.emitter.toUser(p.userId, 'lobby:state', this.view(l, p.userId));
   }
 
   private notifyFriendsOfPresence(userId: string) {
-    for (const f of this.friends.friendIds(userId)) this.emitter.toUser(f, 'friends:changed');
+    this.friends
+      .friendIds(userId)
+      .then((ids) => ids.forEach((f) => this.emitter.toUser(f, 'friends:changed')))
+      .catch(() => {});
   }
 
   private system(l: Lobby, text: string) {
@@ -168,10 +181,6 @@ export class LobbyManager {
   }
 
   // ───────────── actions ─────────────
-
-  private requireCharacter(userId: string) {
-    if (!this.profiles.getCharacter(userId)) throw new UserError('Créez d’abord votre personnage.');
-  }
 
   private validateSettings(p: { name?: unknown; maxPlayers?: unknown; visibility?: unknown }, current?: Lobby) {
     const out: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility } = {};
@@ -194,8 +203,7 @@ export class LobbyManager {
     return out;
   }
 
-  create(userId: string, p: { name: string; maxPlayers: number; visibility: LobbyVisibility; duration?: NightDuration }): LobbyView {
-    this.requireCharacter(userId);
+  create(userId: string, username: string, p: { name: string; maxPlayers: number; visibility: LobbyVisibility; duration?: NightDuration }): LobbyView {
     const s = this.validateSettings(p);
     if (!s.name || !s.maxPlayers || !s.visibility) throw new UserError('Paramètres incomplets.');
     this.leaveCurrent(userId);
@@ -210,21 +218,21 @@ export class LobbyManager {
       maxPlayers: s.maxPlayers,
       visibility: s.visibility,
       status: 'WAITING',
-      players: [{ userId, ready: false, joinedAt: Date.now(), connected: true }],
+      players: [{ userId, username, castId: null, ready: false, joinedAt: Date.now(), connected: true }],
       chat: [],
       game: null,
+      version: 1,
       inGame: new Set(),
       duration: isNightDuration(p.duration) ? p.duration : 'normal',
     };
-    this.system(l, `${this.nameOf(userId)} a ouvert les portes de « ${l.name} ».`);
+    this.system(l, `${username} a ouvert les portes de « ${l.name} ».`);
     this.lobbies.set(l.id, l);
     this.userLobby.set(userId, l.id);
     this.notifyFriendsOfPresence(userId);
     return this.view(l, userId);
   }
 
-  join(userId: string, p: { lobbyId?: string; code?: string }): LobbyView {
-    this.requireCharacter(userId);
+  join(userId: string, username: string, p: { lobbyId?: string; code?: string }): LobbyView {
     let l: Lobby | undefined;
     if (p.code) {
       const code = String(p.code).trim().toUpperCase();
@@ -240,16 +248,22 @@ export class LobbyManager {
     if (l.status !== 'WAITING' || l.game) throw new UserError('La partie a déjà commencé.');
     if (l.players.length >= l.maxPlayers) throw new UserError('La partie est complète.');
     this.leaveCurrent(userId);
-    l.players.push({ userId, ready: false, joinedAt: Date.now(), connected: true });
+    l.players.push({ userId, username, castId: null, ready: false, joinedAt: Date.now(), connected: true });
     this.userLobby.set(userId, l.id);
-    this.system(l, `${this.nameOf(userId)} est arrivé·e.`);
+    this.system(l, `${username} est arrivé·e.`);
     this.broadcast(l);
-    // Amis prévenus
-    for (const f of this.friends.friendIds(userId)) {
-      if (!this.presence.isOnline(f) || l.players.some((x) => x.userId === f)) continue;
-      this.notifications.notify(f, 'FRIEND_JOINED_GAME', 'Un ami rejoint une partie', `${this.auth.getUser(userId)?.username} a rejoint « ${l.name} ».`, l.visibility === 'PUBLIC' ? { lobbyId: l.id } : {}, { ephemeral: true });
-    }
-    this.notifyFriendsOfPresence(userId);
+    // Amis prévenus (et listes d'amis rafraîchies)
+    const lobby = l;
+    this.friends
+      .friendIds(userId)
+      .then((ids) => {
+        for (const f of ids) {
+          this.emitter.toUser(f, 'friends:changed');
+          if (!this.presence.isOnline(f) || lobby.players.some((x) => x.userId === f)) continue;
+          this.notifications.notify(f, 'FRIEND_JOINED_GAME', 'Un ami rejoint une partie', `${username} a rejoint « ${lobby.name} ».`, lobby.visibility === 'PUBLIC' ? { lobbyId: lobby.id } : {}, { ephemeral: true });
+        }
+      })
+      .catch(() => {});
     return this.view(l, userId);
   }
 
@@ -260,6 +274,7 @@ export class LobbyManager {
   leave(userId: string) {
     const l = this.lobbyOfUser(userId);
     if (!l) return;
+    const name = this.nameOf(l, userId);
     this.userLobby.delete(userId);
     l.players = l.players.filter((p) => p.userId !== userId);
     if (l.game && l.inGame.has(userId)) {
@@ -275,11 +290,11 @@ export class LobbyManager {
     }
     if (l.hostId === userId) {
       l.hostId = l.players[0].userId;
-      this.system(l, `${this.nameOf(l.hostId)} est maintenant l’hôte.`);
+      this.system(l, `${this.nameOf(l, l.hostId)} est maintenant l’hôte.`);
     }
     // Pendant la cinématique, la composition est figée : on ne l'interrompt pas pour un départ.
     if (l.intro?.loading) this.introReadyCheck(l);
-    this.system(l, `${this.nameOf(userId)} est parti·e.`);
+    this.system(l, `${name} est parti·e.`);
     this.broadcast(l);
   }
 
@@ -302,8 +317,31 @@ export class LobbyManager {
     if (!l) throw new UserError('Vous n’êtes dans aucune partie.');
     if (l.status !== 'WAITING') throw new UserError('Trop tard pour changer d’avis.');
     const p = l.players.find((x) => x.userId === userId)!;
+    if (ready && !p.castId) throw new UserError('Choisissez d’abord votre personnage.');
     p.ready = !!ready;
     this.broadcast(l);
+  }
+
+  /**
+   * Réservation d'un personnage. Atomique : le serveur traite les messages un par un, la vérification
+   * et l'attribution se font sans interruption — deux joueurs ne peuvent jamais obtenir le même.
+   * castId = null libère la réservation.
+   */
+  pickCharacter(userId: string, castId: string | null): LobbyView {
+    const l = this.lobbyOfUser(userId);
+    if (!l) throw new UserError('Vous n’êtes dans aucune partie.');
+    if (l.status !== 'WAITING' || l.game) throw new UserError('La sélection est close : la partie a commencé.');
+    const p = l.players.find((x) => x.userId === userId)!;
+    if (castId !== null) {
+      if (typeof castId !== 'string' || !castById(castId)) throw new UserError('Personnage inconnu.');
+      if (p.castId === castId) return this.view(l, userId);
+      const holder = l.players.find((x) => x.castId === castId && x.userId !== userId);
+      if (holder) throw new UserError(`Ce personnage vient d’être choisi par ${holder.username}.`);
+    }
+    p.castId = castId;
+    if (!castId) p.ready = false;
+    this.broadcast(l);
+    return this.view(l, userId);
   }
 
   kick(hostId: string, targetId: string) {
@@ -337,22 +375,22 @@ export class LobbyManager {
     this.destroy(l);
   }
 
-  invite(fromId: string, targetId: string) {
+  async invite(fromId: string, targetId: string) {
     const l = this.lobbyOfUser(fromId);
     if (!l) throw new UserError('Vous n’êtes dans aucune partie.');
-    if (!this.friends.areFriends(fromId, targetId)) throw new UserError('Vous ne pouvez inviter que vos amis.');
+    if (!(await this.friends.areFriends(fromId, targetId))) throw new UserError('Vous ne pouvez inviter que vos amis.');
     if (l.players.some((p) => p.userId === targetId)) throw new UserError('Déjà dans la partie.');
     if (l.players.length >= l.maxPlayers) throw new UserError('La partie est complète.');
-    const from = this.nameOf(fromId);
+    const from = l.players.find((p) => p.userId === fromId)?.username ?? '???';
     this.notifications.notify(targetId, 'GAME_INVITE', 'Invitation', `${from} vous invite à rejoindre « ${l.name} ».`, { lobbyId: l.id, code: l.code, fromId });
   }
 
-  respondInvite(userId: string, notificationId: string, accept: boolean): LobbyView | null {
-    const n = this.notifications.get(userId, notificationId);
+  async respondInvite(userId: string, username: string, notificationId: string, accept: boolean): Promise<LobbyView | null> {
+    const n = await this.notifications.get(userId, notificationId);
     if (!n || n.type !== 'GAME_INVITE') throw new UserError('Invitation introuvable.');
-    this.notifications.markRead(userId, [notificationId]);
+    await this.notifications.markRead(userId, [notificationId]);
     if (!accept) return null;
-    return this.join(userId, { code: String(n.payload?.code ?? '') });
+    return this.join(userId, username, { code: String(n.payload?.code ?? '') });
   }
 
   chat(userId: string, text: string) {
@@ -360,7 +398,7 @@ export class LobbyManager {
     if (!l) throw new UserError('Vous n’êtes dans aucune partie.');
     const t = String(text ?? '').trim().slice(0, META_CONFIG.chatMaxLength);
     if (!t) throw new UserError('Message vide.');
-    l.chat.push({ id: shortId('lc_'), userId, name: this.nameOf(userId), text: t, at: Date.now() });
+    l.chat.push({ id: shortId('lc_'), userId, name: this.nameOf(l, userId), text: t, at: Date.now() });
     if (l.chat.length > 100) l.chat.splice(0, l.chat.length - 100);
     this.broadcast(l);
   }
@@ -372,13 +410,14 @@ export class LobbyManager {
     const v = this.view(l, hostId);
     if (l.game) throw new UserError('Une partie est déjà en cours.');
     if (l.players.length < META_CONFIG.minPlayersToStart) throw new UserError(`Il faut au moins ${META_CONFIG.minPlayersToStart} joueurs.`);
+    if (l.players.some((p) => !p.castId)) throw new UserError('Chaque joueur doit choisir son personnage.');
     if (!v.canStart) throw new UserError('Tous les joueurs doivent être prêts.');
     l.status = 'STARTING';
     this.system(l, 'En route pour la villa…');
     this.broadcast(l);
     // Composition FIGÉE : ces joueurs (et eux seuls) sont dans le véhicule et dans la partie
     const plan = buildIntroPlan(
-      l.players.map((p) => ({ userId: p.userId, name: this.nameOf(p.userId), character: this.profiles.getCharacter(p.userId)! })),
+      l.players.map((p) => ({ userId: p.userId, name: this.nameOf(l, p.userId), character: characterFromCast(castById(p.castId)!) })),
       { id: shortId('intro_'), seed: Math.floor(Math.random() * 2 ** 31), startedAt: 0, durationMs: this.transitionMs },
     );
     // 1) Chargement : chaque client charge la villa, les personnages et la partie, puis le signale.
@@ -470,18 +509,20 @@ export class LobbyManager {
     const g = l.game!;
     for (const p of g.players.values()) {
       const won = epi.caseType === 'quiet' ? false : p.id === epi.culpritId ? !epi.culpritCaught : epi.culpritCaught;
-      try {
-        this.profiles.recordGame(p.id, won);
-      } catch {
-        /* utilisateur supprimé */
-      }
+      this.profiles.recordGame(p.id, won).catch(() => {});
     }
-    this.db
-      .prepare('INSERT INTO game_history (id, lobby_name, case_type, summary, players, ended_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(g.id, l.name, epi.caseType, epi.headline, JSON.stringify([...g.players.values()].map((p) => p.name)), Date.now());
-    // Le salon redevient disponible ; chacun y revient quand il a fini de lire l'épilogue
+    this.store
+      .insertGame(
+        { id: g.id, lobbyName: l.name, caseType: epi.caseType, summary: epi.headline, players: [...g.players.values()].map((p) => p.name), endedAt: Date.now() },
+        [...g.players.keys()],
+      )
+      .catch((e) => console.error('historique non enregistré', e));
+    // Le salon redevient disponible ; nouvelle partie = nouvelle sélection des personnages
     l.status = 'WAITING';
-    for (const p of l.players) p.ready = false;
+    for (const p of l.players) {
+      p.ready = false;
+      p.castId = null;
+    }
     this.system(l, `Fin de la nuit : ${epi.headline}`);
     this.broadcast(l);
     // filet de sécurité : libère la partie au bout de 15 minutes

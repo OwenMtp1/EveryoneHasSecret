@@ -9,7 +9,12 @@ import type { NightDuration } from './config';
 
 export type Appearance = 'masculine' | 'feminine';
 
+/**
+ * Personnage incarné dans une partie : un membre du catalogue prédéfini (castId), choisi dans le salon.
+ * Les champs skinTone…outfitId ne servent qu'au rendu de repli (portraits SVG, figurine procédurale).
+ */
 export interface Character {
+  castId: string;
   firstName: string;
   lastName: string;
   appearance: Appearance;
@@ -71,6 +76,8 @@ export type LobbyStatus = 'WAITING' | 'STARTING' | 'IN_GAME';
 export interface LobbyPlayerView {
   userId: string;
   username: string;
+  /** personnage réservé dans ce salon (null = pas encore choisi) */
+  castId: string | null;
   character: Character | null;
   ready: boolean;
   isHost: boolean;
@@ -87,6 +94,8 @@ export interface LobbyChatMessage {
 
 export interface LobbyView {
   id: string;
+  /** incrémenté à chaque changement : le client ignore les états plus anciens que celui affiché */
+  version: number;
   name: string;
   code: string;
   hostId: string;

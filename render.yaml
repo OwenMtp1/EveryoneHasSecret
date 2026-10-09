@@ -1,4 +1,5 @@
 # Déploiement Render (Blueprint) : Dashboard → New → Blueprint → choisir ce dépôt.
+# Comptes persistants : renseigner les variables Supabase (voir docs/SUPABASE.md) dans le tableau de bord.
 services:
   - type: web
     name: everyone-has-a-secret
@@ -11,8 +12,13 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: EHAS_DB
-        # Offre gratuite : disque éphémère (comptes remis à zéro à chaque redéploiement).
-        # Pour conserver les données : passer en offre payante et ajouter un disque monté sur /var/data,
-        # puis EHAS_DB=/var/data/ehas.sqlite.
-        value: /tmp/ehas.sqlite
+      # ── Comptes et données persistants (Supabase) : valeurs à saisir dans le tableau de bord Render ──
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      # Seulement pour un projet Supabase utilisant encore le « Legacy JWT secret » (sinon laisser vide)
+      - key: SUPABASE_JWT_SECRET
+        sync: false

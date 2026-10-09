@@ -5,9 +5,8 @@ import { audio } from './audio';
 import { preloadRealistic } from './three/realistic';
 import { MenuBackground3D } from './ui/common/MenuBackground3D';
 import { Toasts, ActionFlash } from './ui/common/Toasts';
-import { AuthScreen } from './ui/auth/AuthScreen';
+import { AuthScreen, ResetPasswordScreen, UsernameScreen } from './ui/auth/AuthScreen';
 import { MainMenu } from './ui/home/MainMenu';
-import { CharacterCreator } from './ui/character-creation/CharacterCreator';
 import { PlayScreen } from './ui/servers/PlayScreen';
 import { ServersScreen } from './ui/servers/ServersScreen';
 import { CreateGame } from './ui/servers/CreateGame';
@@ -24,6 +23,7 @@ export function App() {
   const boot = useStore((s) => s.boot);
   const connected = useStore((s) => s.connected);
   const user = useStore((s) => s.user);
+  const bootMessage = useStore((s) => s.bootMessage);
 
   useEffect(() => {
     document.title = GAME_NAME;
@@ -39,10 +39,16 @@ export function App() {
   const inGame = screen === 'game';
   return (
     <div className={`app screen-${screen}`}>
-      {!inGame && <MenuBackground3D dim={screen !== 'menu' && screen !== 'auth'} />}
-      {screen === 'boot' && <div className="center-message">{GAME_NAME}</div>}
+      {!inGame && <MenuBackground3D dim={screen !== 'menu' && screen !== 'auth' && screen !== 'boot'} />}
+      {screen === 'boot' && (
+        <div className="center-message">
+          {GAME_NAME}
+          {bootMessage && <div className="muted small boot-message">{bootMessage}</div>}
+        </div>
+      )}
       {screen === 'auth' && <AuthScreen />}
-      {screen === 'character' && <CharacterCreator />}
+      {screen === 'username' && <UsernameScreen />}
+      {screen === 'reset' && <ResetPasswordScreen />}
       {screen === 'menu' && <MainMenu />}
       {screen === 'play' && <PlayScreen />}
       {screen === 'servers' && <ServersScreen />}

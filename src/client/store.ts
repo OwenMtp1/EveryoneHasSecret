@@ -2,8 +2,9 @@
  * État client. Le client ne détient AUCUNE vérité : il affiche ce que le serveur lui envoie.
  */
 import { create } from 'zustand';
-import type { AppNotification, Character, FriendEntry, GameSelfView, GameSnapshot, LobbyView } from '@shared/types';
-import { api, tokenStore } from './net/api';
+import type { AppNotification, FriendEntry, GameSelfView, GameSnapshot, LobbyView } from '@shared/types';
+import { api, ApiError } from './net/api';
+import { authMode, getAccessToken, loadAuthConfig, refreshAccessToken, supabaseAuth, tokenStore } from './net/auth';
 import { call, connectSocket, disconnectSocket } from './net/socket';
 import { audio } from './audio';
 import { introStateAt, type GameIntroState, type IntroPlan } from '@shared/content/intro';
@@ -24,7 +25,8 @@ export const liveGame = {
 export type Screen =
   | 'boot'
   | 'auth'
-  | 'character'
+  | 'username'
+  | 'reset'
   | 'menu'
   | 'play'
   | 'servers'
@@ -58,7 +60,10 @@ interface Toast extends AppNotification {
 interface AppState {
   screen: Screen;
   user: { id: string; username: string } | null;
-  character: Character | null;
+  /** message de l'écran de démarrage (serveur qui se réveille…) */
+  bootMessage: string | null;
+  /** compte Supabase sans pseudo de jeu */
+  pendingProfile: { email?: string; suggested?: string } | null;
   stats: { gamesPlayed: number; gamesWon: number; createdAt: number } | null;
   connected: boolean;
   lobby: LobbyView | null;
@@ -78,9 +83,10 @@ interface AppState {
 
   go: (s: Screen) => void;
   boot: () => Promise<void>;
-  onAuthenticated: (token: string) => Promise<void>;
-  logout: () => Promise<void>;
-  setCharacter: (c: Character) => void;
+  /** session établie (jeton local déjà enregistré, ou session Supabase active) */
+  onAuthenticated: () => Promise<void>;
+  logout: (reason?: string) => Promise<void>;
+  authNotice: string | null;
   refreshFriends: () => Promise<void>;
   refreshNotifications: () => Promise<void>;
   dismissToast: (id: string) => void;
@@ -91,7 +97,9 @@ interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   screen: 'boot',
   user: null,
-  character: null,
+  bootMessage: null,
+  pendingProfile: null,
+  authNotice: null,
   stats: null,
   connected: false,
   lobby: null,
@@ -112,29 +120,63 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   boot: async () => {
-    const token = tokenStore.get();
-    if (!token) return set({ screen: 'auth' });
-    try {
-      await get().onAuthenticated(token);
-    } catch {
-      tokenStore.set(null);
-      set({ screen: 'auth' });
+    await loadAuthConfig((n) => set({ bootMessage: n > 1 ? 'Le serveur se réveille… (jusqu’à une minute)' : 'Connexion au serveur…' }));
+    set({ bootMessage: null });
+    if (authMode() === 'supabase') {
+      // Lien « mot de passe oublié » : Supabase ouvre une session de récupération
+      supabaseAuth.onChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') set({ screen: 'reset' });
+        if (event === 'SIGNED_OUT' && get().user) get().logout('Vous avez été déconnecté·e.');
+      });
+      if (/[?&](code|type=recovery)/.test(location.search) || location.hash.includes('type=recovery')) {
+        // la session de récupération est échangée par supabase-js ; l'évènement ci-dessus suit
+        await new Promise((r) => setTimeout(r, 300));
+        history.replaceState(null, '', location.pathname);
+        if (get().screen === 'reset') return;
+      }
     }
+    await get().onAuthenticated();
   },
 
-  onAuthenticated: async (token) => {
-    tokenStore.set(token);
-    const me = await api.me();
-    set({ user: me.user, character: me.character, stats: me.profile, screen: me.character ? 'menu' : 'character' });
-    const s = connectSocket(token);
+  onAuthenticated: async () => {
+    if (!(await getAccessToken())) return set({ screen: 'auth', bootMessage: null });
+    // Restauration de session : on ne déconnecte QUE sur un refus explicite (401), jamais sur une panne réseau.
+    let me: Awaited<ReturnType<typeof api.me>> | null = null;
+    for (let attempt = 0; !me; attempt++) {
+      try {
+        me = await api.me();
+      } catch (e) {
+        const status = e instanceof ApiError ? e.status : 0;
+        if (status === 401) {
+          tokenStore.set(null);
+          await supabaseAuth.signOut();
+          return set({ screen: 'auth', user: null });
+        }
+        if (status >= 400 && status < 500) return set({ screen: 'auth', user: null, authNotice: (e as Error).message });
+        set({ screen: 'boot', bootMessage: 'Le serveur se réveille… (jusqu’à une minute)' });
+        await new Promise((r) => setTimeout(r, Math.min(8000, 1000 * 2 ** Math.min(attempt, 3))));
+      }
+    }
+    if ('needsUsername' in me) return set({ screen: 'username', pendingProfile: { email: me.email, suggested: me.suggested }, bootMessage: null });
+    set({ user: me.user, stats: me.profile, screen: 'menu', bootMessage: null, pendingProfile: null, authNotice: null });
+    const s = connectSocket();
     s.on('connect', () => {
       set({ connected: true });
       get().refreshFriends();
       get().refreshNotifications();
     });
     s.on('disconnect', () => set({ connected: false }));
-    s.on('connect_error', (err) => {
-      if (err.message === 'unauthorized') get().logout();
+    let refreshTried = false;
+    s.on('connect', () => (refreshTried = false));
+    s.on('connect_error', async (err) => {
+      if (err.message !== 'unauthorized') return;
+      // Jeton expiré pendant une coupure : un renouvellement, puis reconnexion ; sinon retour à l'accueil
+      if (!refreshTried && authMode() === 'supabase' && (await refreshAccessToken())) {
+        refreshTried = true;
+        s.connect();
+        return;
+      }
+      get().logout('Session expirée. Reconnectez-vous.');
     });
     s.on('session:state', ({ lobby, inGame }) => {
       const cur = get().screen;
@@ -145,6 +187,8 @@ export const useStore = create<AppState>((set, get) => ({
     });
     s.on('lobby:state', (lobby) => {
       const st = get();
+      // états reçus dans le désordre (réponse tardive) : on garde le plus récent
+      if (lobby && st.lobby && lobby.id === st.lobby.id && lobby.version < st.lobby.version) return;
       set({ lobby });
       if (!lobby && st.screen === 'lobby') set({ screen: 'menu' });
       if (!lobby && st.intro) set({ intro: null });
@@ -223,18 +267,20 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
-  logout: async () => {
-    try {
-      await api.logout();
-    } catch {
-      /* hors-ligne */
+  logout: async (reason) => {
+    if (authMode() === 'local') {
+      try {
+        await api.logout();
+      } catch {
+        /* hors-ligne */
+      }
     }
     disconnectSocket();
     tokenStore.set(null);
-    set({ user: null, character: null, lobby: null, game: null, inGame: false, screen: 'auth', friends: [], notifications: [] });
+    await supabaseAuth.signOut();
+    liveGame.current = null;
+    set({ user: null, lobby: null, game: null, inGame: false, intro: null, screen: 'auth', friends: [], notifications: [], authNotice: reason ?? null });
   },
-
-  setCharacter: (character) => set({ character }),
 
   refreshFriends: async () => {
     try {

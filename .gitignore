@@ -6,3 +6,7 @@ data/
 .DS_Store
 test-results/
 screenshots/
+.env
+.env.*
+!.env.example
+.claude/worktrees/

@@ -7,14 +7,15 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { io as ioc, type Socket } from 'socket.io-client';
 import { createApp, type AppContext } from '../src/server/app';
-import { randomCharacter } from '../src/shared/content/character';
+import { characterFromCast } from '../src/shared/content/character';
+import { CAST } from '../src/shared/content/cast';
 import { getVehicleForPlayerCount, VEHICLES } from '../src/shared/content/vehicles';
 import { buildIntroPlan, introSchedule, introStateAt, type GameIntroState, type IntroPlan } from '../src/shared/content/intro';
 import type { GameSelfView, LobbyView } from '../src/shared/types';
 
 // ───────────── données ─────────────
 
-const fakePlayers = (n: number) => Array.from({ length: n }, (_, i) => ({ userId: `u${i}`, name: `Joueur ${i}`, character: randomCharacter() }));
+const fakePlayers = (n: number) => Array.from({ length: n }, (_, i) => ({ userId: `u${i}`, name: `Joueur ${i}`, character: characterFromCast(CAST[(i * 7) % CAST.length]) }));
 
 test('véhicule selon le nombre de joueurs : voiture 2–4, minibus 5–8', () => {
   for (const n of [2, 3, 4]) assert.equal(getVehicleForPlayerCount(n).id, 'car', `${n} joueurs`);
@@ -75,6 +76,7 @@ let ctx: AppContext;
 let base = '';
 
 before(async () => {
+  process.env.EHAS_AUTH_RATE_PER_MIN = '10000';
   ctx = createApp({ dbPath: ':memory:' });
   await new Promise<void>((r) => ctx.http.listen(0, r));
   base = `http://127.0.0.1:${(ctx.http.address() as AddressInfo).port}`;
@@ -153,7 +155,6 @@ let counter = 0;
 async function makeClient(): Promise<Client> {
   const username = `intro_${++counter}`;
   const reg = await http<{ token: string; user: { id: string } }>('POST', '/api/auth/register', { username, password: 'secret123' });
-  await http('PUT', '/api/character', randomCharacter(), reg.token);
   const c = { token: reg.token, id: reg.user.id, plans: [], states: [] } as unknown as Client;
   c.socket = await connect(c);
   return c;
@@ -163,8 +164,10 @@ async function lobbyOf(n: number) {
   const clients = await Promise.all(Array.from({ length: n }, makeClient));
   const [host, ...rest] = clients;
   const lobby = await call<LobbyView>(host.socket, 'lobby:create', { name: 'Villa Beaumont', maxPlayers: 8, visibility: 'PRIVATE' });
-  for (const p of rest) {
+  await call(host.socket, 'lobby:pick', CAST[0].id);
+  for (const [i, p] of rest.entries()) {
     await call(p.socket, 'lobby:join', { code: lobby.code });
+    await call(p.socket, 'lobby:pick', CAST[i + 1].id);
     await call(p.socket, 'lobby:ready', true);
   }
   await waitFor(() => host.lobby?.canStart);

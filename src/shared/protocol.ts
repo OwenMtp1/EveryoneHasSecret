@@ -4,7 +4,6 @@
  */
 import type {
   AppNotification,
-  Character,
   ChatChannel,
   FriendEntry,
   GameSelfView,
@@ -67,6 +66,8 @@ export interface ClientToServerEvents {
   'lobby:join': (p: { lobbyId?: string; code?: string }, ack: Ack<LobbyView>) => void;
   'lobby:leave': (ack: Ack<null>) => void;
   'lobby:ready': (ready: boolean, ack: Ack<null>) => void;
+  /** réserve un personnage du catalogue (null = libérer) ; refusé s'il est déjà pris dans ce salon */
+  'lobby:pick': (castId: string | null, ack: Ack<LobbyView>) => void;
   'lobby:kick': (userId: string, ack: Ack<null>) => void;
   'lobby:settings': (
     p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration },
@@ -117,6 +118,15 @@ export interface AuthResponse {
 
 export interface MeResponse {
   user: { id: string; username: string };
-  character: Character | null;
   profile: { gamesPlayed: number; gamesWon: number; createdAt: number };
 }
+
+/** Compte Supabase authentifié mais sans profil de jeu : il doit choisir un pseudo. */
+export interface PendingProfileResponse {
+  needsUsername: true;
+  email?: string;
+  suggested?: string;
+}
+
+/** Configuration publique : mode d'authentification (et clés publiques Supabase le cas échéant). */
+export type PublicConfig = { auth: 'local' } | { auth: 'supabase'; supabaseUrl: string; supabaseAnonKey: string };

@@ -6,8 +6,8 @@ import { attempt, useStore } from '../../store';
 import { MenuScreen } from '../common/Screen';
 
 export function CreateGame() {
-  const character = useStore((s) => s.character);
-  const [name, setName] = useState(`Villa ${character?.lastName ?? 'Beaumont'}`);
+  const user = useStore((s) => s.user);
+  const [name, setName] = useState(`Soirée de ${user?.username ?? 'Beaumont'}`.slice(0, META_CONFIG.lobbyName.max));
   const [maxPlayers, setMax] = useState<number>(META_CONFIG.defaultMaxPlayers);
   const [visibility, setVis] = useState<LobbyVisibility>('PUBLIC');
   const [busy, setBusy] = useState(false);

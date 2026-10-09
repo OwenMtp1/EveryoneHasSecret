@@ -5,6 +5,7 @@
  * Repère SVG de l'avatar : viewBox 0 0 200 320, tête centrée en (100, 72).
  */
 import type { Appearance, Character } from '../types';
+import type { CastMember } from './cast';
 
 export interface SkinTone {
   id: string;
@@ -206,59 +207,18 @@ export const findHairColor = (id: string) => HAIR_COLORS.find((s) => s.id === id
 export const findHairStyle = (id: string) => HAIR_STYLES.find((s) => s.id === id) ?? HAIR_STYLES[1];
 export const findOutfit = (id: string) => OUTFITS.find((s) => s.id === id) ?? OUTFITS[0];
 
-const FIRST_NAMES: Record<Appearance, string[]> = {
-  masculine: ['Thomas', 'Hugo', 'Victor', 'Louis', 'Malik', 'Antoine', 'Jules', 'Raphaël', 'Samuel', 'Gabriel'],
-  feminine: ['Camille', 'Léa', 'Inès', 'Margaux', 'Chloé', 'Alice', 'Jeanne', 'Nora', 'Élise', 'Salomé'],
-};
-const LAST_NAMES = ['Beaumont', 'Delacroix', 'Moreau', 'Lefèvre', 'Garnier', 'Rousseau', 'Morel', 'Fontaine', 'Mercier', 'Vasseur', 'Laurent', 'Benali'];
-
-const pick = <T,>(arr: readonly T[], rnd: () => number = Math.random): T => arr[Math.floor(rnd() * arr.length)];
-
-export function randomCharacter(rnd: () => number = Math.random): Character {
-  const appearance: Appearance = rnd() < 0.5 ? 'masculine' : 'feminine';
+/** Personnage de partie à partir du catalogue (les champs de repli sont déduits de façon stable). */
+export function characterFromCast(m: CastMember): Character {
+  let h = 0;
+  for (const ch of m.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return {
-    firstName: pick(FIRST_NAMES[appearance], rnd),
-    lastName: pick(LAST_NAMES, rnd),
-    appearance,
-    skinTone: pick(SKIN_TONES, rnd).id,
-    hairStyleId: pick(HAIR_STYLES, rnd).id,
-    hairColor: pick(HAIR_COLORS, rnd).id,
-    outfitId: pick(OUTFITS, rnd).id,
-  };
-}
-
-/** Lettres (y compris accentuées), espaces, tirets et apostrophes. */
-export const NAME_PATTERN = /^[\p{L}][\p{L}' -]*[\p{L}]$/u;
-const BLOCKED_WORDS = ['admin', 'moderator', 'modérateur', 'nazi', 'hitler', 'fuck', 'shit', 'pute', 'salope', 'connard', 'encule', 'enculé'];
-
-export function validateCharacter(c: unknown): { ok: true; value: Character } | { ok: false; error: string } {
-  if (!c || typeof c !== 'object') return { ok: false, error: 'Personnage invalide.' };
-  const o = c as Record<string, unknown>;
-  const clean = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
-  const firstName = clean(o.firstName);
-  const lastName = clean(o.lastName);
-  for (const [label, v] of [['Le prénom', firstName], ['Le nom', lastName]] as const) {
-    if (v.length < 2) return { ok: false, error: `${label} doit contenir au moins 2 caractères.` };
-    if (v.length > 20) return { ok: false, error: `${label} ne doit pas dépasser 20 caractères.` };
-    if (!NAME_PATTERN.test(v)) return { ok: false, error: `${label} contient des caractères non autorisés.` };
-    const lower = v.toLowerCase();
-    if (BLOCKED_WORDS.some((w) => lower.includes(w))) return { ok: false, error: `${label} n’est pas autorisé.` };
-  }
-  if (o.appearance !== 'masculine' && o.appearance !== 'feminine') return { ok: false, error: 'Apparence invalide.' };
-  if (!SKIN_TONES.some((s) => s.id === o.skinTone)) return { ok: false, error: 'Teinte de peau invalide.' };
-  if (!HAIR_STYLES.some((s) => s.id === o.hairStyleId)) return { ok: false, error: 'Coiffure invalide.' };
-  if (!HAIR_COLORS.some((s) => s.id === o.hairColor)) return { ok: false, error: 'Couleur de cheveux invalide.' };
-  if (!OUTFITS.some((s) => s.id === o.outfitId)) return { ok: false, error: 'Tenue invalide.' };
-  return {
-    ok: true,
-    value: {
-      firstName,
-      lastName,
-      appearance: o.appearance,
-      skinTone: o.skinTone as string,
-      hairStyleId: o.hairStyleId as string,
-      hairColor: o.hairColor as string,
-      outfitId: o.outfitId as string,
-    },
+    castId: m.id,
+    firstName: m.firstName,
+    lastName: m.lastName,
+    appearance: m.gender,
+    skinTone: SKIN_TONES[h % SKIN_TONES.length].id,
+    hairStyleId: HAIR_STYLES[(h >> 3) % HAIR_STYLES.length].id,
+    hairColor: HAIR_COLORS[(h >> 6) % HAIR_COLORS.length].id,
+    outfitId: OUTFITS[(h >> 9) % OUTFITS.length].id,
   };
 }

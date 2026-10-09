@@ -4,7 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameInstance } from '../src/server/game/GameInstance';
-import { randomCharacter } from '../src/shared/content/character';
+import { characterFromCast } from '../src/shared/content/character';
+import { CAST } from '../src/shared/content/cast';
 import { roomById } from '../src/shared/content/villa';
 import type { PlayerState } from '../src/server/game/state';
 
@@ -16,7 +17,7 @@ function makeGame(n = 4, seed = 42) {
     id: 'g1',
     lobbyId: 'l1',
     title: 'Villa Test',
-    players: Array.from({ length: n }, (_, i) => ({ userId: `p${i}`, name: `Joueur ${i}`, character: randomCharacter() })),
+    players: Array.from({ length: n }, (_, i) => ({ userId: `p${i}`, name: `Joueur ${i}`, character: characterFromCast(CAST[(i * 7) % CAST.length]) })),
     emit: (userId, event) => emitted.push({ userId, event }),
     onFinished: () => {
       finished = true;

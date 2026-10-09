@@ -1,6 +1,5 @@
 import { useStore, type Screen } from '../../store';
 import { Logo } from '../common/Logo';
-import { Portrait } from '../common/Avatar';
 import { audio } from '../../audio';
 import { GAME_VERSION } from '@shared/config';
 
@@ -15,7 +14,6 @@ const ITEMS: { id: Screen; label: string }[] = [
 export function MainMenu() {
   const go = useStore((s) => s.go);
   const user = useStore((s) => s.user);
-  const character = useStore((s) => s.character);
   const connected = useStore((s) => s.connected);
   const lobby = useStore((s) => s.lobby);
   const pending = useStore((s) => s.friends.filter((f) => f.relation === 'incoming').length);
@@ -39,9 +37,9 @@ export function MainMenu() {
         </nav>
       </div>
       <button className="player-chip" onClick={() => go('profile')}>
-        <Portrait character={character} size={52} />
+        <div className="player-chip-initial">{user?.username.slice(0, 1).toUpperCase()}</div>
         <div>
-          <div className="player-chip-name">{character ? `${character.firstName} ${character.lastName}` : user?.username}</div>
+          <div className="player-chip-name">{user?.username}</div>
           <div className="player-chip-status">
             <span className={`dot ${connected ? 'dot-online' : 'dot-offline'}`} /> {connected ? 'En ligne' : 'Connexion…'} · @{user?.username}
           </div>

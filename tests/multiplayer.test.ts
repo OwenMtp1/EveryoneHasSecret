@@ -8,10 +8,10 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { io as ioc, type Socket } from 'socket.io-client';
 import { createApp, type AppContext } from '../src/server/app';
-import { randomCharacter } from '../src/shared/content/character';
 import type { GameSelfView, LobbyView } from '../src/shared/types';
 
 process.env.EHAS_TRANSITION_MS = '50';
+process.env.EHAS_AUTH_RATE_PER_MIN = '10000';
 
 let ctx: AppContext;
 let base = '';
@@ -82,11 +82,8 @@ function connect(token: string, setup?: (s: Socket) => void): Promise<Socket> {
 async function makeClient(username: string): Promise<Client> {
   const reg = await http<{ token: string; user: { id: string } }>('POST', '/api/auth/register', { username, password: 'secret123' });
   assert.equal(reg.status, 200);
-  const c = randomCharacter();
-  const save = await http<{ character: { firstName: string } }>('PUT', '/api/character', c, reg.data.token);
-  assert.equal(save.status, 200);
   const socket = await connect(reg.data.token);
-  const client: Client = { token: reg.data.token, id: reg.data.user.id, name: `${c.firstName} ${c.lastName}`, socket };
+  const client: Client = { token: reg.data.token, id: reg.data.user.id, name: username, socket };
   socket.on('game:full', (v: GameSelfView) => (client.lastFull = v));
   socket.on('game:snapshot', (s: Partial<GameSelfView>) => client.lastFull && (client.lastFull = { ...client.lastFull, ...s }));
   socket.on('lobby:state', (l: LobbyView | null) => (client.lobby = l));
@@ -102,10 +99,17 @@ test('authentification : validations, doublons, mauvais mot de passe, session', 
   assert.match(dup.data.error, /déjà pris/);
   const wrong = await http<{ error: string }>('POST', '/api/auth/login', { username: 'solo_user', password: 'nope-nope' });
   assert.equal(wrong.status, 400);
-  const me = await http<{ character: null }>('GET', '/api/me', undefined, ok.data.token);
-  assert.equal(me.data.character, null, 'pas de personnage avant la création');
-  const badChar = await http<{ error: string }>('PUT', '/api/character', { ...randomCharacter(), firstName: 'X' }, ok.data.token);
-  assert.equal(badChar.status, 400);
+  const me = await http<{ user: { username: string } }>('GET', '/api/me', undefined, ok.data.token);
+  assert.equal(me.data.user.username, 'solo_user');
+  // Restauration de session : le même jeton reste valide (rechargement, réouverture du navigateur)
+  const again = await http<{ user: { username: string } }>('GET', '/api/me', undefined, ok.data.token);
+  assert.equal(again.status, 200);
+  const relog = await http<{ token: string }>('POST', '/api/auth/login', { username: 'Solo_User', password: 'secret123' });
+  assert.equal(relog.status, 200, 'connexion insensible à la casse du pseudo, sans recréer de compte');
+  const forged = await http('GET', '/api/me', undefined, 'jeton-invente-0123456789');
+  assert.equal(forged.status, 401);
+  const avail = await http<{ available: boolean }>('GET', '/api/auth/username-available?u=SOLO_user');
+  assert.equal(avail.data.available, false);
   await http('POST', '/api/auth/logout', undefined, ok.data.token);
   const after = await http('GET', '/api/me', undefined, ok.data.token);
   assert.equal(after.status, 401);
@@ -123,6 +127,24 @@ test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchr
 
   for (const p of [b, c, d]) await call(p.socket, 'lobby:join', { code: lobby.code.toLowerCase() });
   await waitFor(() => host.lobby?.players.length === 4);
+
+  // Sélection des personnages : réservation atomique côté serveur
+  await assert.rejects(call(b.socket, 'lobby:ready', true), /personnage/);
+  await call(host.socket, 'lobby:pick', 'f01');
+  await assert.rejects(call(b.socket, 'lobby:pick', 'f01'), /choisi/);
+  await assert.rejects(call(b.socket, 'lobby:pick', 'zz99'), /inconnu/);
+  const race = await Promise.allSettled([call(c.socket, 'lobby:pick', 'm05'), call(d.socket, 'lobby:pick', 'm05')]);
+  assert.equal(race.filter((r) => r.status === 'fulfilled').length, 1, 'sélection simultanée : un seul gagnant');
+  const loser = race[0].status === 'fulfilled' ? d : c;
+  await call(loser.socket, 'lobby:pick', 'f07');
+  await call(b.socket, 'lobby:pick', 'm02');
+  // changement de personnage : l'ancien est libéré
+  await call(b.socket, 'lobby:pick', 'm03');
+  const winner = loser === c ? d : c;
+  await call(winner.socket, 'lobby:pick', 'm02'); // m02 libéré par b, m05 libéré à son tour
+  await waitFor(() => host.lobby?.players.every((p) => p.castId));
+  const picked = host.lobby!.players.map((p) => p.castId);
+  assert.equal(new Set(picked).size, 4, 'aucun personnage attribué deux fois');
 
   // Permissions : seul l'hôte lance, et seulement quand tout le monde est prêt
   await assert.rejects(call(b.socket, 'lobby:start'), /hôte/);
@@ -209,6 +231,12 @@ test('amis : demande, acceptation, invitation à une partie, présence', async (
   assert.equal(status[0].status, 'IN_LOBBY');
   const servers = await call<{ friendsInside: number }[]>(b.socket, 'servers:list', { withFriends: true });
   assert.equal(servers.length, 1);
+  // Un personnage réservé est libéré quand son joueur quitte le salon
+  await call(b.socket, 'lobby:pick', 'f02');
+  await assert.rejects(call(a.socket, 'lobby:pick', 'f02'), /choisi/);
+  await call(b.socket, 'lobby:leave');
+  const mine = await call<LobbyView>(a.socket, 'lobby:pick', 'f02');
+  assert.equal(mine.players.find((p) => p.userId === a.id)?.castId, 'f02');
   a.socket.disconnect();
   b.socket.disconnect();
 });
