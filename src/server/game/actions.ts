@@ -41,8 +41,14 @@ export class ActionSystem {
     if (o.location.kind === 'player' && o.location.playerId === p.id) return o;
     if (o.location.kind === 'floor' && o.location.roomId === p.roomId && dist(o.location.pos, p.pos) <= GAME_CONFIG.interactRange && this.g.canSeeRoom(p))
       return o;
-    if (o.location.kind === 'hidden' && o.knownBy.has(p.id) && o.location.roomId === p.roomId && dist(o.location.pos, p.pos) <= GAME_CONFIG.interactRange + 0.8)
-      return o;
+    if (o.location.kind === 'hidden' && o.knownBy.has(p.id) && o.location.roomId === p.roomId) {
+      // caché dans un meuble : la distance se mesure jusqu'au bord du meuble (grand lit, armoire…)
+      const f = furnitureById(o.location.furnitureId);
+      const near = f
+        ? Math.hypot(Math.max(f.x, Math.min(p.pos.x, f.x + f.w)) - p.pos.x, Math.max(f.y, Math.min(p.pos.y, f.y + f.h)) - p.pos.y) <= GAME_CONFIG.interactRange + 0.3
+        : dist(o.location.pos, p.pos) <= GAME_CONFIG.interactRange + 0.8;
+      if (near) return o;
+    }
     throw new UserError('Trop loin.');
   }
 

@@ -733,7 +733,7 @@ export class GameView3D {
     const near = (x: number, y: number, extra = 0) => Math.hypot(x - meV.pos!.x, y - meV.pos!.y) <= R + extra;
     const cands: { key: string; c: THREE.Vector3; r: number }[] = [];
     const at = (x: number, y: number, h: number) => toRender(x, y, new THREE.Vector3()).add(new THREE.Vector3(0, h, 0));
-    for (const o of v.objects) if (o.pos && o.roomId === meV.roomId && near(o.pos.x, o.pos.y, 0.6)) cands.push({ key: `o:${o.id}`, c: at(o.pos.x, o.pos.y, 0.15), r: 0.32 });
+    for (const o of v.objects) if (o.pos && o.roomId === meV.roomId && near(o.pos.x, o.pos.y, o.name.endsWith(')') ? 1.6 : 0.6)) cands.push({ key: `o:${o.id}`, c: at(o.pos.x, o.pos.y, 0.15), r: 0.32 });
     for (const b of v.bodies) if (b.roomId === meV.roomId && near(b.pos.x, b.pos.y, 0.6)) cands.push({ key: `b:${b.id}`, c: at(b.pos.x, b.pos.y, 0.2), r: 0.75 });
     for (const p of v.players)
       if (p.id !== v.you && p.alive && p.pos && !p.viaAlliance && p.roomId === meV.roomId && near(p.pos.x, p.pos.y, 0.4)) cands.push({ key: `p:${p.id}`, c: at(p.pos.x, p.pos.y, 1.0), r: 0.45 });

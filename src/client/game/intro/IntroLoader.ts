@@ -79,7 +79,10 @@ export class IntroLoader {
     })();
     const shaders = (async () => {
       try {
-        await renderer.compileAsync(scene, camera);
+        // compilation synchrone pendant l'écran de chargement : compileAsync continue de sonder les
+        // programmes après coup et lève une erreur si la scène est libérée entre-temps (three r170)
+        await new Promise((r) => requestAnimationFrame(r));
+        renderer.compile(scene, camera);
       } catch {
         /* compilation à la volée au premier rendu */
       }
