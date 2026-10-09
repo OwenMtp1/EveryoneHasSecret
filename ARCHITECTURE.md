@@ -16,7 +16,7 @@ Le dépôt était **vide** (aucun commit, aucun fichier) : projet démarré de z
 | Rendu 3D | **Three.js 0.170** | villa, personnages, créateur, lobby, fond du menu ; caméra 3e personne + 1re personne (`V`) |
 | Personnages 3D | **procéduraux, depuis les données** | aucune ressource externe : coiffures décrites en primitives (`parts3d`), tenues en briques réutilisables |
 | Portraits UI | SVG composé depuis les mêmes données | petites vignettes (amis, relations, vote) |
-| Audio | **Web Audio procédural** | pluie / drone / sons d’UI sans assets (remplaçables) |
+| Audio | **Web Audio procédural** | musique d’enquête originale (piano, nappes) + sons d’UI, sans assets — voir `docs/AUDIO.md` |
 | Tests | `node:test` + `tsx` | moteur (horloge injectée) + intégration multijoueur réelle |
 
 > Note build : `rollup` est épinglé à 4.40.2 (`overrides` dans `package.json`) — la 4.64.2 tirée par Vite 6 bloque indéfiniment sur `react-dom` dans cet environnement.

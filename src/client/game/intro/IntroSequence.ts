@@ -344,7 +344,7 @@ export class IntroSequence {
       this.onFade(black);
       // son
       const outside = state === 'INTRO_REVEAL' ? clamp01((u - 0.2) / 0.2) : ORDER.indexOf(state) > ORDER.indexOf('INTRO_REVEAL') ? 1 : 0;
-      this.audio.update(state, speed, outside);
+      this.audio.update(state, speed, outside, u);
       villa.update(clock.elapsedTime);
       this.renderer.render(scene, this.camera);
     };

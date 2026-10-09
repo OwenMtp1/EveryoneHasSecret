@@ -1,46 +1,131 @@
 /**
- * Ambiance sonore procédurale (Web Audio) : pluie, grondements, sons d'interface.
- * Aucun fichier audio requis pour le prototype ; les vrais assets pourront remplacer ces générateurs.
+ * Moteur audio du jeu (Web Audio, un seul AudioContext) :
+ *   bus musique  — directeur musical (music.ts) → gain « Musique » → limiteur → sortie
+ *   bus effets   — sons d'interface et de jeu → gain « Effets sonores » → sortie
+ * Les deux réglages s'appliquent en direct. Plus aucune pluie ni orage : la musique est un
+ * underscore d'enquête discret (composition originale procédurale, voir docs/AUDIO.md).
+ * Le chat vocal (voice.ts) a son propre contexte et n'est jamais touché ici.
  */
+import { MusicDirector, createMusicBus, musicVolumeToGain, sfxVolumeToGain, type CueDebug, type CueName, type MusicMark, type MusicPlayOptions } from './music';
+
+export type { CueName, MusicMark, MusicPlayOptions } from './music';
+
+const TICK_MS = 250;
+
 class AudioManager {
   private ctx: AudioContext | null = null;
-  private music: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  private duck: GainNode | null = null;
   private sfx: GainNode | null = null;
+  private director: MusicDirector | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
   private musicVol = 0.4;
   private sfxVol = 0.6;
   private started = false;
+  private hidden = false;
+  /** cue demandée avant le déblocage de l'audio (jouée au premier geste) */
+  private wanted: { cue: CueName | 'silence'; fade?: number } = { cue: 'silence' };
+  /** boucles persistantes en cours (debug : vérifie qu'aucune ne survit à un changement de scène) */
+  private loops = new Map<string, number>();
+  private gestureHandler: (() => void) | null = null;
+
+  constructor() {
+    if (typeof window === 'undefined') return;
+    // politique d'autoplay : on (re)démarre au premier geste, tant que le contexte n'est pas actif
+    this.gestureHandler = () => this.unlock();
+    for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, this.gestureHandler, { passive: true });
+    document.addEventListener('visibilitychange', () => this.setHidden(document.hidden));
+  }
 
   setVolumes(music: number, sfx: number) {
     this.musicVol = music;
     this.sfxVol = sfx;
-    if (this.music) this.music.gain.value = music * 0.5;
-    if (this.sfx) this.sfx.gain.value = sfx;
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    // petite rampe : pas de clic quand on fait glisser le curseur
+    this.musicBus?.gain.setTargetAtTime(musicVolumeToGain(music), now, 0.03);
+    this.sfx?.gain.setTargetAtTime(sfxVolumeToGain(sfx), now, 0.03);
   }
 
   /** Doit être appelé après une interaction utilisateur (politique des navigateurs). */
   unlock() {
-    if (this.started) return;
-    try {
-      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new Ctx();
-      this.music = this.ctx.createGain();
-      this.sfx = this.ctx.createGain();
-      this.music.connect(this.ctx.destination);
-      this.sfx.connect(this.ctx.destination);
-      this.setVolumes(this.musicVol, this.sfxVol);
-      this.startRain();
-      this.startDrone();
-      this.started = true;
-    } catch {
-      /* audio indisponible */
+    if (!this.started) {
+      try {
+        const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const ctx = new Ctx();
+        this.ctx = ctx;
+        const { bus, limiter } = createMusicBus(ctx);
+        this.musicBus = bus;
+        this.duck = ctx.createGain();
+        this.sfx = ctx.createGain();
+        bus.gain.value = musicVolumeToGain(this.musicVol);
+        this.sfx.gain.value = sfxVolumeToGain(this.sfxVol);
+        limiter.connect(this.duck).connect(ctx.destination);
+        this.sfx.connect(ctx.destination);
+        this.director = new MusicDirector(ctx);
+        this.director.output.connect(bus);
+        this.timer = setInterval(() => this.director?.tick(), TICK_MS);
+        ctx.addEventListener('statechange', () => this.onState());
+        this.started = true;
+        this.setHidden(typeof document !== 'undefined' && document.hidden);
+        if (this.wanted.cue !== 'silence') this.director.play(this.wanted.cue, { fade: this.wanted.fade ?? 2.5 });
+      } catch {
+        return; /* audio indisponible */
+      }
+    }
+    if (this.ctx?.state === 'suspended') void this.ctx.resume().catch(() => {});
+    this.onState();
+  }
+
+  private onState() {
+    if (this.ctx?.state === 'running' && this.gestureHandler) {
+      for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.removeEventListener(ev, this.gestureHandler);
+      this.gestureHandler = null;
     }
   }
 
+  /** Onglet masqué : la musique s'efface et ne planifie plus rien ; les effets restent actifs. */
+  private setHidden(h: boolean) {
+    this.hidden = h;
+    if (!this.ctx || !this.duck || !this.director) return;
+    this.director.paused = h;
+    this.duck.gain.setTargetAtTime(h ? 0 : 1, this.ctx.currentTime, h ? 0.15 : 0.6);
+    if (!h) this.director.tick();
+  }
+
+  // ───────────── musique ─────────────
+
+  playMusic(cue: CueName | 'silence', opts: MusicPlayOptions = {}) {
+    this.wanted = { cue, fade: opts.fade };
+    this.director?.play(cue, opts);
+  }
+
+  markMusic(m: MusicMark) {
+    this.director?.mark(m);
+  }
+
+  currentMusic(): CueName | 'silence' {
+    return this.director?.current ?? this.wanted.cue;
+  }
+
+  /** Déclare une boucle persistante (moteur, route…) ; renvoie la fonction de retrait. */
+  registerLoop(name: string) {
+    this.loops.set(name, (this.loops.get(name) ?? 0) + 1);
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      const n = (this.loops.get(name) ?? 1) - 1;
+      if (n <= 0) this.loops.delete(name);
+      else this.loops.set(name, n);
+    };
+  }
+
   /** Accès aux bus audio pour les mises en scène (cinématique) ; null si l'audio n'est pas débloqué. */
-  buses(): { ctx: AudioContext; music: GainNode; sfx: GainNode } | null {
-    if (!this.ctx || !this.music || !this.sfx) return null;
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
-    return { ctx: this.ctx, music: this.music, sfx: this.sfx };
+  buses(): { ctx: AudioContext; sfx: GainNode } | null {
+    if (!this.ctx || !this.sfx) return null;
+    if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
+    return { ctx: this.ctx, sfx: this.sfx };
   }
 
   noiseBuffer(seconds = 2) {
@@ -51,42 +136,39 @@ class AudioManager {
     return buf;
   }
 
-  private startRain() {
-    const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(3);
-    src.loop = true;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 900;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 5200;
-    const g = ctx.createGain();
-    g.gain.value = 0.16;
-    src.connect(hp).connect(lp).connect(g).connect(this.music!);
-    src.start();
+  /** État courant (tests, débogage). */
+  debug(): AudioDebug {
+    return {
+      unlocked: this.started,
+      state: this.ctx?.state ?? 'none',
+      hidden: this.hidden,
+      settings: { music: this.musicVol, sfx: this.sfxVol },
+      buses: {
+        musicTarget: musicVolumeToGain(this.musicVol),
+        music: this.musicBus?.gain.value ?? null,
+        sfxTarget: sfxVolumeToGain(this.sfxVol),
+        sfx: this.sfx?.gain.value ?? null,
+        duck: this.duck?.gain.value ?? null,
+      },
+      music: this.currentMusic(),
+      cues: this.director?.debug() ?? [],
+      loops: [...this.loops.keys()],
+    };
   }
 
-  private startDrone() {
-    const ctx = this.ctx!;
-    const g = ctx.createGain();
-    g.gain.value = 0.05;
-    g.connect(this.music!);
-    for (const f of [55, 82.4, 110.3]) {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      const lfo = ctx.createOscillator();
-      const lg = ctx.createGain();
-      lfo.frequency.value = 0.05 + Math.random() * 0.08;
-      lg.gain.value = 1.5;
-      lfo.connect(lg).connect(o.frequency);
-      o.connect(g);
-      o.start();
-      lfo.start();
-    }
+  /** Libère tout (tests) ; un nouvel `unlock()` recrée le contexte. */
+  async close() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    this.director?.dispose();
+    this.director = null;
+    const ctx = this.ctx;
+    this.ctx = this.musicBus = this.duck = this.sfx = null;
+    this.started = false;
+    await ctx?.close().catch(() => {});
   }
+
+  // ───────────── effets ─────────────
 
   private tone(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.15, slide?: number) {
     if (!this.ctx || !this.sfx) return;
@@ -113,29 +195,37 @@ class AudioManager {
   error() {
     this.tone(180, 0.18, 'sawtooth', 0.05);
   }
-  sting() {
-    this.tone(110, 2.4, 'sawtooth', 0.06, 55);
-    this.tone(164.8, 2.4, 'sine', 0.08, 82);
-  }
   danger() {
     this.tone(70, 1.6, 'sawtooth', 0.12, 40);
     this.tone(233, 0.9, 'square', 0.03, 200);
   }
-  thunder() {
-    if (!this.ctx || !this.sfx) return;
-    const src = this.ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(3);
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 220;
-    const g = this.ctx.createGain();
-    const t = this.ctx.currentTime;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.5, t + 0.15);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
-    src.connect(lp).connect(g).connect(this.sfx);
-    src.start();
-  }
+}
+
+export interface AudioDebug {
+  unlocked: boolean;
+  state: AudioContextState | 'none';
+  hidden: boolean;
+  settings: { music: number; sfx: number };
+  buses: { musicTarget: number; music: number | null; sfxTarget: number; sfx: number | null; duck: number | null };
+  music: CueName | 'silence';
+  cues: CueDebug[];
+  loops: string[];
 }
 
 export const audio = new AudioManager();
+
+/**
+ * Musique : une seule cue à la fois, fondus enchaînés.
+ *   music.play('investigation', { fade: 6 }) · music.stop({ fade: 3 }) · music.mark('bodyDiscovered')
+ */
+export const music = {
+  play: (cue: CueName | 'silence', opts?: MusicPlayOptions) => audio.playMusic(cue, opts),
+  stop: (opts?: MusicPlayOptions) => audio.playMusic('silence', opts),
+  mark: (m: MusicMark) => audio.markMusic(m),
+  get current() {
+    return audio.currentMusic();
+  },
+};
+
+/** Accroche de débogage : cues actives, sources vivantes, gains des bus, boucles persistantes. */
+export const audioDebug = () => audio.debug();

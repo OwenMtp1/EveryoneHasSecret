@@ -31,9 +31,7 @@ export function App() {
     audio.setVolumes(s.music, s.sfx);
     boot();
     preloadRealistic();
-    const unlock = () => audio.unlock();
-    window.addEventListener('pointerdown', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
+    // déblocage audio au premier geste : audio.ts · musique selon l'écran : musicRouter.ts
   }, [boot]);
 
   const inGame = screen === 'game';

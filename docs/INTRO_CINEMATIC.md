@@ -47,7 +47,7 @@ recule et monte davantage. Ajouter un véhicule = ajouter une entrée (et, si be
 | `IntroCamera.ts` | plans par état (habitacle, épaule du conducteur, sortie par le pare-brise, révélation, villa) |
 | `IntroVehicle.ts` | véhicule procédural depuis sa définition (habitacle ouvert, sièges, volant, phares) |
 | `IntroCharacters.ts` | les vrais personnages des joueurs, assis, animations `drive/talk/laugh/dance/look`, regard vers la villa, bras du conducteur |
-| `IntroAudio.ts` | couches Music / Car / Road / Voices / Cinematic, mixées par état avec transitions douces |
+| `IntroAudio.ts` | effets Car / Road / Voices mixés par état + repères envoyés à la musique (cue `intro`, voir `docs/AUDIO.md`) |
 | `IntroText.tsx` | textes jaunes en bas, tapés lettre à lettre selon l'horloge commune |
 | `IntroLoader.ts` | chargement masqué par priorité : personnages → textures/HDR → shaders |
 | `VehicleSelector.ts` | véhicule du plan côté client |
