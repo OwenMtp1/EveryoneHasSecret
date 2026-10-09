@@ -8,7 +8,7 @@
  * Aucune lumière : les abat-jour sont simplement légèrement émissifs.
  */
 import * as THREE from 'three';
-import type { FurnitureDef } from '@shared/content/villa';
+import { LEVEL_HEIGHT, levelOf, type FurnitureDef } from '@shared/content/villa';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { cyl, type V3 } from './build';
 import { MAT } from './materials';
@@ -69,6 +69,12 @@ function upholstery(roomId: string): THREE.Material {
     suite: '#6a2a4a',
     landing: '#5b1f2a',
     corridor: '#5b1f2a',
+    dining: '#8a3b26',
+    gamesroom: '#1f5a52',
+    kidsroom: '#3a6a8a',
+    mudroom: '#4a5a28',
+    basement: '#5a5040',
+    attic: '#6a5a48',
   };
   return MAT.fabric(c[roomId] ?? '#5b4a3a');
 }
@@ -155,10 +161,11 @@ function fruitBowl(g: THREE.Object3D, x: number, y: number, z: number) {
   [[-0.05, 0], [0.05, 0.02], [0, -0.05], [0.01, 0.05], [0, 0]].forEach(([dx, dz], i) => ico(g, 0.04, fruits[i % 3], [x + dx, y + 0.08 + (i === 4 ? 0.04 : 0), z + dz]));
 }
 
-function mantelClock(g: THREE.Object3D, x: number, y: number, z: number) {
-  box(g, [0.24, 0.2, 0.1], M.walnut(), [x, y + 0.1, z], [0, 0, 0], 0.03);
-  cyl(g, 0.065, 0.065, 0.012, MAT.porcelain(), [x, y + 0.12, z + 0.05], [Math.PI / 2, 0, 0], 16);
-  box(g, [0.004, 0.05, 0.004], M.iron(), [x, y + 0.14, z + 0.058]);
+/** Petite statuette en bronze sur socle. */
+function statuette(g: THREE.Object3D, x: number, y: number, z: number) {
+  box(g, [0.12, 0.05, 0.12], M.walnut(), [x, y + 0.025, z]);
+  cyl(g, 0.025, 0.035, 0.16, M.brass(), [x, y + 0.13, z], [0, 0, 0], 10);
+  sphere(g, 0.035, M.brass(), [x, y + 0.24, z]);
 }
 
 function bottle(g: THREE.Object3D, x: number, y: number, z: number, color: string) {
@@ -180,7 +187,7 @@ function topDecor(g: THREE.Object3D, w: number, y: number, z: number, r: () => n
       candlestick(g, x + 0.07, y, z);
     } else if (k === 4 && wall) frame(g, x, y, z - 0.06, 0.26, 0.32, r);
     else if (k === 5) fruitBowl(g, x, y, z);
-    else if (k === 6) mantelClock(g, x, y, z);
+    else if (k === 6) statuette(g, x, y, z);
     else bookStack(g, x, y, z, r);
   }
 }
@@ -280,7 +287,7 @@ function bookcase(g: THREE.Group, f: FurnitureDef, W: number, D: number, r: () =
 }
 
 function plant(g: THREE.Group, f: FurnitureDef, r: () => number) {
-  const outdoor = f.roomId === 'garden' || f.roomId === 'exterior';
+  const outdoor = f.roomId === 'garden' || f.roomId === 'exterior' || f.roomId === 'orchard';
   if (outdoor) {
     // grand pot de terre cuite et arbuste taillé (buis / laurier)
     const terra = MAT.paint('#9a5a3a', 0.85);
@@ -637,7 +644,7 @@ function barrel(g: THREE.Group, f: FurnitureDef, r: () => number) {
 
 function bench(g: THREE.Group, f: FurnitureDef, W: number, D: number) {
   const bw = W - 0.1;
-  const outdoor = f.roomId === 'garden' || f.roomId === 'exterior';
+  const outdoor = f.roomId === 'garden' || f.roomId === 'exterior' || f.roomId === 'orchard';
   if (outdoor) {
     const slat = MAT.wood('#7a5a3a');
     for (let i = 0; i < 4; i++) box(g, [bw, 0.03, 0.1], slat, [0, 0.45, -0.15 + i * 0.12]);
@@ -803,7 +810,7 @@ function chest(g: THREE.Group, f: FurnitureDef, W: number, D: number) {
   }
 }
 
-/** Balustrade autour de la trémie de l'escalier (côtés nord, ouest et est ; le sud reste ouvert). */
+/** Balustrade autour d'une trémie : trois côtés, le côté d'arrivée (sens de la montée, `facing`) reste ouvert. */
 function railing(g: THREE.Group, f: FurnitureDef) {
   // on travaille dans le repère du monde (indépendant de l'orientation calculée)
   g.rotation.set(0, 0, 0);
@@ -826,13 +833,401 @@ function railing(g: THREE.Group, f: FurnitureDef) {
       box(g, [0.035, H - 0.1, 0.035], bal, [x0 + (x1 - x0) * t, H / 2 + 0.03, z0 + (z1 - z0) * t]);
     }
   };
-  run(-hw, -hd, hw, -hd);
-  run(-hw, -hd, -hw, hd);
-  run(hw, -hd, hw, hd);
+  const open = f.facing ?? 's';
+  if (open !== 'n') run(-hw, -hd, hw, -hd);
+  if (open !== 's') run(-hw, hd, hw, hd);
+  if (open !== 'w') run(-hw, -hd, -hw, hd);
+  if (open !== 'e') run(hw, -hd, hw, hd);
   for (const [x, z] of [[-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd]] as const) {
     box(g, [0.11, H + 0.08, 0.11], post, [x, (H + 0.08) / 2, z]);
     sphere(g, 0.06, post, [x, H + 0.14, z]);
   }
+}
+
+// ───────────── buanderie, salle de jeux, bureau, sous-sol, grenier, jardin ─────────────
+
+function washer(g: THREE.Group, D: number, dryer: boolean) {
+  const back = -D / 2;
+  const z = back + 0.32;
+  const white = MAT.paint('#ecebe6', 0.35);
+  box(g, [0.6, 0.85, 0.6], white, [0, 0.425, z], [0, 0, 0], 0.03);
+  box(g, [0.58, 0.1, 0.02], MAT.paint('#d8d6cf', 0.4), [0, 0.78, z + 0.3]);
+  cyl(g, 0.02, 0.02, 0.02, M.chrome(), [0.2, 0.78, z + 0.31], [Math.PI / 2, 0, 0], 10);
+  torus(g, 0.19, 0.03, M.chrome(), [0, 0.42, z + 0.3], [0, 0, 0]);
+  const door = new THREE.Mesh(new THREE.CircleGeometry(0.17, 20), dryer ? MAT.paint('#2a2a2a', 0.2) : MAT.glass());
+  door.position.set(0, 0.42, z + 0.305);
+  g.add(door);
+  if (!dryer) box(g, [0.3, 0.1, 0.2], MAT.paint('#3a6a9a', 0.6), [-0.1, 0.9, z], [0, 0.2, 0], 0.02); // baril de lessive
+  else box(g, [0.4, 0.14, 0.3], MAT.fabric('#e8dcc0'), [0, 0.92, z], [0, 0.15, 0], 0.05); // linge plié
+}
+
+function ironingBoard(g: THREE.Group, W: number) {
+  const L = W - 0.1;
+  box(g, [L - 0.2, 0.03, 0.38], MAT.fabric('#9ab0c8'), [0.1, 0.86, 0]);
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.03, 16, 1, false, Math.PI, Math.PI), MAT.fabric('#9ab0c8'));
+  nose.position.set(-L / 2 + 0.2, 0.86, 0);
+  g.add(nose);
+  for (const s of [-1, 1]) box(g, [0.03, 1.0, 0.03], M.chrome(), [s * 0.25, 0.43, 0], [0, 0, s * 0.5]);
+  box(g, [0.24, 0.12, 0.11], MAT.paint('#d8d6cf', 0.3), [L / 2 - 0.3, 0.94, 0], [0, 0.3, 0], 0.03); // fer
+}
+
+function laundryBasket(g: THREE.Group) {
+  cyl(g, 0.26, 0.22, 0.5, MAT.wood('#b89a6a'), [0, 0.25, 0], [0, 0, 0], 16);
+  for (const y of [0.1, 0.25, 0.4]) torus(g, 0.25 - y * 0.05 + 0.02, 0.012, MAT.wood('#8a6a40'), [0, y, 0]);
+  box(g, [0.34, 0.12, 0.26], MAT.fabric('#e8e2d0'), [0.03, 0.52, 0], [0.2, 0.4, 0.15], 0.04);
+  box(g, [0.22, 0.08, 0.2], MAT.fabric('#7a2434'), [-0.06, 0.56, 0.05], [-0.2, 0.9, 0.1], 0.03);
+}
+
+function dryingRack(g: THREE.Group, W: number) {
+  const L = W - 0.1;
+  for (const s of [-1, 1]) {
+    box(g, [L, 0.02, 0.02], M.chrome(), [0, 0.95, s * 0.22]);
+    for (const e of [-1, 1]) box(g, [0.02, 1.0, 0.02], M.chrome(), [e * (L / 2 - 0.05), 0.48, s * 0.22], [s * 0.25, 0, 0]);
+  }
+  const cloth = [MAT.fabric('#f2efe6'), MAT.fabric('#3a6a9a'), MAT.fabric('#c9a45c'), MAT.fabric('#7a2434')];
+  for (let i = 0; i < 4; i++) box(g, [0.32, 0.5, 0.01], cloth[i], [-L / 2 + 0.3 + (i * (L - 0.5)) / 3, 0.72, (i % 2 ? 1 : -1) * 0.22]);
+}
+
+function billiard(g: THREE.Group, W: number, D: number) {
+  const tw = W - 0.5;
+  const td = D - 0.5;
+  const wood = MAT.wood('#4a2a16');
+  box(g, [tw, 0.22, td], wood, [0, 0.68, 0]);
+  box(g, [tw - 0.24, 0.02, td - 0.24], MAT.fabric('#1f6a3a'), [0, 0.8, 0]);
+  for (const s of [-1, 1]) {
+    box(g, [tw, 0.08, 0.12], wood, [0, 0.82, s * (td / 2 - 0.06)]);
+    box(g, [0.12, 0.08, td], wood, [s * (tw / 2 - 0.06), 0.82, 0]);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(g, 0.09, 0.07, 0.58, wood, [sx * (tw / 2 - 0.2), 0.29, sz * (td / 2 - 0.2)], [0, 0, 0], 10);
+  for (const sx of [-1, 0, 1]) for (const sz of [-1, 1]) cyl(g, 0.05, 0.05, 0.02, MAT.paint('#0a0a0a', 0.8), [sx * (tw / 2 - 0.12), 0.815, sz * (td / 2 - 0.12)], [0, 0, 0], 10);
+  const colors = ['#f2efe6', '#e8c34a', '#2a4ad8', '#c83a2a', '#6a2a8a', '#e8782a', '#2a8a4a', '#8a1a1a', '#111111'];
+  colors.forEach((c, i) => sphere(g, 0.03, MAT.lacquer(c), [i === 0 ? -tw * 0.3 : tw * 0.15 + (i % 4) * 0.06, 0.84, i === 0 ? 0 : ((i % 3) - 1) * 0.07]));
+  cyl(g, 0.012, 0.006, 1.4, MAT.wood('#c8a070'), [0, 0.86, td / 2 - 0.35], [0, 0, Math.PI / 2 - 0.03], 6);
+}
+
+function cueRack(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  box(g, [0.4, 1.5, 0.06], MAT.wood('#4a2a16'), [0, 0.95, back + 0.04]);
+  for (let i = 0; i < 4; i++) cyl(g, 0.012, 0.007, 1.45, MAT.wood('#c8a070'), [-0.14 + i * 0.09, 0.86, back + 0.1], [0, 0, 0], 6);
+  box(g, [0.4, 0.06, 0.14], MAT.wood('#4a2a16'), [0, 0.1, back + 0.1]);
+}
+
+function gamesShelf(g: THREE.Group, W: number, D: number, r: () => number) {
+  const back = -D / 2;
+  const frameM = M.walnut();
+  const tall = 1.8;
+  box(g, [W, tall, 0.03], frameM, [0, tall / 2, back + 0.015]);
+  for (const s of [-1, 1]) box(g, [0.04, tall, 0.4], frameM, [s * (W / 2 - 0.02), tall / 2, back + 0.2]);
+  const colors = ['#c83a2a', '#2a5ad8', '#e8c34a', '#2a8a4a', '#e8e2d4', '#6a2a8a', '#1f1f1f'];
+  for (let k = 0; k < 4; k++) {
+    const y = 0.06 + k * 0.44;
+    box(g, [W - 0.06, 0.03, 0.38], frameM, [0, y, back + 0.2]);
+    if (k === 3) continue;
+    let h = y + 0.02;
+    for (let i = 0; i < 3 + Math.floor(r() * 2); i++) {
+      const t = 0.05 + r() * 0.05;
+      box(g, [W - 0.3 - r() * 0.2, t, 0.3], MAT.paint(colors[Math.floor(r() * colors.length)], 0.6), [(r() - 0.5) * 0.1, h + t / 2, back + 0.2]);
+      h += t;
+    }
+  }
+}
+
+function darts(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  box(g, [0.7, 0.9, 0.06], MAT.wood('#3a2416'), [0, 1.6, back + 0.03]);
+  cyl(g, 0.23, 0.23, 0.04, MAT.paint('#1a1a1a', 0.9), [0, 1.62, back + 0.08], [Math.PI / 2, 0, 0], 24);
+  for (const [rr, c, dz] of [[0.18, '#e8dcc0', 0.002], [0.12, '#a8312a', 0.004], [0.07, '#2a6a3a', 0.006], [0.02, '#a8312a', 0.008]] as const) cyl(g, rr, rr, 0.04, MAT.paint(c, 0.9), [0, 1.62, back + 0.08 + dz], [Math.PI / 2, 0, 0], 20);
+  for (let i = 0; i < 3; i++) cyl(g, 0.004, 0.004, 0.12, M.chrome(), [-0.05 + i * 0.05, 1.6 + i * 0.03, back + 0.15], [Math.PI / 2, 0, 0], 6);
+  box(g, [0.5, 0.75, 0.25], MAT.wood('#4a2e1c'), [0, 0.375, back + 0.13]);
+}
+
+function jukebox(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  const z = back + 0.32;
+  box(g, [0.8, 1.2, 0.55], MAT.lacquer('#7a2a1a'), [0, 0.6, z], [0, 0, 0], 0.05);
+  const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.55, 20, 1, false, -Math.PI / 2, Math.PI), MAT.lacquer('#7a2a1a'));
+  arch.rotation.x = Math.PI / 2;
+  arch.position.set(0, 1.2, z);
+  arch.castShadow = true;
+  g.add(arch);
+  box(g, [0.6, 0.5, 0.02], MAT.glow('#ffb45c', 0.5), [0, 0.95, z + 0.28]);
+  torus(g, 0.36, 0.03, MAT.glow('#e8c34a', 0.8), [0, 1.2, z + 0.28], [0, 0, 0], Math.PI);
+  box(g, [0.6, 0.3, 0.02], M.chrome(), [0, 0.4, z + 0.28]);
+}
+
+function arcade(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  const z = back + 0.33;
+  const body = MAT.lacquer('#1f2a5a');
+  box(g, [0.7, 1.75, 0.65], body, [0, 0.875, z]);
+  box(g, [0.6, 0.45, 0.02], MAT.glow('#3a8aff', 0.55), [0, 1.35, z + 0.33], [-0.15, 0, 0]);
+  box(g, [0.7, 0.08, 0.35], body, [0, 1.0, z + 0.4]);
+  cyl(g, 0.015, 0.015, 0.08, M.iron(), [-0.15, 1.08, z + 0.42], [0, 0, 0], 8);
+  sphere(g, 0.03, MAT.lacquer('#c83a2a'), [-0.15, 1.13, z + 0.42]);
+  for (let i = 0; i < 3; i++) cyl(g, 0.025, 0.025, 0.02, MAT.lacquer(['#e8c34a', '#2a8a4a', '#c83a2a'][i]), [0.05 + i * 0.08, 1.05, z + 0.42], [0, 0, 0], 10);
+  box(g, [0.7, 0.18, 0.66], MAT.glow('#e8c34a', 0.35), [0, 1.84, z]);
+}
+
+function safe(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  const z = back + 0.3;
+  const steel = MAT.paint('#3a3c40', 0.45);
+  box(g, [0.6, 0.75, 0.55], steel, [0, 0.4, z], [0, 0, 0], 0.03);
+  box(g, [0.5, 0.62, 0.02], MAT.paint('#2e3034', 0.4), [0, 0.42, z + 0.28]);
+  cyl(g, 0.07, 0.07, 0.04, M.chrome(), [-0.08, 0.48, z + 0.3], [Math.PI / 2, 0, 0], 20);
+  for (let i = 0; i < 12; i++) box(g, [0.006, 0.015, 0.006], MAT.paint('#e8e2d4', 0.5), [-0.08 + Math.cos((i / 12) * Math.PI * 2) * 0.06, 0.48 + Math.sin((i / 12) * Math.PI * 2) * 0.06, z + 0.322]);
+  box(g, [0.14, 0.03, 0.04], M.chrome(), [0.14, 0.42, z + 0.3]);
+  for (const sx of [-1, 1]) box(g, [0.06, 0.03, 0.5], M.iron(), [sx * 0.24, 0.015, z]);
+  box(g, [0.3, 0.02, 0.22], MAT.paint('#efe8d8', 0.9), [0, 0.785, z]); // dossiers posés dessus
+}
+
+function filingCabinet(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  const z = back + 0.3;
+  box(g, [0.5, 1.3, 0.58], MAT.paint('#6a6e74', 0.45), [0, 0.65, z]);
+  for (let i = 0; i < 4; i++) {
+    box(g, [0.46, 0.28, 0.02], MAT.paint('#7a7e84', 0.4), [0, 0.18 + i * 0.31, z + 0.3]);
+    box(g, [0.12, 0.025, 0.03], M.chrome(), [0, 0.26 + i * 0.31, z + 0.32]);
+    box(g, [0.08, 0.04, 0.005], MAT.paint('#efe8d8', 0.9), [0, 0.22 + i * 0.31, z + 0.312]);
+  }
+}
+
+const CEIL = 3;
+function boiler(g: THREE.Group, W: number, D: number) {
+  const back = -D / 2;
+  const z = back + 0.4;
+  box(g, [W - 0.3, 1.5, 0.75], MAT.paint('#8a3a22', 0.55), [0, 0.75, z], [0, 0, 0], 0.04);
+  box(g, [W - 0.5, 0.3, 0.02], MAT.paint('#2a2a2a', 0.6), [0, 1.1, z + 0.38]);
+  cyl(g, 0.05, 0.05, 0.02, MAT.paint('#e8e2d4', 0.4), [-0.2, 1.1, z + 0.39], [Math.PI / 2, 0, 0], 16);
+  box(g, [0.1, 0.06, 0.02], MAT.glow('#ff8a3a', 1.2), [0.15, 0.4, z + 0.38]);
+  cyl(g, 0.09, 0.09, CEIL - 1.5, M.iron(), [W / 2 - 0.4, 1.5 + (CEIL - 1.5) / 2, z - 0.15], [0, 0, 0], 12);
+  for (const sx of [-0.3, 0.1]) cyl(g, 0.03, 0.03, 1.2, MAT.metal('#b87a4a', 0.4), [sx, 2.1, back + 0.06], [0, 0, 0], 8);
+}
+
+function waterHeater(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  cyl(g, 0.28, 0.28, 1.5, MAT.paint('#e8e6e0', 0.4), [0, 0.95, back + 0.32], [0, 0, 0], 20);
+  sphere(g, 0.28, MAT.paint('#e8e6e0', 0.4), [0, 1.7, back + 0.32], [1, 0.3, 1]);
+  for (const sx of [-0.1, 0.1]) cyl(g, 0.025, 0.025, 1.2, MAT.metal('#b87a4a', 0.4), [sx, 2.3, back + 0.1], [0, 0, 0], 8);
+  for (const sx of [-1, 1]) box(g, [0.04, 0.2, 0.04], M.iron(), [sx * 0.2, 0.1, back + 0.32]);
+}
+
+function wineRack(g: THREE.Group, W: number, D: number) {
+  const back = -D / 2;
+  const wood = MAT.wood('#4a2a16');
+  const tall = 2.0;
+  box(g, [W, tall, 0.03], wood, [0, tall / 2, back + 0.015]);
+  const cols = Math.max(2, Math.round(W / 0.25));
+  for (let i = 0; i <= cols; i++) box(g, [0.03, tall, 0.36], wood, [-W / 2 + (W * i) / cols, tall / 2, back + 0.18]);
+  const glass = [MAT.lacquer('#1d3a24'), MAT.lacquer('#3a1018'), MAT.lacquer('#2a2a1a')];
+  for (let r = 0; r < 7; r++) {
+    box(g, [W, 0.02, 0.36], wood, [0, 0.05 + r * 0.28, back + 0.18]);
+    for (let i = 0; i < cols; i++)
+      if ((i * 7 + r * 3) % 5 !== 0) {
+        const x = -W / 2 + (W * (i + 0.5)) / cols;
+        cyl(g, 0.04, 0.04, 0.3, glass[(i + r) % 3], [x, 0.14 + r * 0.28, back + 0.2], [Math.PI / 2, 0, 0], 8);
+        cyl(g, 0.016, 0.016, 0.08, glass[(i + r) % 3], [x, 0.14 + r * 0.28, back + 0.39], [Math.PI / 2, 0, 0], 6);
+      }
+  }
+}
+
+function boxes(g: THREE.Group, W: number, D: number, r: () => number) {
+  const card = [MAT.paint('#a8865a', 0.95), MAT.paint('#b8966a', 0.95), MAT.paint('#98764a', 0.95)];
+  const n = Math.max(2, Math.round(W * D * 2));
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    const s = 0.4 + r() * 0.2;
+    const x = (r() - 0.5) * (W - s);
+    const z = (r() - 0.5) * (D - s);
+    if (i % 2 === 0) y = 0;
+    box(g, [s, s * 0.75, s * 0.9], card[i % 3], [x, y + (s * 0.75) / 2, z], [0, (r() - 0.5) * 0.4, 0]);
+    y += s * 0.75;
+  }
+}
+
+function mannequin(g: THREE.Group) {
+  const fab = MAT.fabric('#c9b48a');
+  cyl(g, 0.02, 0.02, 0.9, M.dark(), [0, 0.5, 0], [0, 0, 0], 8);
+  for (let i = 0; i < 3; i++) box(g, [0.04, 0.03, 0.32], M.dark(), [0, 0.03, 0], [0, (i / 3) * Math.PI * 2, 0]);
+  sphere(g, 0.2, fab, [0, 1.25, 0], [1, 1.5, 0.75]);
+  sphere(g, 0.17, fab, [0, 1.0, 0], [1.05, 0.7, 0.75]);
+  cyl(g, 0.04, 0.05, 0.12, fab, [0, 1.6, 0], [0, 0, 0], 10);
+  sphere(g, 0.035, M.dark(), [0, 1.68, 0]);
+  // drap jeté sur l'épaule
+  box(g, [0.18, 0.6, 0.02], MAT.fabric('#e8e2d4'), [0.16, 1.2, 0.1], [0.1, 0, 0.2], 0.01);
+}
+
+function rockingHorse(g: THREE.Group) {
+  const wood = MAT.wood('#a8784a');
+  const paint = MAT.paint('#e8e2d4', 0.6);
+  for (const s of [-1, 1]) {
+    const rocker = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.025, 5, 20, 0.9), wood);
+    rocker.rotation.set(0, Math.PI / 2, -Math.PI / 2 - 0.45);
+    rocker.position.set(s * 0.15, 0.92, 0);
+    rocker.castShadow = true;
+    g.add(rocker);
+  }
+  for (const [x, z] of [[-0.15, -0.25], [0.15, -0.25], [-0.15, 0.25], [0.15, 0.25]] as const) cyl(g, 0.025, 0.02, 0.35, wood, [x, 0.25, z], [0, 0, 0], 8);
+  box(g, [0.22, 0.2, 0.6], paint, [0, 0.5, 0], [0, 0, 0], 0.08);
+  box(g, [0.14, 0.3, 0.14], paint, [0, 0.7, 0.3], [-0.5, 0, 0], 0.05);
+  box(g, [0.13, 0.13, 0.28], paint, [0, 0.83, 0.42], [0.3, 0, 0], 0.05);
+  box(g, [0.04, 0.3, 0.2], MAT.paint('#3a2416', 0.9), [0, 0.8, 0.22], [-0.4, 0, 0]);
+  box(g, [0.24, 0.04, 0.24], MAT.paint('#8a2a22', 0.7), [0, 0.61, -0.02]);
+  for (const s of [-1, 1]) sphere(g, 0.015, MAT.paint('#111111', 0.3), [s * 0.065, 0.88, 0.5]);
+}
+
+function toolbox(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  const red = MAT.lacquer('#a8312a');
+  box(g, [0.6, 0.85, 0.45], red, [0, 0.43, back + 0.25], [0, 0, 0], 0.02);
+  for (let i = 0; i < 4; i++) box(g, [0.54, 0.16, 0.02], MAT.lacquer('#8a2420'), [0, 0.15 + i * 0.19, back + 0.48]);
+  for (let i = 0; i < 4; i++) box(g, [0.2, 0.02, 0.03], M.chrome(), [0, 0.2 + i * 0.19, back + 0.5]);
+  for (const sx of [-1, 1]) cyl(g, 0.03, 0.03, 0.03, MAT.paint('#111111', 0.6), [sx * 0.24, 0.015, back + 0.42], [Math.PI / 2, 0, 0], 10);
+  box(g, [0.4, 0.06, 0.2], M.iron(), [0, 0.9, back + 0.25]);
+}
+
+function freezer(g: THREE.Group, W: number, D: number) {
+  const back = -D / 2;
+  box(g, [W - 0.15, 0.85, 0.7], MAT.paint('#e8e8e4', 0.35), [0, 0.425, back + 0.38], [0, 0, 0], 0.04);
+  box(g, [W - 0.13, 0.06, 0.72], MAT.paint('#d8d8d4', 0.35), [0, 0.88, back + 0.38], [0, 0, 0], 0.02);
+  box(g, [0.3, 0.04, 0.04], M.chrome(), [0, 0.8, back + 0.75]);
+  box(g, [0.05, 0.03, 0.01], MAT.glow('#3aa86a', 1), [W / 2 - 0.25, 0.7, back + 0.735]);
+}
+
+function bicycle(g: THREE.Group, f: FurnitureDef) {
+  const frameM = MAT.lacquer(f.roomId === 'basement' ? '#6a3a2a' : '#2a5a8a');
+  const b = new THREE.Group();
+  b.rotation.y = Math.PI / 2;
+  g.add(b);
+  for (const x of [-0.42, 0.42]) {
+    torus(b, 0.3, 0.025, MAT.paint('#111111', 0.7), [x, 0.33, 0], [0, 0, 0]);
+    cyl(b, 0.01, 0.01, 0.58, M.chrome(), [x, 0.33, 0], [0, 0, Math.PI / 2], 6);
+  }
+  box(b, [0.84, 0.035, 0.035], frameM, [0, 0.55, 0], [0, 0, -0.08]);
+  box(b, [0.04, 0.5, 0.04], frameM, [-0.08, 0.5, 0], [0, 0, 0.35]);
+  box(b, [0.03, 0.45, 0.03], frameM, [0.38, 0.55, 0], [0, 0, -0.3]);
+  box(b, [0.2, 0.05, 0.12], MAT.paint('#1a1a1a', 0.7), [-0.2, 0.8, 0]);
+  box(b, [0.04, 0.03, 0.45], M.chrome(), [0.42, 0.85, 0]);
+}
+
+function umbrellaStand(g: THREE.Group) {
+  cyl(g, 0.15, 0.13, 0.5, MAT.lacquer('#2a4a3a'), [0, 0.25, 0], [0, 0, 0], 16);
+  for (let i = 0; i < 3; i++) cyl(g, 0.012, 0.012, 0.9, M.iron(), [Math.cos(i * 2) * 0.05, 0.6, Math.sin(i * 2) * 0.05], [0.08 * Math.cos(i), 0, 0.08 * Math.sin(i)], 6);
+  sphere(g, 0.07, MAT.fabric('#c83a2a'), [0.04, 0.75, 0], [0.8, 2, 0.8]);
+  sphere(g, 0.06, MAT.fabric('#1f1f2a'), [-0.05, 0.72, 0.04], [0.8, 2, 0.8]);
+}
+
+function cushions(g: THREE.Group, W: number, D: number) {
+  const c = [MAT.fabric('#c83a2a'), MAT.fabric('#e8c34a'), MAT.fabric('#2a6a8a'), MAT.fabric('#e8dcc0')];
+  box(g, [W - 0.1, 0.12, D - 0.1], MAT.fabric('#6a4a2a'), [0, 0.06, 0], [0, 0, 0], 0.04);
+  for (let i = 0; i < 4; i++) box(g, [0.45, 0.16, 0.4], c[i], [-W / 2 + 0.35 + (i * (W - 0.7)) / 3, 0.2, (i % 2) * 0.15 - 0.08], [-0.15, i * 0.5, 0.05], 0.06);
+  box(g, [0.5, 0.06, 0.4], MAT.fabric('#5a7a3a'), [0.1, 0.32, 0.05], [0, 0.4, 0], 0.03); // plaid
+}
+
+function lantern(g: THREE.Group, f: FurnitureDef) {
+  // lanterne sur un petit tabouret ; vraie source de lumière (réservoir de lampes de la villa)
+  cyl(g, 0.2, 0.2, 0.05, MAT.wood('#6a4a2a'), [0, 0.42, 0], [0, 0, 0], 12);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    cyl(g, 0.02, 0.02, 0.42, MAT.wood('#5a3a22'), [Math.cos(a) * 0.14, 0.21, Math.sin(a) * 0.14], [0, 0, 0], 6);
+  }
+  box(g, [0.18, 0.04, 0.18], M.iron(), [0, 0.47, 0]);
+  box(g, [0.14, 0.22, 0.14], MAT.glow('#ffb860', 1.6), [0, 0.6, 0]);
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) box(g, [0.015, 0.24, 0.015], M.iron(), [x * 0.08, 0.6, z * 0.08]);
+  cyl(g, 0.02, 0.11, 0.08, M.iron(), [0, 0.75, 0], [0, 0, 0], 4);
+  torus(g, 0.04, 0.008, M.iron(), [0, 0.82, 0], [0, 0, 0]);
+  const light = new THREE.Object3D();
+  light.position.set(0, 0.7, 0);
+  light.userData.light = { color: '#ffa850', intensity: 5, distance: 6, decay: 1.6, room: f.roomId, level: levelOf(f.x) };
+  g.add(light);
+}
+
+function post(g: THREE.Group) {
+  g.rotation.set(0, 0, 0);
+  const wood = MAT.wood('#5a3a22');
+  box(g, [0.2, LEVEL_HEIGHT - 0.2, 0.2], wood, [0, (LEVEL_HEIGHT - 0.2) / 2, 0]);
+  box(g, [0.34, 0.1, 0.34], MAT.paint('#6a6058', 0.9), [0, 0.05, 0]);
+}
+
+function shed(g: THREE.Group, W: number, D: number) {
+  const plank = MAT.wood('#5a4a32');
+  box(g, [W - 0.1, 2.0, D - 0.1], plank, [0, 1.0, 0]);
+  box(g, [0.8, 1.8, 0.03], MAT.wood('#4a3a24'), [0, 0.9, D / 2 - 0.03]);
+  sphere(g, 0.03, M.iron(), [0.3, 0.95, D / 2]);
+  for (const s of [-1, 1]) box(g, [W + 0.2, 0.06, D / 2 + 0.3], MAT.paint('#2a2a2c', 0.8), [0, 2.25, s * (D / 4 + 0.05)], [s * 0.45, 0, 0]);
+  box(g, [0.5, 0.4, 0.03], MAT.glass(), [-W / 4, 1.4, D / 2 - 0.04]);
+}
+
+function swing(g: THREE.Group, W: number) {
+  g.rotation.set(0, 0, 0);
+  const wood = MAT.wood('#6a4a2a');
+  for (const s of [-1, 1]) {
+    box(g, [0.1, 2.3, 0.1], wood, [s * (W / 2 - 0.15), 1.1, -0.3], [0.25, 0, 0]);
+    box(g, [0.1, 2.3, 0.1], wood, [s * (W / 2 - 0.15), 1.1, 0.3], [-0.25, 0, 0]);
+  }
+  box(g, [W - 0.1, 0.1, 0.1], wood, [0, 2.2, 0]);
+  for (const x of [-0.5, 0.5]) {
+    for (const s of [-1, 1]) cyl(g, 0.01, 0.01, 1.7, MAT.paint('#b89a6a', 0.9), [x + s * 0.2, 1.35, 0], [0, 0, 0], 4);
+    box(g, [0.5, 0.04, 0.22], MAT.wood('#8a6440'), [x, 0.5, 0]);
+  }
+}
+
+function planter(g: THREE.Group, W: number) {
+  const L = W - 0.1;
+  box(g, [L, 0.35, 0.85], MAT.wood('#6a4a2a'), [0, 0.175, 0]);
+  box(g, [L - 0.08, 0.02, 0.77], MAT.paint('#2a1e14', 1), [0, 0.34, 0]);
+  for (let i = 0; i < Math.floor(L / 0.3); i++) for (const z of [-0.2, 0.2]) ico(g, 0.12, leaf(i), [-L / 2 + 0.2 + i * 0.3, 0.42, z], [1, 0.7, 1]);
+}
+
+function barbecue(g: THREE.Group) {
+  const black = MAT.paint('#1a1a1a', 0.5);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    cyl(g, 0.015, 0.015, 0.75, black, [Math.cos(a) * 0.2, 0.37, Math.sin(a) * 0.2], [Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25], 6);
+  }
+  sphere(g, 0.3, black, [0, 0.82, 0], [1, 0.6, 1]);
+  cyl(g, 0.3, 0.3, 0.01, M.chrome(), [0, 0.86, 0], [0, 0, 0], 16);
+  box(g, [0.1, 0.06, 0.03], M.chrome(), [0, 0.9, 0.3]);
+}
+
+function bins(g: THREE.Group, W: number) {
+  const colors = [MAT.paint('#2a4a2a', 0.6), MAT.paint('#e0b040', 0.6)];
+  for (let i = 0; i < 2; i++) {
+    const x = -W / 4 + (i * W) / 2;
+    box(g, [0.6, 1.0, 0.65], colors[i], [x, 0.5, 0], [0, 0, 0], 0.03);
+    box(g, [0.64, 0.06, 0.7], colors[i], [x, 1.02, -0.02], [-0.05, 0, 0], 0.02);
+    for (const s of [-1, 1]) cyl(g, 0.08, 0.08, 0.05, MAT.paint('#111111', 0.6), [x + s * 0.25, 0.08, -0.3], [0, 0, Math.PI / 2], 10);
+  }
+}
+
+function mailbox(g: THREE.Group) {
+  cyl(g, 0.04, 0.05, 1.1, M.dark(), [0, 0.55, 0], [0, 0, 0], 8);
+  box(g, [0.24, 0.26, 0.42], MAT.lacquer('#8a2a22'), [0, 1.2, 0], [0, 0, 0], 0.04);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.42, 14, 1, false, -Math.PI / 2, Math.PI), MAT.lacquer('#8a2a22'));
+  top.rotation.x = Math.PI / 2;
+  top.position.set(0, 1.33, 0);
+  top.castShadow = true;
+  g.add(top);
+  box(g, [0.02, 0.12, 0.04], MAT.paint('#e8c34a', 0.5), [0.13, 1.35, -0.1]);
+}
+
+function dollhouse(g: THREE.Group, D: number) {
+  const back = -D / 2;
+  box(g, [0.7, 0.55, 0.4], MAT.wood('#5a3a22'), [0, 0.275, back + 0.22]);
+  box(g, [0.6, 0.55, 0.32], MAT.paint('#e8d0b0', 0.7), [0, 0.83, back + 0.22]);
+  for (const s of [-1, 1]) box(g, [0.36, 0.03, 0.36], MAT.paint('#8a3a2a', 0.7), [s * 0.15, 1.2, back + 0.22], [0, 0, s * -0.6]);
+  for (const [x, y] of [[-0.15, 0.75], [0.15, 0.75], [-0.15, 0.95], [0.15, 0.95]] as const) box(g, [0.1, 0.1, 0.01], MAT.glow('#ffd9a0', 0.4), [x, y, back + 0.385]);
+  box(g, [0.1, 0.16, 0.01], MAT.paint('#3a2416', 0.7), [0, 0.64, back + 0.385]);
+  // petite poupée assise devant (yeux fixes)
+  sphere(g, 0.05, MAT.paint('#f0d8c0', 0.6), [0.22, 0.65, back + 0.5]);
+  box(g, [0.09, 0.1, 0.06], MAT.fabric('#7a2434'), [0.22, 0.57, back + 0.5], [0, 0, 0], 0.02);
+}
+
+function chestPadlock(g: THREE.Group, D: number) {
+  // cadenas sur l'auberon de la malle fermée à clé
+  const z = -D / 2 + Math.min(D, 0.5) + 0.06;
+  box(g, [0.07, 0.06, 0.025], MAT.metal('#b8913e', 0.3), [0, 0.38, z]);
+  torus(g, 0.022, 0.006, M.iron(), [0, 0.42, z], [0, 0, 0], Math.PI);
 }
 
 export function buildFurnishing(f: FurnitureDef, g: THREE.Group, W: number, D: number): void {
@@ -881,7 +1276,75 @@ export function buildFurnishing(f: FurnitureDef, g: THREE.Group, W: number, D: n
     case 'harp':
       return harp(g);
     case 'chest':
-      return chest(g, f, W, D);
+      chest(g, f, W, D);
+      if (f.lock) chestPadlock(g, D);
+      return;
+    case 'washing_machine':
+      return washer(g, D, false);
+    case 'dryer':
+      return washer(g, D, true);
+    case 'ironing_board':
+      return ironingBoard(g, W);
+    case 'laundry_basket':
+      return laundryBasket(g);
+    case 'drying_rack':
+      return dryingRack(g, W);
+    case 'billiard':
+      return billiard(g, W, D);
+    case 'cue_rack':
+      return cueRack(g, D);
+    case 'games_shelf':
+      return gamesShelf(g, W, D, r);
+    case 'darts':
+      return darts(g, D);
+    case 'jukebox':
+      return jukebox(g, D);
+    case 'arcade':
+      return arcade(g, D);
+    case 'safe':
+      return safe(g, D);
+    case 'filing_cabinet':
+      return filingCabinet(g, D);
+    case 'boiler':
+      return boiler(g, W, D);
+    case 'water_heater':
+      return waterHeater(g, D);
+    case 'wine_rack':
+      return wineRack(g, W, D);
+    case 'boxes':
+      return boxes(g, W, D, r);
+    case 'mannequin':
+      return mannequin(g);
+    case 'rocking_horse':
+      return rockingHorse(g);
+    case 'toolbox':
+      return toolbox(g, D);
+    case 'freezer':
+      return freezer(g, W, D);
+    case 'bicycle':
+      return bicycle(g, f);
+    case 'umbrella_stand':
+      return umbrellaStand(g);
+    case 'cushions':
+      return cushions(g, W, D);
+    case 'lantern':
+      return lantern(g, f);
+    case 'post':
+      return post(g);
+    case 'shed':
+      return shed(g, W, D);
+    case 'swing':
+      return swing(g, W);
+    case 'planter':
+      return planter(g, W);
+    case 'barbecue':
+      return barbecue(g);
+    case 'bins':
+      return bins(g, W);
+    case 'mailbox':
+      return mailbox(g);
+    case 'dollhouse':
+      return dollhouse(g, D);
     default:
       // type inconnu : simple caisson pour ne jamais laisser une emprise invisible
       box(g, [W * 0.9, 0.8, D * 0.9], M.wood(), [0, 0.4, 0]);

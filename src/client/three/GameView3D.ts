@@ -20,7 +20,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { applyPortal, buildWorldGrid, doorAt, elevationAt, localX, stepAllowed } from '@shared/content/villa';
+import { buildWorldGrid, doorAt, elevationAt, localX, stepMove } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
 
 type CamMode = 'third' | 'first';
@@ -426,6 +426,7 @@ export class GameView3D {
     const r = GAME_CONFIG.playerRadius;
     return this.passable(x - r, y - r) && this.passable(x + r, y - r) && this.passable(x - r, y + r) && this.passable(x + r, y + r);
   }
+  private fitsFn = (x: number, y: number) => this.fits(x, y);
 
   /**
    * Notre personnage avance tout de suite (pas d'attente du serveur), puis se recale en douceur
@@ -443,10 +444,11 @@ export class GameView3D {
       const sp = this.running ? GAME_CONFIG.runSpeed : GAME_CONFIG.walkSpeed;
       const vx = (dx / len) * sp * dt;
       const vz = (dz / len) * sp * dt;
-      if (this.fits(p.x + vx, p.z) && stepAllowed(p.x, p.z, p.x + vx, p.z)) p.x += vx;
-      if (this.fits(p.x, p.z + vz) && stepAllowed(p.x, p.z, p.x, p.z + vz)) p.z += vz;
-      const portal = applyPortal(p.x, p.z);
-      if (portal && this.fits(portal.x, portal.y)) p.set(portal.x, 0, portal.y);
+      // mêmes règles que le serveur (stepMove partagé) : murs, garde-corps, changements de niveau
+      _step.x = p.x;
+      _step.y = p.z;
+      stepMove(_step, vx, vz, this.fitsFn);
+      p.set(_step.x, 0, _step.y);
     }
     const err = _server.distanceTo(p);
     if (err > 2) p.copy(_server);
@@ -583,7 +585,7 @@ export class GameView3D {
     const hit = this.raycaster.intersectObjects(this.villa.colliders, false)[0];
     const d = hit ? Math.max(0.35, hit.distance - 0.25) : this.dist;
     this.camera.position.copy(target).addScaledVector(offset, d);
-    this.camera.position.y = Math.max(0.3, this.camera.position.y);
+    this.camera.position.y = Math.max(me.pos.y + 0.3, this.camera.position.y);
     this.camera.lookAt(target);
     me.c3d.setVisibleBody(d > 0.75);
     this.selfLight.position.copy(head);
@@ -592,10 +594,13 @@ export class GameView3D {
   // ───────────── boucle ─────────────
 
   private buildRain(count: number) {
-    const outdoor = ROOMS.filter((r) => r.outdoor);
+    // extérieurs du rez-de-chaussée, au prorata de leur surface (les cabanes sont dans le verger)
+    const outdoor = ROOMS.filter((r) => r.outdoor && !r.level);
+    const area = outdoor.reduce((s, r) => s + r.rect.w * r.rect.h, 0);
     const pos = new Float32Array(count * 6);
     for (let i = 0; i < count; i++) {
-      const r = outdoor[i % outdoor.length].rect;
+      let k = Math.random() * area;
+      const r = (outdoor.find((o) => (k -= o.rect.w * o.rect.h) < 0) ?? outdoor[0]).rect;
       const x = r.x + Math.random() * r.w;
       const z = r.y + Math.random() * r.h;
       const y = Math.random() * 12;
@@ -744,6 +749,7 @@ export class GameView3D {
 }
 
 const _target = new THREE.Vector3();
+const _step = { x: 0, y: 0 };
 const _tmpR = new THREE.Vector3();
 const _server = new THREE.Vector3();
 

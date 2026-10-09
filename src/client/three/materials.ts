@@ -132,6 +132,31 @@ export function marbleTex() {
   });
 }
 
+/** Tuiles de toit (écailles en rangées décalées) — 1 m de texture. */
+export function shingleTex() {
+  return canvasTex('shingles', 256, (x, s) => {
+    const r = rand(11);
+    x.fillStyle = '#3a1d18';
+    x.fillRect(0, 0, s, s);
+    const rows = 8;
+    const cols = 6;
+    const rh = s / rows;
+    const cw = s / cols;
+    for (let j = 0; j < rows; j++)
+      for (let i = -1; i <= cols; i++) {
+        const ox = (j % 2) * (cw / 2);
+        const v = 0.75 + r() * 0.35;
+        x.fillStyle = `rgb(${Math.round(128 * v)},${Math.round(56 * v)},${Math.round(42 * v)})`;
+        x.beginPath();
+        x.roundRect(i * cw + ox + 1.5, j * rh + 1, cw - 3, rh * 1.15, [0, 0, cw / 2.4, cw / 2.4]);
+        x.fill();
+        x.fillStyle = 'rgba(0,0,0,0.25)';
+        x.fillRect(i * cw + ox + 1.5, j * rh + rh - 3, cw - 3, 3);
+      }
+    noise(x, s, 14, 5);
+  });
+}
+
 export function concreteTex() {
   return canvasTex('concrete', 256, (x, s) => {
     x.fillStyle = '#5b5852';
@@ -268,6 +293,7 @@ export const MAT = {
     mat('water', () =>
       new THREE.MeshStandardMaterial({ color: '#1c2f3d', normalMap: rep(photo('Water_1_M_Normal.jpg'), 2, 2), roughness: 0.05, metalness: 0.4 }),
     ),
+  shingles: (w: number, h: number) => mat(`shingles|${w}|${h}`, () => new THREE.MeshStandardMaterial({ map: rep(shingleTex(), w, h), roughness: 0.82 })),
   glass: () => mat('glass', () => new THREE.MeshStandardMaterial({ color: '#16202e', roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.55 })),
 };
 

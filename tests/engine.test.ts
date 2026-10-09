@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameInstance } from '../src/server/game/GameInstance';
 import { randomCharacter } from '../src/shared/content/character';
-import { roomById } from '../src/shared/content/villa';
+import { gridX, roomById } from '../src/shared/content/villa';
 import type { PlayerState } from '../src/server/game/state';
 
 function makeGame(n = 4, seed = 42) {
@@ -75,11 +75,11 @@ test('les joueurs ne voient que ce qui est dans leur pièce', () => {
 test('le mouvement est bloqué par les murs et la porte verrouillée de la cave', () => {
   const { g, advance } = makeGame(1);
   const [a] = [...g.players.values()];
-  a.pos = { x: 5.5, y: 12.5 }; // juste au-dessus de la porte de la cave (5,13)
-  g.setInput(a.id, 0, 1);
+  a.pos = { x: gridX(-1, 11.5), y: 17.5 }; // sous-sol, juste à côté de la porte de la cave (10,17)
+  g.setInput(a.id, -1, 0);
   advance(1000);
-  assert.ok(a.pos.y < 13, 'ne traverse pas la porte verrouillée');
-  g.unlockedDoors.add('d_kitchen_cellar');
+  assert.ok(a.pos.x > gridX(-1, 10.9), 'ne traverse pas la porte verrouillée');
+  g.unlockedDoors.add('d_basement_cellar');
   advance(1000);
   assert.equal(a.roomId, 'cellar');
 });
@@ -176,6 +176,8 @@ test('boucle complète : arme → opportunité → meurtre → découverte → r
 test('relations : alliance (canal privé + position partagée), pacte rompu = trahison → vendetta possible', () => {
   const { g, place } = makeGame(3, 11);
   const [a, b, c] = [...g.players.values()];
+  // le tirage de départ peut lier a et b par un pacte secret (conspiration) : on part d'une page blanche
+  for (let i = g.relations.length - 1; i >= 0; i--) if (g.relations[i].type === 'PACT') g.relations.splice(i, 1);
   place(a, 'living');
   place(b, 'living', 1);
   a.motiveAgainst.delete(b.id);
@@ -225,12 +227,12 @@ test('cacher puis fouiller : seul celui qui fouille découvre l’objet', () => 
   g.tick();
   g.action(a.id, { type: 'take', objectId: cloth.id });
   place(a, 'living');
-  a.pos = { x: 15.5, y: 8.5 }; // sous le canapé
+  a.pos = { x: 23.5, y: 11.5 }; // devant le canapé
   g.tick();
   g.action(a.id, { type: 'hide', objectId: cloth.id, furnitureId: 'f_living_sofa' });
   assert.equal(cloth.location.kind, 'hidden');
   place(b, 'living');
-  b.pos = { x: 14.5, y: 8.5 };
+  b.pos = { x: 24.5, y: 11.5 };
   g.tick();
   assert.ok(!g.buildSnapshot(b).objects.some((o) => o.id === cloth.id));
   g.action(b.id, { type: 'search', furnitureId: 'f_living_sofa' });
