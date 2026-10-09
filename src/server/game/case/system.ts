@@ -60,6 +60,9 @@ export const CASE_TIMING = {
   eliminationCooldownSec: 60,
 };
 
+/** accord en genre selon le personnage incarné */
+const ag = (p: PlayerState | undefined) => (p?.character.appearance === 'feminine' ? 'e' : '');
+
 const WEAPON_CLASS_TEXT: Record<string, string> = {
   sharp: 'une plaie profonde et nette : une lame fine',
   blunt: 'un traumatisme crânien : un objet lourd et contondant',
@@ -442,6 +445,10 @@ export class CaseSystem {
         } else {
           inner.location = { kind: 'floor', roomId: p.roomId, pos: { ...p.pos } };
           out.push(`À l’intérieur : ${inner.name} (posé à vos pieds, inventaire plein).`);
+          if (this.content(inner) && !inner.def.tags.includes('media')) {
+            const txt = this.readObject(p, inner);
+            if (txt) out.push(txt);
+          }
         }
       }
     }
@@ -707,18 +714,18 @@ export class CaseSystem {
       const guilty = [...v.ballots.values()].filter((c) => c === 'guilty').length;
       const accused = g.players.get(v.accusedId!)!;
       const convicted = guilty > v.eligible.size / 2;
-      this.votesHistory.push({ trigger: v.trigger, accusedName: accused.name, result: convicted ? `Arrêté·e (${guilty}/${v.eligible.size} « coupable »)` : `Relâché·e (${guilty}/${v.eligible.size} « coupable », majorité absolue requise)` });
+      this.votesHistory.push({ trigger: v.trigger, accusedName: accused.name, result: convicted ? `Arrêté${ag(accused)} (${guilty}/${v.eligible.size} « coupable »)` : `Relâché${ag(accused)} (${guilty}/${v.eligible.size} « coupable », majorité absolue requise)` });
       if (!convicted) {
-        g.feedAll('announce', `${accused.name} n’est pas arrêté·e (${guilty} voix « coupable » sur ${v.eligible.size} votants possibles).`);
+        g.feedAll('announce', `${accused.name} n’est pas arrêté${ag(accused)} (${guilty} voix « coupable » sur ${v.eligible.size} votants possibles).`);
       } else this.arrest(accused, v.trigger);
     } else {
       const tally = new Map<string, number>();
       for (const c of v.ballots.values()) tally.set(c, (tally.get(c) ?? 0) + 1);
       const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1]);
       const top = sorted[0] && (sorted.length === 1 || sorted[0][1] > sorted[1][1]) ? sorted[0] : null;
-      this.votesHistory.push({ trigger: v.trigger, accusedName: top ? g.nameOf(top[0]) : undefined, result: top ? `Livré·e à la police (${top[1]} voix)` : 'Égalité ou aucun vote : personne n’est livré·e' });
+      this.votesHistory.push({ trigger: v.trigger, accusedName: top ? g.nameOf(top[0]) : undefined, result: top ? `Livré${ag(g.players.get(top[0]))} à la police (${top[1]} voix)` : 'Égalité ou aucun vote : personne n’est livré à la police' });
       if (top) this.arrest(g.players.get(top[0])!, v.trigger, true);
-      if (!this.epilogue) this.finish('murderer', top ? `${g.nameOf(top[0])} est livré·e à la police… à tort. Le meurtrier reste libre.` : 'Le groupe n’a pas su trancher. Le doute profite au meurtrier.');
+      if (!this.epilogue) this.finish('murderer', top ? `${g.nameOf(top[0])} est livré${ag(g.players.get(top[0]))} à la police… à tort. Le vrai coupable reste libre.` : 'Le groupe n’a pas su trancher. Le doute profite au meurtrier.');
     }
     g.markAllDirty();
   }
@@ -728,13 +735,13 @@ export class CaseSystem {
     p.arrested = true;
     p.input = { x: 0, y: 0 };
     this.arrestedOrder.push(p.id);
-    g.log('PLAYER_ARRESTED', { targetId: p.id, text: `${p.name} est arrêté·e (${trigger})` });
+    g.log('PLAYER_ARRESTED', { targetId: p.id, text: `${p.name} est arrêté${ag(p)} (${trigger})` });
     if (p.id === this.truth.murdererId) {
-      this.finish('innocents', `${p.name} est arrêté·e. C’était bien le meurtrier.`);
+      this.finish('innocents', `${p.name} est arrêté${ag(p)}. C’était bien ${ag(p) ? 'la meurtrière' : 'le meurtrier'}.`);
       return;
     }
     if (!final) {
-      g.feedAll('danger', `${p.name} est arrêté·e et enfermé·e dans la cave jusqu’à l’aube. Son secret éclate : ${p.secretReveal}`);
+      g.feedAll('danger', `${p.name} est arrêté${ag(p)} et enfermé${ag(p)} dans la cave jusqu’à l’aube. Son secret éclate : ${p.secretReveal}`);
       this.revealedSecrets.add(p.id);
       g.feed(p.id, 'announce', 'Vous êtes arrêté·e. Vous restez spectateur·rice jusqu’à la fin de la nuit.');
       this.checkMurdererWin();
@@ -886,7 +893,7 @@ export class CaseSystem {
         const al = x ? this.alibis.get(x.id) : undefined;
         if (!x || !al) throw new UserError('Ce joueur n’a pas encore déclaré d’alibi.');
         const tr = t.players.get(x.id)!;
-        const verdict = al.place !== tr.place ? 'FAUSSE' : tr.absence ? `PARTIELLEMENT EXACTE : présent·e à ce lieu, mais absent·e de ${formatClock(tr.absence.from)} à ${formatClock(tr.absence.to)}` : 'EXACTE';
+        const verdict = al.place !== tr.place ? 'FAUSSE' : tr.absence ? `PARTIELLEMENT EXACTE : présent${ag(x)} à ce lieu, mais absent${ag(x)} de ${formatClock(tr.absence.from)} à ${formatClock(tr.absence.to)}` : 'EXACTE';
         return `Vérification de l’alibi de ${x.name} (« ${al.placeName} ») : ${verdict}.`;
       }
       case 'social_profile': {
@@ -972,7 +979,11 @@ export class CaseSystem {
       camp === 'murderer'
         ? 'Ne pas être arrêté·e. Brouillez les pistes, détruisez ce qui vous accuse, ralliez des alliés. Vous ne pouvez éliminer que ceux qui se sont officiellement opposés à vous.'
         : camp === 'protector'
-          ? `Le meurtrier est ${this.g.nameOf(t.murdererId)}. Il ou elle détient la preuve de votre secret : s’il ou elle est arrêté·e, vous tombez aussi. Vous gagnez si ${this.g.nameOf(t.murdererId)} reste libre. Vous pouvez aussi le ou la dénoncer : vous rejoignez alors les innocents.`
+          ? (() => {
+              const m = this.g.players.get(t.murdererId);
+              const f = !!ag(m);
+              return `${f ? 'La meurtrière' : 'Le meurtrier'} est ${m?.name}. ${f ? 'Elle' : 'Il'} détient la preuve de votre secret : ${f ? 'si elle est arrêtée' : 's’il est arrêté'}, vous tombez aussi. Vous gagnez si ${m?.name} reste libre. Vous pouvez aussi ${f ? 'la' : 'le'} dénoncer : vous rejoignez alors les innocents.`;
+            })()
           : 'Trouver qui a tué et le faire arrêter par un vote, sans envoyer d’innocent en cellule. Protégez votre propre secret si vous le pouvez.';
     return {
       camp,
@@ -985,7 +996,7 @@ export class CaseSystem {
           : camp === 'protector'
             ? [t.players.get(t.murdererId) ? `Ce que sait ${this.g.nameOf(t.murdererId)} sur vous : ${pt.secret.text}` : '']
             : pt.absence
-              ? [`Vous vous êtes absenté·e de ${formatClock(pt.absence.from)} à ${formatClock(pt.absence.to)} (${pt.absence.whereabouts}). On risque de vous le reprocher : une preuve de l’endroit où vous étiez existe quelque part dans la villa.`]
+              ? [`Vous vous êtes absenté${ag(p)} de ${formatClock(pt.absence.from)} à ${formatClock(pt.absence.to)} (${pt.absence.whereabouts}). On risque de vous le reprocher : une preuve de l’endroit où vous étiez existe quelque part dans la villa.`]
               : [],
       evidence: [...(this.read.get(p.id)?.values() ?? [])].sort((a, b) => a.at - b.at),
       arrested: p.arrested,

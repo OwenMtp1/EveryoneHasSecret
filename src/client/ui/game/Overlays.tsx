@@ -64,7 +64,7 @@ export function VoteModal() {
           <div className="vote-accused">
             <CastPortrait castId={accused.character.castId} size={72} />
             <div>
-              <h3>{accused.name} est-il ou elle coupable ?</h3>
+              <h3>{accused.name} est-{accused.character.appearance === 'feminine' ? 'elle' : 'il'} coupable ?</h3>
               {v.accusationText && <p className="small">« {v.accusationText} » — {v.accuserName}</p>}
             </div>
           </div>
@@ -257,7 +257,7 @@ export function Epilogue() {
           <div className="epilogue-culprit fade-in">
             <CastPortrait castId={murderer.character.castId} size={110} variant="card" />
             <div>
-              <div className="muted">Le meurtrier</div>
+              <div className="muted">{murderer.character.appearance === 'feminine' ? 'La meurtrière' : 'Le meurtrier'}</div>
               <div className="culprit-name">{e.murdererName}</div>
               <p>{e.motive}</p>
               {e.protectorNames.length > 0 && <p className="small">Protégé·e par : {e.protectorNames.join(', ')}</p>}

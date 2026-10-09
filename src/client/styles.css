@@ -629,3 +629,9 @@ kbd {
 .reveal-kicker { letter-spacing: 0.3em; font-size: 12px; color: var(--gold-2); text-transform: uppercase; }
 .reveal-title { font-family: var(--serif); font-size: clamp(28px, 5vw, 52px); }
 .reveal-sub { color: var(--muted); font-size: 15px; }
+/* salon : la galerie garde sa hauteur, la page défile si l'écran est petit */
+.lobby { overflow-y: auto; }
+.lobby > * { flex-shrink: 0; }
+.lobby .lobby-stage { flex: 1 0 200px; min-height: 200px; }
+.cast-gallery { flex: 0 0 auto; min-height: 260px; max-height: 44vh; }
+.cast-gallery .seg button { white-space: nowrap; }

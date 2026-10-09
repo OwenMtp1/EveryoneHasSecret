@@ -278,7 +278,7 @@ export class GameView3D {
       } catch {
         /* stockage indisponible */
       }
-      if (body && v.phase === 'ARRIVAL' && !seen) {
+      if (body && (v.phase === 'ARRIVAL' || v.phase === 'INVESTIGATION') && v.alive && !seen) {
         this.reveal = { t0: performance.now(), target: toRender(body.pos.x, body.pos.y, new THREE.Vector3()) };
         this.onReveal(true);
       }

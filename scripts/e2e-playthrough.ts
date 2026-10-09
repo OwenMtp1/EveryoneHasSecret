@@ -1,175 +1,261 @@
-import { chromium, type Page } from 'playwright-core';
-import { buildWorldGrid, doorAt } from '../src/shared/content/villa';
 /**
- * Partie complète automatisée dans de vrais navigateurs (3 joueurs) : inscription → personnage →
- * lobby privé → villa → arme → opportunité → meurtre → découverte → rôles → vote → épilogue → lobby.
+ * Partie complète automatisée, de l'inscription à l'épilogue, contre le VRAI serveur.
  *
- *   EHAS_DB=/tmp/e2e.sqlite EHAS_TIME_SCALE=0.15 EHAS_TRANSITION_MS=2500 npm start   (base vierge)
+ *  - L'hôte joue dans Chromium (interface réelle, captures d'écran à chaque étape clé).
+ *  - Deux autres joueurs sont des clients temps réel (mêmes événements que le navigateur).
+ *  - Les déplacements suivent les règles du serveur (scripts/lib/walk.ts), escaliers compris.
+ *
+ *   EHAS_DB=/tmp/e2e.sqlite EHAS_TRANSITION_MS=2500 EHAS_LOAD_TIMEOUT_MS=90000 PORT=3001 npm start
  *   node --import tsx scripts/e2e-playthrough.ts
  *
  * Variables : E2E_BASE (défaut http://localhost:3001), CHROMIUM_PATH, E2E_SHOTS (défaut screenshots/).
  */
 import { mkdirSync } from 'node:fs';
-const BASE = `${process.env.E2E_BASE ?? 'http://localhost:3001'}/?debug`;
+import { chromium, type Page } from 'playwright-core';
+import { io, type Socket } from 'socket.io-client';
+import type { GameSelfView, LobbyView } from '../src/shared/types';
+import { CAST } from '../src/shared/content/cast';
+import { findPath } from './lib/walk';
+import { levelOf } from '../src/shared/content/villa';
+
+const BASE = process.env.E2E_BASE ?? 'http://localhost:3001';
 const SHOTS = process.env.E2E_SHOTS ?? 'screenshots';
 mkdirSync(SHOTS, { recursive: true });
-const grid = buildWorldGrid();
-const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
-const errors: string[] = [];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const log = (...a: unknown[]) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
+const errors: string[] = [];
 
-function path(from: { x: number; y: number }, to: { x: number; y: number }) {
-  const W = grid.w;
-  const ok = (x: number, y: number) => {
-    const i = y * W + x;
-    if (!grid.rooms[i] || grid.blocked[i]) return false;
-    const d = doorAt(grid, x, y);
-    return !d?.lockedBy;
-  };
-  const s = [Math.floor(from.x), Math.floor(from.y)];
-  const t = [Math.floor(to.x), Math.floor(to.y)];
-  const prev = new Map<number, number>();
-  const q = [s[1] * W + s[0]];
-  prev.set(q[0], -1);
-  while (q.length) {
-    const c = q.shift()!;
-    if (c === t[1] * W + t[0]) break;
-    const cx = c % W, cy = Math.floor(c / W);
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = cx + dx, ny = cy + dy, n = ny * W + nx;
-      if (!prev.has(n) && ok(nx, ny)) { prev.set(n, c); q.push(n); }
+interface Client {
+  name: string;
+  token: string;
+  id: string;
+  s: Socket;
+  view?: GameSelfView;
+  lobby?: LobbyView | null;
+}
+
+async function http<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
+  const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`${path}: ${data.error}`);
+  return data as T;
+}
+
+function call<T>(c: Client, event: string, ...args: unknown[]): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`pas de réponse : ${event}`)), 10000);
+    c.s.emit(event, ...args, (r: { ok: boolean; data: T; error: string }) => {
+      clearTimeout(t);
+      r.ok ? resolve(r.data) : reject(new Error(r.error));
+    });
+  });
+}
+
+async function client(name: string): Promise<Client> {
+  const reg = await http<{ token: string; user: { id: string } }>('POST', '/api/auth/register', { username: name, password: 'secret123' });
+  const s = io(BASE, { auth: { token: reg.token }, transports: ['websocket'], forceNew: true });
+  const c: Client = { name, token: reg.token, id: reg.user.id, s };
+  s.on('game:full', (v: GameSelfView) => (c.view = v));
+  s.on('game:snapshot', (v: Partial<GameSelfView>) => c.view && (c.view = { ...c.view, ...v }));
+  s.on('lobby:state', (l: LobbyView | null) => (c.lobby = l));
+  s.on('lobby:intro', (p: { plan: { id: string }; loading: boolean }) => {
+    if (p.loading && name !== 'host') s.emit('lobby:intro-ready', { planId: p.plan.id });
+  });
+  await new Promise<void>((r, j) => (s.on('connect', () => r()), s.on('connect_error', j)));
+  return c;
+}
+
+async function waitFor<T>(what: string, fn: () => T | undefined | null | false, ms = 60000): Promise<T> {
+  const t0 = Date.now();
+  for (;;) {
+    const v = fn();
+    if (v) return v;
+    if (Date.now() - t0 > ms) throw new Error(`délai dépassé : ${what}`);
+    await sleep(100);
+  }
+}
+
+const me = (c: Client) => c.view!.players.find((p) => p.id === c.id)!;
+const act = (c: Client, a: Record<string, unknown>) => call<{ message?: string }>(c, 'game:action', a).then((r) => r.message ?? '');
+
+/** Marche jusqu'à un point (chemin calculé avec les règles du serveur), en courant. */
+async function walkTo(c: Client, target: { x: number; y: number }, label: string) {
+  const start = me(c).pos!;
+  const path = findPath(start, target, new Set(c.view!.unlockedDoors));
+  if (!path) throw new Error(`aucun chemin vers ${label}`);
+  let last = { x: 0, y: 0 };
+  for (const wp of path.slice(1)) {
+    for (let i = 0; i < 120; i++) {
+      const pos = me(c).pos!;
+      // passage d'escalier ou d'échelle : on continue tout droit jusqu'au changement de niveau
+      if (levelOf(pos.x) !== levelOf(wp.x)) {
+        c.s.emit('game:input', { dx: last.x, dy: last.y, run: false });
+        await sleep(50);
+        continue;
+      }
+      const dx = wp.x - pos.x;
+      const dy = wp.y - pos.y;
+      if (Math.hypot(dx, dy) < 0.25) break;
+      const d = Math.hypot(dx, dy);
+      last = { x: dx / d, y: dy / d };
+      c.s.emit('game:input', { dx: last.x, dy: last.y, run: true });
+      await sleep(50);
     }
   }
-  const out: { x: number; y: number }[] = [];
-  let c = t[1] * W + t[0];
-  if (!prev.has(c)) throw new Error('no path');
-  while (c !== -1) { out.unshift({ x: (c % W) + 0.5, y: Math.floor(c / W) + 0.5 }); c = prev.get(c)!; }
-  return out;
+  c.s.emit('game:input', { dx: 0, dy: 0 });
+  await sleep(300);
+  const pos = me(c).pos!;
+  log(`${c.name} arrivé·e : ${label} (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}) — ${me(c).roomId}`);
 }
 
-const myPos = (p: Page) => p.evaluate(() => { const g = (window as any).__ehas.store.getState().game; return g.players.find((x: any) => x.id === g.you).pos; });
-const view = (p: Page) => p.evaluate(() => (window as any).__ehas.store.getState().game);
-async function walkTo(p: Page, target: { x: number; y: number }) {
-  const pts = path(await myPos(p), target);
-  for (const wp of pts.slice(1)) {
-    for (let i = 0; i < 60; i++) {
-      const pos = await myPos(p);
-      const dx = wp.x - pos.x, dy = wp.y - pos.y;
-      if (Math.hypot(dx, dy) < 0.2) break;
-      await p.evaluate(([dx, dy]) => (window as any).__ehas.getSocket().emit('game:input', { dx, dy }), [Math.abs(dx) > 0.1 ? Math.sign(dx) : 0, Math.abs(dy) > 0.1 ? Math.sign(dy) : 0]);
-      await sleep(45);
+async function shot(page: Page, name: string) {
+  try {
+    await page.screenshot({ path: `${SHOTS}/${name}.png`, timeout: 60000 });
+    log('capture', name);
+  } catch (e) {
+    log('capture impossible', name, (e as Error).message);
+  }
+}
+
+const stamp = Date.now().toString(36).slice(-4);
+const host = await client(`hote_${stamp}`);
+const b = await client(`bea_${stamp}`);
+const c = await client(`cyril_${stamp}`);
+log('3 comptes créés');
+
+// ── navigateur de l'hôte : session restaurée depuis le stockage local ──
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+await ctx.addInitScript((t) => localStorage.setItem('ehas.token', t), host.token);
+const page = await ctx.newPage();
+page.setDefaultTimeout(120000);
+page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+page.on('console', (m) => m.type() === 'error' && !m.text().includes('favicon') && errors.push(`console: ${m.text()}`));
+await page.goto(`${BASE}/?debug`);
+await page.waitForFunction(() => document.body.innerText.includes('SERVEURS'));
+log('hôte au menu (session restaurée)');
+
+// ── salon privé, sélection des personnages ──
+const lobby = await call<LobbyView>(host, 'lobby:create', { name: 'E2E Villa', maxPlayers: 6, visibility: 'PRIVATE', duration: 'short' });
+for (const p of [b, c]) await call(p, 'lobby:join', { code: lobby.code });
+await page.waitForFunction(() => document.querySelector('.cast-grid'));
+await page.evaluate(() => (document.querySelector('.cast-card.cast-free') as HTMLButtonElement).click());
+await waitFor('choix de l’hôte', () => host.lobby?.players.find((p) => p.userId === host.id)?.castId);
+const hostCast = host.lobby!.players.find((p) => p.userId === host.id)!.castId!;
+const free = CAST.map((x) => x.id).filter((id) => id !== hostCast);
+await call(b, 'lobby:pick', free[3]);
+try {
+  await call(c, 'lobby:pick', free[3]);
+  errors.push('BUG : deux joueurs ont obtenu le même personnage');
+} catch (e) {
+  log('réservation refusée comme prévu :', (e as Error).message);
+}
+await call(c, 'lobby:pick', free[24]);
+for (const p of [b, c]) await call(p, 'lobby:ready', true);
+await sleep(1500);
+await shot(page, '01-salon-galerie');
+
+// ── lancement : chargement, cinématique, découverte du corps ──
+await call(host, 'lobby:start');
+await waitFor('vue de partie', () => host.view && b.view && c.view, 180000);
+log('partie lancée — scénario', host.view!.caseInfo?.scenarioTitle);
+await page.waitForFunction(() => document.querySelector('.reveal-caption') || document.querySelector('.hud-top'), undefined, { timeout: 240000 });
+await shot(page, '02-decouverte-du-corps');
+await sleep(7000);
+await shot(page, '03-en-jeu');
+
+const all = [host, b, c];
+const murderer = all.find((p) => p.view!.dossier!.camp === 'murderer')!;
+const sleuth = all.find((p) => p !== murderer)!;
+const third = all.find((p) => p !== murderer && p !== sleuth)!;
+log(`meurtrier : ${murderer.name} · enquêteur·rice : ${sleuth.name}`);
+
+// ── alibis publics ──
+for (const p of all) {
+  const place = p === murderer ? 'phare' : 'boussole';
+  await act(p, { type: 'alibi', place, text: 'J’étais avec les autres.' });
+}
+
+// ── enquête : fouiller le corps (touche E dans le navigateur si l'hôte enquête) ──
+await waitFor('fin de la découverte', () => sleuth.view!.phase === 'INVESTIGATION', 120000);
+const body = sleuth.view!.bodies.find((x) => x.npc)!;
+await walkTo(sleuth, body.pos, 'corps de la victime');
+if (sleuth === host) {
+  // regarder le corps (souris) : la cible est ce que vise la caméra
+  const mp = me(host).pos!;
+  const { localX } = await import('../src/shared/content/villa');
+  const yaw = Math.atan2(localX(body.pos.x) - localX(mp.x), body.pos.y - mp.y);
+  await page.evaluate((y) => {
+    const v = (window as unknown as { __ehas: { view3d: { yaw: number; tpPitch: number } } }).__ehas.view3d;
+    v.yaw = y;
+    v.tpPitch = 1.1;
+  }, yaw);
+  await page.waitForFunction(() => document.querySelector('.interact-title')?.textContent?.startsWith('Corps'), undefined, { timeout: 60000 }).catch(() => log('invite : pas sur le corps'));
+  await shot(page, '04-invite-interaction');
+  await page.keyboard.press('KeyE');
+  await sleep(1500);
+} else await act(sleuth, { type: 'search_body', bodyId: body.id });
+const onBody = await waitFor('objets du corps', () => sleuth.view!.objects.filter((o) => o.name.includes('sur le corps')).length >= 2 && sleuth.view!.objects.filter((o) => o.name.includes('sur le corps')));
+for (const o of onBody) log(await act(sleuth, { type: 'take', objectId: o.id }));
+const phone = await waitFor('téléphone en poche', () => sleuth.view!.inventory.find((o) => o.type === 'phone'));
+log('téléphone :', await act(sleuth, { type: 'examine', objectId: phone.id }));
+
+// ── la boîte cadenassée est cachée dans la chambre de la victime : on fouille ──
+const boxKey = await waitFor('clé dorée en poche', () => sleuth.view!.inventory.find((o) => o.name.includes('dorée')));
+const { allFurniture } = await import('../src/shared/content/villa');
+let diaryRead = false;
+for (const room of ['suite', 'bedroom2', 'guestroom']) {
+  for (const f of allFurniture().filter((x) => x.roomId === room && x.hiding)) {
+    await walkTo(sleuth, { x: f.x + f.w / 2, y: f.y + f.h + 0.6 }, f.name);
+    const r = await act(sleuth, { type: 'search', furnitureId: f.id }).catch((e) => String(e.message));
+    log('fouille', f.name, '→', r);
+    await sleep(300);
+    const box = sleuth.view!.objects.find((o) => o.type === 'locked_box');
+    if (box) {
+      if (sleuth.view!.inventory.length >= 4) await act(sleuth, { type: 'drop', objectId: sleuth.view!.inventory.find((o) => o.id !== boxKey.id && o.id !== phone.id)!.id });
+      await act(sleuth, { type: 'take', objectId: box.id });
+      log(await act(sleuth, { type: 'open', objectId: box.id }));
+      diaryRead = true;
+      break;
     }
   }
-  await p.evaluate(() => (window as any).__ehas.getSocket().emit('game:input', { dx: 0, dy: 0 }));
-  await sleep(150);
+  if (diaryRead) break;
 }
-const act = (p: Page, a: any) => p.evaluate((a) => (window as any).__ehas.call('game:action', a), a);
-
-async function newPlayer(name: string, first: string, last: string) {
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 } });
-  const page = await ctx.newPage();
-  page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
-  await page.goto(BASE);
-  await page.getByRole('button', { name: 'Créer un compte' }).click();
-  await page.fill('input[name=username]', name);
-  await page.fill('input[name=password]', 'secret123');
-  await page.fill('input[name=confirm]', 'secret123');
-  await page.getByRole('button', { name: 'CRÉER MON COMPTE' }).click();
-  await page.waitForSelector('text=CREATE YOUR CHARACTER');
-  await page.getByRole('button', { name: '🎲 SURPRENDS-MOI' }).click();
-  await page.fill('input[name=firstName]', first);
-  await page.fill('input[name=lastName]', last);
-  await page.getByRole('button', { name: 'ENTRER DANS LE JEU' }).click();
-  await page.waitForSelector('text=JOUER');
-  return page;
+if (!diaryRead) throw new Error('boîte cadenassée introuvable');
+const diary = await waitFor('journal lu', () => sleuth.view!.dossier!.evidence.find((e) => e.title.startsWith('Journal')));
+const pin = diary.lines.join(' ').match(/l’écris ici : (\d{4})/)![1];
+log('code du téléphone trouvé dans le journal :', pin);
+log(await act(sleuth, { type: 'unlock', objectId: phone.id, code: pin }));
+if (sleuth === host) {
+  await page.keyboard.press('Digit1');
+  await sleep(2500);
+  await shot(page, '05-dossier-personnel');
+  await page.keyboard.press('Digit1');
 }
 
-const a = await newPlayer('owen', 'Owen', 'Delacroix');
-const b = await newPlayer('thomas', 'Thomas', 'Beaumont');
-const c = await newPlayer('camille', 'Camille', 'Moreau');
-const lobby: any = await a.evaluate(() => (window as any).__ehas.call('lobby:create', { name: 'Villa Beaumont', maxPlayers: 4, visibility: 'PRIVATE' }));
-for (const p of [b, c]) await p.evaluate((code) => (window as any).__ehas.call('lobby:join', { code }), lobby.code);
-for (const p of [b, c]) await p.evaluate(() => (window as any).__ehas.call('lobby:ready', true));
-await sleep(300);
-await a.evaluate(() => (window as any).__ehas.call('lobby:start'));
-for (const p of [a, b, c]) await p.waitForSelector('.game', { timeout: 15000 });
-const t0 = Date.now();
-await sleep(800);
-
-// Owen va chercher le couteau
-const knife = (await view(a)).objects.find((o: any) => o.type === 'knife');
-console.log('knife visible from hall?', !!knife);
-await walkTo(a, { x: 8.5, y: 9.5 });
-const v = await view(a);
-const k = v.objects.find((o: any) => o.type === 'knife');
-console.log('in kitchen, knife at', k?.pos);
-await walkTo(a, k.pos);
-await a.screenshot({ path: `${SHOTS}/20-kitchen.png` });
-await a.locator('.action-group', { hasText: 'Couteau' }).getByRole('button', { name: 'Prendre' }).click();
-await sleep(400);
-console.log('inventory', (await view(a)).inventory.map((o: any) => o.name));
-
-// Thomas rejoint la cuisine, Camille reste au bureau
-await walkTo(b, { x: 8.5, y: 9.5 });
-await walkTo(c, { x: 33.5, y: 10.5 });
-const apos = await myPos(a);
-await walkTo(b, { x: Math.floor(apos.x) + (apos.x < 9 ? 1.5 : -0.5), y: Math.floor(apos.y) + 0.5 });
-console.log('waiting for escalation…', Math.round((Date.now() - t0) / 1000), 's');
-await a.waitForSelector('.opportunity', { timeout: 60000 });
-console.log('opportunity at', Math.round((Date.now() - t0) / 1000), 's, phase', (await view(a)).phase);
-await a.screenshot({ path: `${SHOTS}/21-opportunity.png` });
-await a.getByRole('button', { name: /Saisir/ }).click();
-await a.getByRole('button', { name: /Passer à l’acte/ }).click();
-await sleep(800);
-await a.screenshot({ path: `${SHOTS}/22-after.png` });
-await b.screenshot({ path: `${SHOTS}/23-dead.png` });
-// Owen se lave et part au salon
-await walkTo(a, { x: 7.5, y: 7.5 });
-console.log('wash', await act(a, { type: 'wash' }));
-await walkTo(a, { x: 16.5, y: 10.5 });
-// Camille découvre le corps
-await walkTo(c, { x: 9.5, y: 9.5 });
+// ── dossier commun et accusation formelle ──
+const phoneEv = await waitFor('messages lus', () => sleuth.view!.dossier!.evidence.find((e) => e.title.startsWith('Téléphone')));
+log(await act(sleuth, { type: 'present', objectId: phoneEv.objectId }));
+await sleep(500);
+const accuse = await act(sleuth, { type: 'accuse', targetId: murderer.id, evidenceIds: [phoneEv.objectId, diary.objectId], text: 'Ses messages juste avant le crime.' });
+log(accuse);
+await act(murderer, { type: 'defend', text: 'Je voulais juste lui parler !' });
 await sleep(1500);
-await c.screenshot({ path: `${SHOTS}/24-discovery.png` });
-await c.waitForSelector('.tabs-game .pulse', { timeout: 15000 });
-await sleep(1500);
-await c.keyboard.press('Digit4');
-await sleep(300);
-await c.screenshot({ path: `${SHOTS}/25-investigation.png` });
-const cv = await view(c);
-console.log('roles', cv.role?.name, '| A role', (await view(a)).role?.name, '| phase', cv.phase);
-// Utilisation d'un outil par chacun
-for (const [p, label] of [[a, 'A'], [c, 'C']] as const) {
-  const r = (await view(p)).role;
-  if (!r) continue;
-  for (const t of r.tools) {
-    let targetId: string | undefined;
-    if (t.id === 'request_testimony' || t.id === 'take_prints' || t.id === 'examine_shoes') targetId = (await view(p)).players.find((x: any) => x.id !== (p === a ? cv.players.find((y: any) => y.name.startsWith('Owen'))?.id : cv.you) && x.alive)?.id;
-    const res = await act(p, { type: 'tool', toolId: t.id, targetId }).catch((e: Error) => 'ERR ' + e.message);
-    console.log(label, t.id, '→', JSON.stringify(res).slice(0, 160));
-  }
-}
-await c.keyboard.press('Digit3');
-await sleep(300);
-await c.screenshot({ path: `${SHOTS}/26-notebook.png` });
-// Vote
-console.log('waiting vote…');
-await c.waitForSelector('.vote-modal', { timeout: 90000 });
-await c.screenshot({ path: `${SHOTS}/27-vote.png` });
-const owenId = cv.players.find((x: any) => x.name.startsWith('Owen')).id;
-await act(c, { type: 'vote', suspectId: owenId });
-const testimonyOpen = await a.$('text=Interrogatoire');
-if (testimonyOpen) console.log('A had testimony modal');
-await act(a, { type: 'vote', suspectId: cv.you });
-await c.waitForSelector('.epilogue', { timeout: 10000 });
-await sleep(6500);
-await c.screenshot({ path: `${SHOTS}/28-epilogue.png` });
-await c.getByRole('button', { name: /RETOUR AU LOBBY/ }).click();
-await c.waitForSelector('.lobby', { timeout: 5000 });
-await c.screenshot({ path: `${SHOTS}/29-back-lobby.png` });
+await shot(page, '06-vote');
+await act(third, { type: 'ballot', choice: 'guilty' });
+await waitFor('épilogue', () => host.view!.epilogue, 30000);
+log('épilogue :', host.view!.epilogue!.headline, '— gagnants :', host.view!.epilogue!.winner);
+await sleep(6000);
+await shot(page, '07-epilogue');
+
+// ── retour au salon : personnages libérés pour la partie suivante ──
+for (const p of all) await call(p, 'game:leave').catch(() => {});
+await waitFor('salon réinitialisé', () => host.lobby && host.lobby.status === 'WAITING' && host.lobby.players.every((p) => !p.castId), 20000);
+log('retour au salon : sélections réinitialisées');
+await sleep(2000);
+await shot(page, '08-retour-salon');
+
+console.log('\nErreurs navigateur :', errors.length ? errors : 'aucune');
 await browser.close();
-if (errors.length) {
-  console.error('Erreurs JS :', errors);
-  process.exit(1);
-}
-console.log('✓ partie complète jouée sans erreur');
+for (const p of all) p.s.disconnect();
+process.exit(errors.some((e) => e.startsWith('BUG') || e.startsWith('pageerror')) ? 1 : 0);

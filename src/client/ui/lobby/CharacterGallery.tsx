@@ -49,7 +49,7 @@ export function CharacterGallery({ lobby, userId }: { lobby: LobbyView; userId: 
       </div>
       {detail && (
         <div className="cast-detail">
-          <CastPortrait castId={detail.id} size={64} variant="card" />
+          <CastPortrait castId={detail.id} size={48} />
           <div className="small">
             <strong>
               {detail.firstName} {detail.lastName}
