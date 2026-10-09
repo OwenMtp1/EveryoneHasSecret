@@ -5,7 +5,7 @@
 import type { LobbyView, LobbyVisibility, ServerFilters, ServerListEntry, EpilogueView } from '@shared/types';
 import { GAME_NAME, META_CONFIG, NIGHT_DURATIONS, isNightDuration, type NightDuration } from '@shared/config';
 import { buildIntroPlan, introSchedule, type IntroPlan } from '@shared/content/intro';
-import { castById } from '@shared/content/cast';
+import { CAST_IDS, castById } from '@shared/content/cast';
 import { characterFromCast } from '@shared/content/character';
 import { GameInstance } from '../game/GameInstance';
 import type { ProfileService } from './profiles';
@@ -13,7 +13,7 @@ import type { FriendService } from './friends';
 import type { NotificationService } from './notifications';
 import type { PresenceService } from './presence';
 import type { MetaStore } from './store';
-import { lobbyCode, newId, shortId, UserError } from '../util';
+import { lobbyCode, newId, pick, shortId, UserError } from '../util';
 
 interface LobbyPlayer {
   userId: string;
@@ -418,7 +418,14 @@ export class LobbyManager {
     // Composition FIGÉE : ces joueurs (et eux seuls) sont dans le véhicule et dans la partie
     const plan = buildIntroPlan(
       l.players.map((p) => ({ userId: p.userId, name: this.nameOf(l, p.userId), character: characterFromCast(castById(p.castId)!) })),
-      { id: shortId('intro_'), seed: Math.floor(Math.random() * 2 ** 31), startedAt: 0, durationMs: this.transitionMs },
+      {
+        id: shortId('intro_'),
+        seed: Math.floor(Math.random() * 2 ** 31),
+        startedAt: 0,
+        durationMs: this.transitionMs,
+        // la victime : un membre du catalogue que personne n'incarne dans ce salon
+        victimCastId: pick(CAST_IDS.filter((id) => !l.players.some((p) => p.castId === id)), Math.random),
+      },
     );
     // 1) Chargement : chaque client charge la villa, les personnages et la partie, puis le signale.
     l.intro = { plan, timers: [], loading: true, ready: new Set() };
@@ -490,6 +497,8 @@ export class LobbyManager {
       title: l.name,
       players,
       timeScale: this.timeScale * NIGHT_DURATIONS[l.duration].scale,
+      voteScale: this.timeScale,
+      victimCastId: plan.victimCastId,
       emit: (userId, event, payload) => {
         if (l.inGame.has(userId)) this.emitter.toUser(userId, event, payload);
       },
@@ -508,12 +517,12 @@ export class LobbyManager {
   private onGameFinished(l: Lobby, epi: EpilogueView) {
     const g = l.game!;
     for (const p of g.players.values()) {
-      const won = epi.caseType === 'quiet' ? false : p.id === epi.culpritId ? !epi.culpritCaught : epi.culpritCaught;
+      const won = epi.outcomes.find((o) => o.playerId === p.id)?.won ?? false;
       this.profiles.recordGame(p.id, won).catch(() => {});
     }
     this.store
       .insertGame(
-        { id: g.id, lobbyName: l.name, caseType: epi.caseType, summary: epi.headline, players: [...g.players.values()].map((p) => p.name), endedAt: Date.now() },
+        { id: g.id, lobbyName: l.name, caseType: epi.scenarioTitle, summary: epi.headline, players: [...g.players.values()].map((p) => p.name), endedAt: Date.now() },
         [...g.players.keys()],
       )
       .catch((e) => console.error('historique non enregistré', e));

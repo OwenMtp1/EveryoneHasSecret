@@ -176,7 +176,7 @@ async function lobbyOf(n: number) {
 
 const ORDER: GameIntroState[] = ['INTRO_CAR', 'INTRO_POINT', 'INTRO_REVEAL', 'INTRO_VILLA', 'GAME_START'];
 
-for (const n of [2, 4, 5, 8]) {
+for (const n of [3, 4, 5, 8]) {
   test(`cinématique synchronisée à ${n} joueurs : même plan, mêmes états, puis la partie`, async () => {
     ctx.lobbies.transitionMs = 250;
     const { clients, host } = await lobbyOf(n);

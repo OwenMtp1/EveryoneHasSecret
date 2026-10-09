@@ -70,7 +70,11 @@ export interface PlayerState {
   motiveAgainst: Set<string>;
   gesture: { kind: GestureKind; seq: number; until: number } | null;
   pendingTestimony: { requestId: string; question: string; fromId: string; fromName: string } | null;
-  vote?: string;
+  /** arrêté·e après un vote : hors jeu (spectateur) */
+  arrested: boolean;
+  accusationsUsed: number;
+  /** gants enfilés : plus d'empreintes laissées */
+  gloves: boolean;
   dirty: boolean;
 }
 
@@ -85,6 +89,7 @@ export type ObjectLocation =
   | { kind: 'floor'; roomId: string; pos: Vec2 }
   | { kind: 'hidden'; roomId: string; furnitureId: string; pos: Vec2 }
   | { kind: 'player'; playerId: string }
+  | { kind: 'inside'; containerId: string }
   | { kind: 'destroyed' };
 
 export interface GameObject {
@@ -121,7 +126,9 @@ export interface Evidence {
 
 export interface Body {
   id: string;
+  /** 'victim' pour la victime de l'affaire (personnage non joueur) */
   playerId: string;
+  npc?: { name: string; character: Character };
   roomId: string;
   pos: Vec2;
   clock: number;

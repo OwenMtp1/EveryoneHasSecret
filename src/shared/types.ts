@@ -127,15 +127,8 @@ export interface ServerFilters {
 
 // ───────────────────────── GAME ─────────────────────────
 
-export type Phase =
-  | 'ARRIVAL'
-  | 'EXPLORATION'
-  | 'SOCIAL'
-  | 'ESCALATION'
-  | 'MAJOR_EVENT'
-  | 'INVESTIGATION'
-  | 'RESOLUTION'
-  | 'EPILOGUE';
+/** Déroulé d'une nuit : découverte du corps → enquête (votes possibles) → délibération finale → épilogue. */
+export type Phase = 'ARRIVAL' | 'INVESTIGATION' | 'RESOLUTION' | 'EPILOGUE';
 
 export type RelationType = 'FRIEND' | 'ALLY' | 'PACT' | 'ENEMY' | 'VENDETTA';
 export type RelationStatus = 'pending' | 'active' | 'broken';
@@ -178,11 +171,23 @@ export interface ObjectView {
   inInventory?: boolean;
   bloody?: boolean;
   lit?: boolean;
+  /** verrouillé (code ou clé) */
+  locked?: boolean;
+  /** le joueur a déjà lu / vu son contenu */
+  known?: boolean;
+  /** gants enfilés */
+  worn?: boolean;
+  /** interactions possibles : read, code, key, open, insert, device, burn, wipe, wear, light, present */
+  caps?: string[];
+  /** indice du verrou (« code à 4 chiffres »…) */
+  lockHint?: string;
 }
 
 export interface BodyView {
   id: string;
+  /** 'victim' pour la victime (personnage non joueur) */
   playerId: string;
+  npc?: boolean;
   name: string;
   character: Character;
   pos: Vec2;
@@ -265,46 +270,134 @@ export interface RoleView {
   tools: { id: string; name: string; description: string; usesLeft?: number }[];
 }
 
-export interface CaseView {
-  type: 'murder' | 'heist' | 'quiet';
-  title: string;
-  victimId?: string;
-  victimName?: string;
-  roomId?: string;
-  roomName?: string;
-  discoveredAt?: number;
-  discoveredBy?: string;
-  summary: string;
+/** Spécification d'une photo d'enquête : rendue par le client avec les vrais personnages de la partie. */
+export interface PhotoView {
+  castIds: string[];
+  scene: 'portrait' | 'group' | 'restaurant' | 'beach' | 'cliff' | 'party' | 'office' | 'street' | 'car' | 'villa';
+  caption: string;
+  seed: number;
 }
 
+/** Ce que l'affaire a de public (connu de tous dès le début). */
+export interface CaseView {
+  scenarioTitle: string;
+  brief: string;
+  victimName: string;
+  victimCastId: string;
+  victimBio: string;
+  roomId: string;
+  roomName: string;
+  /** lieux de la soirée proposés pour une déclaration d'alibi */
+  places: { id: string; name: string }[];
+  /** fin de la phase d'enquête (horodatage client) */
+  endsAt: number;
+  /** une accusation peut-elle être déposée maintenant */
+  canAccuse: boolean;
+  accuseBlockedReason?: string;
+  accusationsLeft: number;
+}
+
+/** Dossier personnel (privé). */
+export interface DossierView {
+  camp: 'murderer' | 'innocent' | 'protector';
+  objective: string;
+  secret: string;
+  memories: string[];
+  briefing: string[];
+  /** pièces que vous avez lues (contenu exact, horodaté) */
+  evidence: EvidenceView[];
+  arrested: boolean;
+}
+
+export interface EvidenceView {
+  objectId: string;
+  title: string;
+  lines: string[];
+  photos?: PhotoView[];
+  at: number;
+}
+
+/** Pièce versée au dossier commun : texte authentique tiré de la preuve, recoupements automatiques. */
+export interface PublicEvidenceView {
+  id: string;
+  authorId: string;
+  authorName: string;
+  title: string;
+  lines: string[];
+  photos?: PhotoView[];
+  againstName?: string;
+  checks: { playerName: string; status: 'confirms' | 'contradicts'; text: string }[];
+  at: number;
+}
+
+export interface AlibiView {
+  playerId: string;
+  playerName: string;
+  place: string;
+  placeName: string;
+  text: string;
+  at: number;
+  /** recoupements avec les pièces versées au dossier */
+  status: 'unverified' | 'confirmed' | 'contradicted';
+}
+
+/** Opposition officielle (irrévocable) : base des éliminations possibles par le meurtrier. */
+export interface OppositionView {
+  fromId: string;
+  fromName: string;
+  toId: string;
+  toName: string;
+  cause: string;
+  at: number;
+}
+
+export interface VoteView {
+  id: string;
+  kind: 'accusation' | 'final';
+  /** déclencheur lisible : « Accusation formelle de X », « Délibération finale »… */
+  trigger: string;
+  accusedId?: string;
+  accusedName?: string;
+  accuserName?: string;
+  accusationText?: string;
+  evidence: { title: string; lines: string[]; photos?: PhotoView[] }[];
+  defense?: string;
+  /** vote final : candidats ; vote d'accusation : 'guilty' | 'innocent' */
+  options: { id: string; label: string }[];
+  eligible: boolean;
+  myChoice?: string;
+  votesCast: number;
+  votesNeeded: number;
+  endsAt: number;
+  rules: string;
+}
+
+export interface EpilogueView {
+  winner: 'innocents' | 'murderer';
+  headline: string;
+  scenarioTitle: string;
+  motive: string;
+  murdererId: string;
+  murdererName: string;
+  protectorNames: string[];
+  arrested: { name: string; guilty: boolean }[];
+  victims: string[];
+  truthTimeline: { at: number; text: string }[];
+  secrets: { playerId: string; name: string; secret: string; camp: string }[];
+  votes: { trigger: string; accusedName?: string; result: string }[];
+  oppositions: { fromName: string; toName: string }[];
+  roles: { name: string; role: string }[];
+  /** résultat personnel de chaque joueur */
+  outcomes: { playerId: string; won: boolean }[];
+}
+
+/** Occasion d'élimination (meurtrier uniquement). */
 export interface Opportunity {
   targetId: string;
   targetName: string;
   objectId: string;
   objectName: string;
   text: string;
-}
-
-export interface VoteState {
-  candidates: { id: string; name: string }[];
-  myVote?: string;
-  votesCast: number;
-  votesNeeded: number;
-  endsAt: number;
-}
-
-export interface EpilogueView {
-  caseType: CaseView['type'];
-  headline: string;
-  culpritId?: string;
-  culpritName?: string;
-  accusedId?: string;
-  accusedName?: string;
-  culpritCaught: boolean;
-  truthTimeline: { at: number; text: string }[];
-  secrets: { playerId: string; name: string; secret: string }[];
-  votes: { voterName: string; suspectName: string; correct: boolean }[];
-  roles: { name: string; role: string }[];
 }
 
 /** État privé complet envoyé à un joueur (sa vision du monde). */
@@ -324,20 +417,23 @@ export interface GameSelfView {
   inventory: ObjectView[];
   relations: RelationView[];
   knowledge: KnowledgeEntry[];
-  secret: string;
   role: RoleView | null;
   caseInfo: CaseView | null;
+  dossier: DossierView | null;
+  publicEvidence: PublicEvidenceView[];
+  alibis: AlibiView[];
+  oppositions: OppositionView[];
   board: BoardEntry[];
   feed: FeedMessage[];
   chat: ChatMessage[];
   opportunity: Opportunity | null;
-  vote: VoteState | null;
+  vote: VoteView | null;
   epilogue: EpilogueView | null;
   unlockedDoors: string[];
   muddy: boolean;
   testimonyRequest: { requestId: string; question: string; fromName: string } | null;
-  /** inventaires des partenaires de pacte */
-  pactInventories: { playerId: string; items: string[] }[];
+  /** joueurs arrêtés (hors jeu, spectateurs) */
+  arrested: string[];
 }
 
 /** Snapshot léger envoyé à haute fréquence. */

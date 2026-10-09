@@ -14,9 +14,9 @@ export const META_CONFIG = {
   characterName: { min: 2, max: 20 },
   lobbyName: { min: 3, max: 32 },
   lobbyCodeLength: 6,
-  /** Nombre minimum de joueurs pour lancer une partie (4 recommandé, 2 permis pour tester). */
-  minPlayersToStart: 2,
-  maxPlayersOptions: [2, 3, 4, 5, 6, 7, 8],
+  /** Nombre minimum de joueurs : un meurtrier et au moins deux innocents (une majorité doit être possible). */
+  minPlayersToStart: 3,
+  maxPlayersOptions: [3, 4, 5, 6, 7, 8],
   defaultMaxPlayers: 6,
   sessionDays: 30,
   chatMaxLength: 280,
@@ -44,8 +44,8 @@ export const GAME_CONFIG = {
   /** Distance d'interaction en tuiles. */
   interactRange: 1.6,
   inventorySize: 4,
-  /** Heure de début de la nuit (minutes depuis minuit). 23:47 */
-  startClockMinutes: 23 * 60 + 47,
+  /** Heure de début de la partie (minutes depuis minuit) : le groupe rentre et découvre le corps. 22:05 */
+  startClockMinutes: 22 * 60 + 5,
   /** Minutes de jeu écoulées par seconde réelle. */
   gameMinutesPerSecond: 0.2,
   /** Durée pendant laquelle les chaussures restent boueuses après le jardin (s réelles). */

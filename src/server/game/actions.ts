@@ -5,7 +5,7 @@
  */
 import type { GameAction } from '@shared/protocol';
 import type { GestureKind } from '@shared/types';
-import { DOORS, FURNITURE, furnitureById, roomName } from '@shared/content/villa';
+import { DOORS, allFurniture, furnitureById, roomName } from '@shared/content/villa';
 import { GAME_CONFIG, formatClock } from '@shared/config';
 import type { GameInstance } from './GameInstance';
 import type { GameObject, PlayerState } from './state';
@@ -21,6 +21,10 @@ export class ActionSystem {
   objectPos(o: GameObject): { x: number; y: number } | null {
     if (o.location.kind === 'floor' || o.location.kind === 'hidden') return o.location.pos;
     if (o.location.kind === 'player') return this.g.players.get(o.location.playerId)?.pos ?? null;
+    if (o.location.kind === 'inside') {
+      const c = this.g.objects.get(o.location.containerId);
+      return c && c !== o ? this.objectPos(c) : null;
+    }
     return null;
   }
 
@@ -59,11 +63,13 @@ export class ActionSystem {
   }
 
   touch(p: PlayerState, o: GameObject) {
+    p.metrics.objectsTouched++;
+    // gants enfilés : aucune empreinte
+    if (p.gloves) return;
     const last = o.traces[o.traces.length - 1];
     if (!(last && last.kind === 'print' && last.playerId === p.id && !last.cleaned)) {
       o.traces.push({ kind: 'print', playerId: p.id, clock: this.g.clock(), cleaned: false });
     }
-    p.metrics.objectsTouched++;
     this.g.log('PLAYER_TOUCHED_OBJECT', { actorId: p.id, objectId: o.id, roomId: p.roomId });
   }
 
@@ -86,13 +92,14 @@ export class ActionSystem {
     const prev = this.g.players.get(o.location.playerId);
     if (prev) prev.inventory = prev.inventory.filter((id) => id !== o.id);
     if (o.def.tags.includes('light')) o.lit = false;
+    if (o.def.tags.includes('gloves') && prev) prev.gloves = false;
   }
 
   // ───────────── dispatcher ─────────────
 
   handle(p: PlayerState, a: GameAction): string | undefined {
-    if (!p.alive && a.type !== 'vote') throw new UserError('Vous n’êtes plus de ce monde.');
     if (this.g.ended) throw new UserError('La partie est terminée.');
+    this.g.caseSystem.requireActive(p);
     const msg = this.dispatch(p, a);
     const GESTURE: Partial<Record<GameAction['type'], GestureKind>> = {
       take: 'take', drop: 'drop', hide: 'hide', give: 'give', use: 'use', examine: 'examine',
@@ -143,10 +150,6 @@ export class ActionSystem {
     o.knownBy.clear();
     this.touch(p, o);
     this.history(o, `Pris par ${p.name} — ${roomName(fromRoom)}`);
-    if (o.type === 'necklace' && !o.props.firstTakerId) {
-      o.props.firstTakerId = p.id;
-      o.props.firstTakenAt = this.g.clock();
-    }
     this.g.log('OBJECT_PICKED_UP', { actorId: p.id, objectId: o.id, roomId: p.roomId, data: { hidden: wasHidden }, text: `${p.name} prend ${o.name.toLowerCase()} — ${roomName(p.roomId)}` });
     this.g.perceive(p.id, wasHidden ? `${p.name} récupère quelque chose de caché.` : `${p.name} ramasse : ${o.name.toLowerCase()}.`);
     return `Vous prenez : ${o.name}.`;
@@ -193,44 +196,18 @@ export class ActionSystem {
   examine(p: PlayerState, objectId: string) {
     const o = this.reachable(p, objectId);
     p.metrics.examinations++;
-    const lines = [o.def.description];
+    const lines = [(o.props.description as string) ?? o.def.description];
     const blood = o.traces.some((t) => t.kind === 'blood' && !t.cleaned);
     const prints = o.traces.some((t) => t.kind === 'print' && !t.cleaned);
     if (blood) lines.push('Il y a du sang dessus.');
     if (o.cleanedAt !== undefined) lines.push('Il semble avoir été nettoyé récemment : une odeur de savon.');
     else if (prints) lines.push('Des traces de doigts sont visibles, impossibles à identifier sans analyse.');
     this.g.log('OBJECT_EXAMINED', { actorId: p.id, objectId: o.id, roomId: p.roomId });
-    const doc = this.readDocument(p, o);
-    if (doc) lines.push(doc);
+    const doc = this.g.caseSystem.readObject(p, o);
+    if (doc) return `${blood ? 'Il y a du sang dessus. ' : ''}${doc}`;
     const text = `${o.name} : ${lines.join(' ')}`;
-    this.g.know(p.id, blood || doc ? 'evidence' : 'self', text, { important: blood || !!doc });
+    if (blood) this.g.know(p.id, 'evidence', text, { important: true });
     return text;
-  }
-
-  private readDocument(p: PlayerState, o: GameObject): string | null {
-    const g = this.g;
-    if (o.type === 'letter' && typeof o.props.secretOf === 'string') {
-      const owner = g.players.get(o.props.secretOf);
-      if (!owner) return null;
-      if (!o.props[`read_${p.id}`]) {
-        o.props[`read_${p.id}`] = true;
-        g.log('SECRET_DISCOVERED', { actorId: p.id, targetId: owner.id, objectId: o.id, text: `${p.name} découvre le secret de ${owner.name} grâce à une lettre anonyme` });
-      }
-      return owner.id === p.id
-        ? `Votre propre secret est écrit ici, noir sur blanc : « ${owner.secretReveal} ». Quelqu’un sait.`
-        : `Écrit à l’encre noire : « ${owner.secretReveal} »`;
-    }
-    if (o.type === 'photo' && typeof o.props.aboutPlayerId === 'string') {
-      const about = g.players.get(o.props.aboutPlayerId);
-      if (!about) return null;
-      if (!o.props[`read_${p.id}`] && p.id !== o.props.ownerSecretOf) {
-        o.props[`read_${p.id}`] = true;
-        g.log('SECRET_DISCOVERED', { actorId: p.id, targetId: about.id, objectId: o.id, text: `${p.name} voit la photo compromettante de ${about.name}` });
-      }
-      return `On y reconnaît ${about.name}, dans une situation très compromettante. Au dos : « Je garde les négatifs. »`;
-    }
-    if (o.type === 'phone' && typeof o.props.message === 'string') return o.props.message;
-    return null;
   }
 
   search(p: PlayerState, furnitureId: string) {
@@ -283,11 +260,16 @@ export class ActionSystem {
         g.log('OBJECT_USED', { actorId: p.id, objectId: o.id, data: { lit: o.lit } });
         return o.lit ? 'Vous allumez la lampe.' : 'Vous éteignez la lampe.';
       case 'read':
-      case 'phone':
+      case 'device':
         return this.examine(p, objectId);
-      case 'calm':
-        g.log('OBJECT_USED', { actorId: p.id, objectId: o.id, text: `${p.name} avale un somnifère` });
-        return 'Vous avalez un comprimé. Vos mains tremblent un peu moins.';
+      case 'open':
+        return g.caseSystem.open(p, o);
+      case 'wear':
+        p.gloves = !p.gloves;
+        g.perceive(p.id, p.gloves ? `${p.name} enfile des gants.` : `${p.name} retire ses gants.`);
+        return p.gloves ? 'Vous enfilez les gants : vous ne laisserez plus d’empreintes.' : 'Vous retirez les gants.';
+      case 'insert':
+        throw new UserError('Choisissez l’appareil dans lequel insérer ce support.');
       default:
         throw new UserError('Cet objet ne s’utilise pas ainsi.');
     }
@@ -325,7 +307,7 @@ export class ActionSystem {
     const o = this.owned(p, objectId);
     if (!o.def.tags.includes('destructible')) throw new UserError('Impossible de détruire cet objet.');
     const fire = p.inventory.map((id) => this.g.objects.get(id)!).find((x) => x.def.tags.includes('fire'));
-    const nearFireplace = FURNITURE.some((f) => f.kind === 'fireplace' && f.roomId === p.roomId && Math.hypot(f.x + 0.5 - p.pos.x, f.y + 1 - p.pos.y) < 2.2);
+    const nearFireplace = allFurniture().some((f) => f.kind === 'fireplace' && f.roomId === p.roomId && Math.hypot(f.x + 0.5 - p.pos.x, f.y + 1 - p.pos.y) < 2.2);
     if (!fire && !nearFireplace) throw new UserError('Il vous faut une flamme : un briquet, ou la cheminée.');
     this.removeFromPlayer(o);
     o.location = { kind: 'destroyed' };
@@ -337,7 +319,7 @@ export class ActionSystem {
   }
 
   wash(p: PlayerState) {
-    const sink = FURNITURE.find((f) => f.kind === 'sink' && f.roomId === p.roomId && Math.hypot(f.x + f.w / 2 - p.pos.x, f.y + 0.5 - p.pos.y) <= GAME_CONFIG.interactRange + 0.6);
+    const sink = allFurniture().find((f) => f.kind === 'sink' && f.roomId === p.roomId && Math.hypot(f.x + f.w / 2 - p.pos.x, f.y + 0.5 - p.pos.y) <= GAME_CONFIG.interactRange + 0.6);
     if (!sink) throw new UserError('Il faut un évier ou un lavabo.');
     const g = this.g;
     const wasStained = p.stained;
@@ -350,25 +332,9 @@ export class ActionSystem {
 
   // ───────────── le passage à l'acte ─────────────
 
-  /**
-   * Une opportunité n'existe que si le monde la crée : une arme létale en main,
-   * une cible à portée, personne pour voir (ou le noir complet), et un contexte (tension ou mobile).
-   */
-  opportunityFor(p: PlayerState): { target: PlayerState; weapon: GameObject; dark: boolean } | null {
-    const g = this.g;
-    if (!p.alive || g.murders >= g.maxMurders || g.ended) return null;
-    const dark = g.isBlackout();
-    const weapon = p.inventory.map((id) => g.objects.get(id)!).find((o) => o.def.tags.includes('weapon') && o.def.tags.includes('lethal'));
-    if (!weapon) return null;
-    const phaseOk = g.opportunityPhases().includes(g.phase) || (dark && g.prePhases().includes(g.phase));
-    for (const t of g.alivePlayers()) {
-      if (t.id === p.id || t.roomId !== p.roomId || dist(t.pos, p.pos) > GAME_CONFIG.interactRange) continue;
-      const motive = p.motiveAgainst.has(t.id) && g.motivePhases().includes(g.phase);
-      if (!phaseOk && !motive) continue;
-      const witnesses = g.alivePlayers().filter((w) => w.id !== p.id && w.id !== t.id && g.canSee(w, p));
-      if (witnesses.length === 0) return { target: t, weapon, dark };
-    }
-    return null;
+  /** Occasion d'élimination : réservée au meurtrier, contre un opposant officiel (voir case/system.ts). */
+  opportunityFor(p: PlayerState) {
+    return this.g.caseSystem.opportunityFor(p);
   }
 
   act(p: PlayerState, targetId: string, objectId: string) {
@@ -378,6 +344,7 @@ export class ActionSystem {
     const { target: t, weapon } = opp;
     const clock = g.clock();
     g.murders++;
+    if (!weapon.def.tags.includes('weapon')) throw new UserError('Impossible.');
     // Vérité
     g.log('PLAYER_ATTACKED', { actorId: p.id, targetId: t.id, objectId: weapon.id, roomId: p.roomId, text: `${p.name} attaque ${t.name} avec ${weapon.name.toLowerCase()} — ${roomName(p.roomId)}` });
     t.alive = false;
@@ -414,6 +381,7 @@ export class ActionSystem {
     g.know(p.id, 'self', `J’ai tué ${t.name} avec ${weapon.name.toLowerCase()} — ${roomName(p.roomId)}, ${formatClock(clock)}.`, { important: true });
     const noise = weapon.def.weaponClass === 'strangle' ? 'Un râle étouffé, puis plus rien' : 'Un bruit sourd et un cri étouffé';
     g.hearFrom(p.roomId, `${noise} — du côté de : ${roomName(p.roomId)} (vers ${formatClock(clock)}).`, p.id, [t.id]);
+    g.caseSystem.onElimination();
     g.markAllDirty();
     return `C’est fait. ${t.name} ne se relèvera pas. Maintenant… il faut survivre à la suite.`;
   }

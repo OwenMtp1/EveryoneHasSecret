@@ -1,29 +1,36 @@
 /**
- * Tests du moteur de jeu (sans réseau) : horloge injectée, simulation manuelle.
+ * Moteur de jeu et règles de l'affaire (sans réseau) : horloge injectée, simulation manuelle.
+ * Simulations de parties pour les trois scénarios et 3 à 8 joueurs.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameInstance } from '../src/server/game/GameInstance';
 import { characterFromCast } from '../src/shared/content/character';
 import { CAST } from '../src/shared/content/cast';
-import { roomById } from '../src/shared/content/villa';
-import type { PlayerState } from '../src/server/game/state';
+import { OBJECT_TYPES } from '../src/shared/content/objects';
+import { allFurniture, roomById } from '../src/shared/content/villa';
+import type { GameObject, PlayerState } from '../src/server/game/state';
+import type { GameAction } from '../src/shared/protocol';
 
-function makeGame(n = 4, seed = 42) {
+const SCENARIOS = ['pacte', 'mensonges', 'testament'] as const;
+
+function makeGame(n = 4, seed = 42, scenarioId?: string) {
   let t = 1_000_000;
-  const emitted: { userId: string; event: string }[] = [];
   let finished = false;
   const g = new GameInstance({
     id: 'g1',
     lobbyId: 'l1',
     title: 'Villa Test',
-    players: Array.from({ length: n }, (_, i) => ({ userId: `p${i}`, name: `Joueur ${i}`, character: characterFromCast(CAST[(i * 7) % CAST.length]) })),
-    emit: (userId, event) => emitted.push({ userId, event }),
-    onFinished: () => {
-      finished = true;
-    },
-    timeScale: 0.1,
+    players: Array.from({ length: n }, (_, i) => {
+      const c = CAST[(i * 7) % CAST.length];
+      return { userId: `p${i}`, name: `${c.firstName} ${c.lastName}`, character: characterFromCast(c) };
+    }),
+    emit: () => {},
+    onFinished: () => (finished = true),
+    timeScale: 0.05,
+    voteScale: 0.05,
     seed,
+    scenarioId,
     manual: true,
     now: () => t,
   });
@@ -33,219 +40,420 @@ function makeGame(n = 4, seed = 42) {
       g.tick();
     }
   };
-  /** Téléporte un joueur au centre d'une tuile libre de la pièce. */
-  const place = (p: PlayerState, roomId: string, dx = 0) => {
-    const r = roomById(roomId)!.rect;
-    p.pos = { x: r.x + Math.floor(r.w / 2) + 0.5 + dx, y: r.y + Math.floor(r.h / 2) + 0.5 };
-    if (roomId === 'kitchen') p.pos = { x: 3.5 + dx, y: 11.5 };
-    advance(60);
+  const act = (p: PlayerState, a: GameAction) => g.action(p.id, a);
+  const ref = (r: string) => [...g.objects.values()].find((o) => o.props.ref === r)!;
+  /** Téléporte un joueur au contact d'un objet / d'un point. */
+  const goTo = (p: PlayerState, pos: { x: number; y: number }, roomId: string) => {
+    p.pos = { x: pos.x + 0.3, y: pos.y };
+    p.roomId = roomId;
   };
-  return { g, advance, place, emitted, isFinished: () => finished };
+  const goToObject = (p: PlayerState, o: GameObject) => {
+    const loc = o.location;
+    if (loc.kind === 'floor' || loc.kind === 'hidden') {
+      goTo(p, loc.pos, loc.roomId);
+      if (loc.kind === 'hidden') {
+        if (loc.furnitureId.startsWith('body:')) act(p, { type: 'search_body', bodyId: loc.furnitureId.slice(5) });
+        else act(p, { type: 'search', furnitureId: loc.furnitureId });
+      }
+    }
+  };
+  /** Prend un objet de l'affaire (en le cherchant là où il est). */
+  const fetch = (p: PlayerState, o: GameObject) => {
+    if (o.location.kind === 'player' && o.location.playerId === p.id) return;
+    goToObject(p, o);
+    while (p.inventory.length >= 4) act(p, { type: 'drop', objectId: p.inventory[0] });
+    act(p, { type: 'take', objectId: o.id });
+  };
+  const murderer = () => g.players.get(g.caseSystem.truth.murdererId)!;
+  const innocents = () => [...g.players.values()].filter((p) => p.id !== g.caseSystem.truth.murdererId);
+  const startInvestigation = () => {
+    advance(3000);
+    assert.equal(g.phase, 'INVESTIGATION');
+  };
+  return { g, advance, act, ref, fetch, goTo, goToObject, murderer, innocents, startInvestigation, isFinished: () => finished };
 }
 
-test('chaque joueur reçoit un secret, une empreinte et une semelle uniques', () => {
-  const { g } = makeGame(5);
-  const ps = [...g.players.values()];
-  assert.equal(new Set(ps.map((p) => p.secretId)).size, 5);
-  assert.equal(new Set(ps.map((p) => p.fingerprint)).size, 5);
-  assert.equal(new Set(ps.map((p) => p.shoe.pattern)).size, 5);
-  for (const p of ps) assert.ok(p.knowledge.some((k) => k.kind === 'secret'));
+// ───────────────────────── mise en place et cohérence ─────────────────────────
+
+test('aucun objet interdit dans le catalogue ni dans le mobilier', () => {
+  const banned = /horloge|pendule|montre|enregistreur|dictaphone|disque dur|tableau blanc|plateau|badge|disjoncteur|sonnette|caméra de surveillance|surveillance/i;
+  for (const o of OBJECT_TYPES) assert.ok(!banned.test(`${o.name} ${o.description}`), `objet interdit : ${o.name}`);
+  for (const f of allFurniture()) assert.ok(!banned.test(f.name) && f.kind !== 'clock', `meuble interdit : ${f.name}`);
 });
 
-test('la vérité reste côté serveur : la vue client ne contient pas les secrets des autres', () => {
-  const { g } = makeGame(3);
-  const [a, b] = [...g.players.values()];
-  const view = JSON.stringify(g.buildSelfView(a));
-  assert.ok(!view.includes(b.secretText));
-  assert.ok(!view.includes(b.fingerprint));
-  assert.ok(!view.includes('truth'));
+for (const scenarioId of SCENARIOS)
+  for (const n of [3, 4, 5, 6, 7, 8])
+    test(`affaire « ${scenarioId} » à ${n} joueurs : vérité cohérente, rôles, preuves, aucune fuite`, () => {
+      const { g, murderer } = makeGame(n, 1000 + n, scenarioId);
+      const t = g.caseSystem.truth;
+      const ps = [...g.players.values()];
+      assert.equal(t.scenarioId, scenarioId);
+      // exactement un meurtrier, humain, parmi les joueurs
+      assert.equal(ps.filter((p) => t.players.get(p.id)!.camp === 'murderer').length, 1);
+      assert.ok(g.players.has(t.murdererId));
+      // protecteurs selon le nombre de joueurs, jamais le meurtrier
+      assert.equal(t.protectorIds.length, n >= 8 ? 2 : n >= 6 ? 1 : 0);
+      assert.ok(!t.protectorIds.includes(t.murdererId));
+      // victime : personnage du catalogue que personne n'incarne
+      assert.ok(!ps.some((p) => p.character.castId === t.victim.castId));
+      assert.ok(roomById(t.victim.roomId));
+      // identités physiques uniques, secrets distincts
+      assert.equal(new Set(ps.map((p) => p.fingerprint)).size, n);
+      assert.equal(new Set(ps.map((p) => p.secretText)).size, n);
+      // chaque joueur a une spécialité, des souvenirs, un secret
+      for (const p of ps) {
+        assert.ok(p.roleId);
+        assert.ok(t.players.get(p.id)!.memories.length >= 3);
+      }
+      // le meurtrier est absent pendant le crime, et quelqu'un l'a remarqué
+      const mt = t.players.get(t.murdererId)!;
+      assert.ok(mt.absence && mt.absence.from < t.murderAt && t.murderAt < mt.absence.to);
+      assert.ok(ps.some((p) => p.id !== t.murdererId && t.players.get(p.id)!.memories.some((m) => m.includes(murderer().name.split(' ')[0]) && m.includes('cigarettes'))));
+      // chaque objet d'affaire existe et a un emplacement valide
+      for (const it of t.items) {
+        const o = [...g.objects.values()].find((x) => x.props.ref === it.ref);
+        assert.ok(o, `objet manquant : ${it.ref}`);
+        assert.notEqual(o!.location.kind, 'destroyed');
+      }
+      // pièces décisives présentes : mobile, présence près de la villa, absence sur la photo
+      const facts = t.items.flatMap((i) => i.content?.facts ?? []);
+      assert.ok(facts.some((f) => f.kind === 'motive' && f.playerId === t.murdererId));
+      assert.ok(facts.some((f) => f.kind === 'place' && f.playerId === t.murdererId && f.place === 'station'));
+      assert.ok(facts.some((f) => f.kind === 'absent' && f.playerId === t.murdererId));
+      // secret de chaque innocent prouvé par un document
+      for (const p of ps) if (p.id !== t.murdererId) assert.ok(facts.some((f) => f.kind === 'secret' && f.playerId === p.id));
+      // AUCUNE fuite : la vue d'un innocent ne contient ni l'identité du meurtrier, ni les codes, ni les secrets des autres
+      for (const p of ps) {
+        const view = JSON.stringify(g.buildSelfView(p));
+        for (const o of ps) if (o.id !== p.id) assert.ok(!view.includes(o.secretText), 'secret d’un autre joueur dans la vue');
+        assert.ok(!view.includes('"murdererId"') && !view.includes('"facts"') && !view.includes('"lock":'), 'vérité dans la vue');
+        for (const it of t.items) if (it.lock?.kind === 'code') assert.ok(!view.includes(it.lock.code), 'code divulgué');
+        if (t.players.get(p.id)!.camp === 'innocent') assert.ok(!view.includes(t.motive));
+      }
+    });
+
+test('la vérité ne change pas au cours de la partie', () => {
+  const { g, advance } = makeGame(5, 7);
+  const before = JSON.stringify({ m: g.caseSystem.truth.murdererId, t: g.caseSystem.truth.timeline, at: g.caseSystem.truth.murderAt });
+  advance(20_000);
+  assert.equal(JSON.stringify({ m: g.caseSystem.truth.murdererId, t: g.caseSystem.truth.timeline, at: g.caseSystem.truth.murderAt }), before);
 });
 
-test('les joueurs ne voient que ce qui est dans leur pièce', () => {
-  const { g, place } = makeGame(2);
-  const [a, b] = [...g.players.values()];
-  place(a, 'kitchen');
-  place(b, 'office');
-  const va = g.buildSnapshot(a);
-  const seen = va.players.find((p) => p.id === b.id)!;
-  // seule une alliance (tirée au sort au début de la nuit) partage la position à distance
-  if (!seen.viaAlliance) assert.equal(seen.pos, undefined);
-  assert.ok(va.objects.every((o) => o.roomId === 'kitchen'));
+// ───────────────────────── chaînes d'enquête ─────────────────────────
+
+test('chaîne complète : corps → clé → boîte → journal → téléphone et ordinateur → coffret → clé USB lue', () => {
+  const { g, act, ref, fetch, innocents, startInvestigation } = makeGame(4, 3, 'pacte');
+  startInvestigation();
+  const p = innocents()[0];
+  // le téléphone est verrouillé
+  fetch(p, ref('victim_phone'));
+  assert.match(act(p, { type: 'examine', objectId: ref('victim_phone').id })!, /verrouill/);
+  // clé sur le corps → boîte cadenassée → journal (codes)
+  fetch(p, ref('box_key'));
+  fetch(p, ref('diary_box'));
+  act(p, { type: 'open', objectId: ref('diary_box').id });
+  assert.ok(g.caseSystem.hasRead(p, ref('diary').id), 'journal lu à l’ouverture');
+  const lines = g.caseSystem.dossierView(p).evidence.find((e) => e.objectId === ref('diary').id)!.lines.join(' ');
+  const pin = lines.match(/téléphone, alors je l’écris ici : (\d{4})/)![1];
+  const pwd = lines.match(/mot de passe : (\w+)\./)![1];
+  // mauvais code refusé, trois échecs = verrouillage temporaire
+  assert.throws(() => act(p, { type: 'unlock', objectId: ref('victim_phone').id, code: '0000' }), /incorrect/);
+  act(p, { type: 'unlock', objectId: ref('victim_phone').id, code: pin });
+  assert.ok(g.caseSystem.hasRead(p, ref('victim_phone').id));
+  // ordinateur → code du coffret
+  fetch(p, ref('laptop'));
+  act(p, { type: 'unlock', objectId: ref('laptop').id, code: pwd });
+  const lap = g.caseSystem.dossierView(p).evidence.find((e) => e.objectId === ref('laptop').id)!.lines.join(' ');
+  const boxCode = lap.match(/Code : (\d{4})/)![1];
+  // inventaire limité à 4 : on ne garde que l'ordinateur
+  for (const id of [...p.inventory]) if (id !== ref('laptop').id) act(p, { type: 'drop', objectId: id });
+  fetch(p, ref('usb_box'));
+  act(p, { type: 'unlock', objectId: ref('usb_box').id, code: boxCode });
+  // la clé USB ne se lit que dans l'ordinateur
+  const usb = ref('usb');
+  assert.ok(p.inventory.includes(usb.id));
+  assert.match(act(p, { type: 'examine', objectId: usb.id })!, /appareil/);
+  act(p, { type: 'insert', mediaId: usb.id, deviceId: ref('laptop').id });
+  assert.ok(g.caseSystem.hasRead(p, usb.id), 'preuve décisive lue');
+  assert.ok(g.caseSystem.dossierView(p).evidence.find((e) => e.objectId === usb.id)!.lines.join(' ').includes(g.nameOf(g.caseSystem.truth.murdererId)));
 });
 
-test('le mouvement est bloqué par les murs et la porte verrouillée de la cave', () => {
-  const { g, advance } = makeGame(1);
-  const [a] = [...g.players.values()];
-  a.pos = { x: 5.5, y: 12.5 }; // juste au-dessus de la porte de la cave (5,13)
-  g.setInput(a.id, 0, 1);
-  advance(1000);
-  assert.ok(a.pos.y < 13, 'ne traverse pas la porte verrouillée');
-  g.unlockedDoors.add('d_kitchen_cellar');
-  advance(1000);
-  assert.equal(a.roomId, 'cellar');
-});
-
-test('boucle complète : arme → opportunité → meurtre → découverte → rôles → enquête → vote → épilogue', () => {
-  const { g, advance, place, isFinished } = makeGame(4, 7);
-  const [killer, victim, finder, other] = [...g.players.values()];
-  // Rien n'est possible au début : pas de bouton « tuer »
-  const knife = [...g.objects.values()].find((o) => o.type === 'knife')!;
-  place(killer, 'kitchen');
-  killer.pos = { ...(knife.location as { pos: { x: number; y: number } }).pos };
-  advance(60);
-  g.action(killer.id, { type: 'take', objectId: knife.id });
-  assert.ok(killer.inventory.includes(knife.id));
-  place(victim, 'kitchen', 0.6);
-  killer.pos = { x: victim.pos.x - 0.6, y: victim.pos.y };
-  advance(60);
-  assert.equal(g.actions.opportunityFor(killer), null, 'pas d’opportunité en phase d’arrivée');
-
-  // La nuit avance jusqu'à l'escalade
-  place(finder, 'office');
-  place(other, 'garden');
-  advance(22_000); // escalade à 21 s (échelle 0.1), coupure de courant à 30 s
-  assert.equal(g.phase, 'ESCALATION');
-  assert.equal(g.isBlackout(), false);
-  const opp = g.actions.opportunityFor(killer);
-  assert.ok(opp, 'opportunité : arme + isolement + tension');
-  assert.equal(opp!.target.id, victim.id);
-
-  // Un témoin fait disparaître l'opportunité
-  place(other, 'kitchen', 2);
-  assert.equal(g.actions.opportunityFor(killer), null, 'pas d’opportunité devant témoin');
-  place(other, 'garden');
-
-  g.action(killer.id, { type: 'act', targetId: victim.id, objectId: knife.id });
-  assert.equal(victim.alive, false);
-  assert.equal(killer.stained, true);
-  assert.ok(knife.traces.some((t) => t.kind === 'blood'));
-  assert.ok(g.truth.some((e) => e.type === 'PLAYER_DIED'));
-
-  // Le tueur se lave (crée une trace cachée), quitte la pièce
-  killer.pos = { x: 7.5, y: 7.5 };
-  advance(60);
-  g.action(killer.id, { type: 'wash' });
-  assert.equal(killer.stained, false);
-  assert.ok(g.evidence.some((e) => e.kind === 'diluted_blood' && !e.visible));
-  place(killer, 'living');
-
-  // Découverte du corps
-  place(finder, 'kitchen', 2);
-  assert.ok(g.bodies[0].discovered);
-  assert.equal(g.case?.type, 'murder');
-  assert.equal(g.case?.culpritId, killer.id);
-  assert.equal(g.phase, 'MAJOR_EVENT');
-  advance(2_000);
-  assert.equal(g.phase, 'INVESTIGATION');
-  const alive = g.alivePlayers();
-  assert.ok(alive.every((p) => p.roleId), 'chaque vivant a un rôle');
-  assert.equal(new Set(alive.map((p) => p.roleId)).size, alive.length, 'rôles uniques');
-  assert.equal(finder.roleId, 'forensic', 'le découvreur a une affinité médico-légale');
-
-  // Autopsie : fibres de la tenue du tueur
-  finder.pos = { ...g.bodies[0].pos, x: g.bodies[0].pos.x + 0.5 };
-  advance(60);
-  const autopsy = g.action(finder.id, { type: 'tool', toolId: 'examine_body' })!;
-  assert.match(autopsy, /fibres/);
-
-  // Le tueur participe à l'enquête et peut témoigner (mentir)
-  const investigator = alive.find((p) => p.roleId === 'investigator')!;
-  g.action(investigator.id, { type: 'tool', toolId: 'request_testimony', targetId: killer.id });
-  assert.ok(killer.pendingTestimony);
-  g.action(killer.id, { type: 'testimony', requestId: killer.pendingTestimony!.requestId, roomId: 'garden', text: 'Je prenais l’air.' });
-  const tm = g.testimonies[0];
-  const verdict = g.action(investigator.id, { type: 'tool', toolId: 'verify_testimony', targetId: tm.boardId })!;
-  assert.match(verdict, /INCOHÉRENT/);
-
-  // Partage d'une connaissance sur le tableau
-  const k = finder.knowledge.find((x) => x.kind === 'role')!;
-  g.action(finder.id, { type: 'share', knowledgeId: k.id, to: 'board' });
-  assert.ok(g.board.some((b) => b.verified && b.text === k.text));
-
-  // Vote
+test('codes : le verrou se bloque après trois erreurs (pas de force brute)', () => {
+  const { g, act, ref, fetch, innocents, startInvestigation, advance } = makeGame(3, 4);
+  startInvestigation();
+  const p = innocents()[0];
+  fetch(p, ref('usb_box'));
+  for (let i = 0; i < 3; i++) assert.throws(() => act(p, { type: 'unlock', objectId: ref('usb_box').id, code: '1' + i }), /incorrect/);
+  assert.throws(() => act(p, { type: 'unlock', objectId: ref('usb_box').id, code: '12' }), /Trop d’essais/);
   advance(31_000);
-  assert.equal(g.phase, 'RESOLUTION');
-  for (const p of g.alivePlayers()) g.action(p.id, { type: 'vote', suspectId: killer.id });
+  assert.throws(() => act(p, { type: 'unlock', objectId: ref('usb_box').id, code: '12' }), /incorrect/);
+  void g;
+});
+
+test('appareil photo : la carte mémoire montre le groupe sans le meurtrier ; la carte peut être retirée et brûlée', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation } = makeGame(5, 11, 'testament');
+  startInvestigation();
+  const p = innocents()[0];
+  fetch(p, ref('camera'));
+  act(p, { type: 'examine', objectId: ref('camera').id });
+  const card = g.caseSystem.dossierView(p).evidence.find((e) => e.objectId === ref('card').id)!;
+  assert.ok(card.photos?.length, 'photo rendue avec les personnages');
+  assert.ok(!card.photos![0].castIds.includes(murderer().character.castId), 'le meurtrier n’est pas sur la photo');
+  // le meurtrier peut faire disparaître la carte (dissimulation), ce qui laisse des cendres
+  const m = murderer();
+  act(p, { type: 'drop', objectId: ref('camera').id });
+  fetch(m, ref('camera'));
+  act(m, { type: 'open', objectId: ref('camera').id }); // retire la carte
+  assert.ok(m.inventory.includes(ref('card').id));
+  const lighter = [...g.objects.values()].find((o) => o.type === 'lighter')!;
+  fetch(m, lighter);
+  act(m, { type: 'destroy', objectId: ref('card').id });
+  assert.equal(ref('card').location.kind, 'destroyed');
+  assert.ok(g.evidence.some((e) => e.kind === 'ashes'));
+});
+
+test('gants : un objet manipulé avec des gants ne porte pas d’empreinte', () => {
+  const { g, act, fetch, innocents, startInvestigation } = makeGame(3, 5);
+  startInvestigation();
+  const p = innocents()[0];
+  const gloves = [...g.objects.values()].find((o) => o.type === 'gloves')!;
+  fetch(p, gloves);
+  act(p, { type: 'use', objectId: gloves.id });
+  assert.equal(p.gloves, true);
+  const lighter = [...g.objects.values()].find((o) => o.type === 'lighter')!;
+  fetch(p, lighter);
+  assert.ok(!lighter.traces.some((tr) => tr.kind === 'print' && tr.playerId === p.id));
+});
+
+test('arme cachée : empreinte partielle du meurtrier après essuyage, autopsie cohérente', () => {
+  const { g, act, ref, fetch, murderer, startInvestigation } = makeGame(6, 21);
+  startInvestigation();
+  const sci = [...g.players.values()].find((p) => p.roleId === 'scientist')!;
+  const weapon = ref('weapon');
+  fetch(sci, weapon);
+  const res = act(sci, { type: 'tool', toolId: 'analyze_prints', targetId: weapon.id })!;
+  assert.match(res, new RegExp(murderer().fingerprint));
+  assert.match(res, /essuyé/);
+  const forensic = [...g.players.values()].find((p) => p.roleId === 'forensic')!;
+  const body = g.bodies.find((b) => b.playerId === 'victim')!;
+  forensic.pos = { ...body.pos };
+  forensic.roomId = body.roomId;
+  const aut = act(forensic, { type: 'tool', toolId: 'examine_body' })!;
+  const fiber = CAST.find((c) => c.id === murderer().character.castId)!.fiber;
+  assert.ok(aut.includes(fiber), 'fibres du vêtement du meurtrier');
+});
+
+// ───────────────────────── dossier commun, alibis ─────────────────────────
+
+test('alibis : une pièce versée au dossier confirme ou contredit une déclaration', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation } = makeGame(4, 8, 'mensonges');
+  startInvestigation();
+  const m = murderer();
+  const mPlace = g.caseSystem.truth.players.get(m.id)!.place;
+  act(m, { type: 'alibi', place: mPlace, text: 'J’étais avec les autres toute la soirée.' });
+  const p = innocents()[0];
+  fetch(p, ref('m_receipt'));
+  act(p, { type: 'examine', objectId: ref('m_receipt').id });
+  act(p, { type: 'present', objectId: ref('m_receipt').id });
+  const al = g.caseSystem.alibiViews().find((a) => a.playerId === m.id)!;
+  assert.equal(al.status, 'contradicted');
+  const pe = g.caseSystem.publicEvidenceView()[0];
+  assert.ok(pe.checks.some((c) => c.status === 'contradicts'));
+  // présenter une pièce non lue : refusé
+  assert.throws(() => act(p, { type: 'present', objectId: ref('usb').id }), /pas lu/);
+});
+
+// ───────────────────────── accusations, votes, opposition ─────────────────────────
+
+test('accusation : pièce lue obligatoire, opposition officielle, majorité absolue, innocent arrêté → la nuit continue', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation } = makeGame(5, 13, 'pacte');
+  const inn = innocents();
+  // pas d'accusation pendant la découverte du corps
+  assert.throws(() => act(inn[0], { type: 'accuse', targetId: inn[1].id, evidenceIds: [], text: '' }), /instants/);
+  startInvestigation();
+  assert.throws(() => act(inn[0], { type: 'accuse', targetId: inn[1].id, evidenceIds: [], text: '' }), /pièce/);
+  fetch(inn[0], ref('group_photo'));
+  act(inn[0], { type: 'examine', objectId: ref('group_photo').id });
+  act(inn[0], { type: 'accuse', targetId: inn[1].id, evidenceIds: [ref('group_photo').id], text: 'Je ne te crois pas.' });
+  assert.ok(g.caseSystem.oppositions.some((o) => o.fromId === inn[0].id && o.toId === inn[1].id && o.cause === 'accusation formelle'));
+  // un seul vote à la fois ; l'accusé ne vote pas ; double vote refusé
+  assert.throws(() => act(inn[2], { type: 'accuse', targetId: inn[1].id, evidenceIds: [ref('group_photo').id], text: '' }), /déjà|pièce/);
+  assert.throws(() => act(inn[1], { type: 'ballot', choice: 'innocent' }), /ne participez pas/);
+  act(inn[2], { type: 'ballot', choice: 'guilty' });
+  assert.throws(() => act(inn[2], { type: 'ballot', choice: 'innocent' }), /définitif/);
+  assert.ok(g.caseSystem.oppositions.some((o) => o.fromId === inn[2].id && o.cause === 'vote « coupable »'));
+  act(inn[3], { type: 'ballot', choice: 'guilty' });
+  act(murderer(), { type: 'ballot', choice: 'guilty' });
+  // 4 « coupable » sur 4 votants : arrestation d'un innocent ; la partie continue
+  assert.equal(inn[1].arrested, true);
+  assert.equal(g.ended, false);
+  assert.throws(() => act(inn[1], { type: 'alibi', place: 'phare', text: '' }), /arrêté/);
+  assert.throws(() => g.sendChat(inn[1].id, 'general', 'coucou'), /spectateurs/);
+});
+
+test('accusation : majorité absolue non atteinte (égalité) → relâché ; limites et délai entre accusations', () => {
+  const { act, ref, fetch, murderer, innocents, startInvestigation, advance } = makeGame(5, 14);
+  startInvestigation();
+  const [a, b, c, d] = innocents();
+  fetch(a, ref('group_photo'));
+  act(a, { type: 'examine', objectId: ref('group_photo').id });
+  act(a, { type: 'accuse', targetId: b.id, evidenceIds: [ref('group_photo').id], text: '' });
+  act(c, { type: 'ballot', choice: 'guilty' });
+  act(d, { type: 'ballot', choice: 'innocent' });
+  act(murderer(), { type: 'ballot', choice: 'innocent' });
+  // 2 coupable / 4 votants : pas de majorité absolue
+  assert.equal(b.arrested, false);
+  // délai avant une nouvelle accusation
+  assert.throws(() => act(a, { type: 'accuse', targetId: b.id, evidenceIds: [ref('group_photo').id], text: '' }), /dans \d+ s/);
+  advance(5_000);
+  act(a, { type: 'accuse', targetId: c.id, evidenceIds: [ref('group_photo').id], text: '' });
+  advance(4_000); // le vote expire sans votes
+  assert.equal(c.arrested, false);
+  advance(5_000);
+  assert.throws(() => act(a, { type: 'accuse', targetId: d.id, evidenceIds: [ref('group_photo').id], text: '' }), /épuisé/);
+});
+
+test('victoire des innocents : le meurtrier arrêté par vote', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation, isFinished } = makeGame(4, 15, 'testament');
+  startInvestigation();
+  const [a, b, c] = innocents();
+  fetch(a, ref('m_receipt'));
+  act(a, { type: 'examine', objectId: ref('m_receipt').id });
+  act(a, { type: 'accuse', targetId: murderer().id, evidenceIds: [ref('m_receipt').id], text: 'Ticket de la station à 21h.' });
+  act(murderer(), { type: 'defend', text: 'J’ai juste acheté de l’eau !' });
+  act(b, { type: 'ballot', choice: 'guilty' });
+  act(c, { type: 'ballot', choice: 'guilty' });
   assert.ok(isFinished());
-  assert.equal(g.phase, 'EPILOGUE');
-  const epi = g.investigation.epilogue!;
-  assert.equal(epi.culpritCaught, true);
-  assert.ok(epi.truthTimeline.some((l) => l.text.includes('attaque')));
-  assert.equal(epi.secrets.length, 4);
+  const epi = g.caseSystem.epilogue!;
+  assert.equal(epi.winner, 'innocents');
+  assert.ok(epi.outcomes.find((o) => o.playerId === a.id)!.won);
+  assert.ok(!epi.outcomes.find((o) => o.playerId === murderer().id)!.won);
+  assert.ok(epi.truthTimeline.length > 5 && epi.motive.length > 20);
 });
 
-test('relations : alliance (canal privé + position partagée), pacte rompu = trahison → vendetta possible', () => {
-  const { g, place } = makeGame(3, 11);
-  const [a, b, c] = [...g.players.values()];
-  place(a, 'living');
-  place(b, 'living', 1);
-  a.motiveAgainst.delete(b.id);
-  assert.throws(() => g.action(a.id, { type: 'relation', op: 'propose', relType: 'VENDETTA', targetId: b.id }), /mobile/);
-  g.action(a.id, { type: 'relation', op: 'propose', relType: 'ALLY', targetId: b.id });
-  const rel = g.relations.find((r) => r.type === 'ALLY' && r.from === a.id)!;
-  g.action(b.id, { type: 'relation', op: 'accept', relationId: rel.id });
-  assert.equal(rel.status, 'active');
-  place(b, 'office');
-  const seen = g.buildSnapshot(a).players.find((p) => p.id === b.id)!;
-  assert.ok(seen.pos && seen.viaAlliance, 'allié localisable partout');
-  g.sendChat(a.id, `ally:${rel.id}`, 'On se retrouve au bureau.');
-  assert.ok(g.buildSelfView(b).chat.some((m) => m.text.includes('bureau')));
-  assert.ok(!g.buildSelfView(c).chat.some((m) => m.text.includes('bureau')), 'canal privé');
-
-  place(b, 'living', 1);
-  g.action(a.id, { type: 'relation', op: 'propose', relType: 'PACT', targetId: b.id });
-  const pact = g.relations.find((r) => r.type === 'PACT' && r.status === 'pending')!;
-  g.action(b.id, { type: 'relation', op: 'accept', relationId: pact.id });
-  g.action(a.id, { type: 'relation', op: 'break', relationId: pact.id });
-  assert.ok(g.truth.some((e) => e.type === 'BETRAYAL'));
-  const msg = g.action(b.id, { type: 'relation', op: 'propose', relType: 'VENDETTA', targetId: a.id })!;
-  assert.match(msg, /vendetta/);
+test('délibération finale : égalité → le doute profite au meurtrier ; mauvais choix → le meurtrier gagne', () => {
+  for (const mode of ['tie', 'wrong', 'right'] as const) {
+    const { g, act, murderer, innocents, advance } = makeGame(4, 30 + mode.length);
+    advance(48_000); // fin de l'enquête (échelle de test : (40 + 900) s × 0,05)
+    assert.equal(g.phase, 'RESOLUTION');
+    const [a, b, c] = innocents();
+    const m = murderer();
+    if (mode === 'tie') {
+      act(a, { type: 'ballot', choice: b.id });
+      act(b, { type: 'ballot', choice: a.id });
+      act(c, { type: 'ballot', choice: m.id });
+      act(m, { type: 'ballot', choice: c.id });
+      assert.equal(g.caseSystem.epilogue!.winner, 'murderer');
+    } else if (mode === 'wrong') {
+      act(a, { type: 'ballot', choice: b.id });
+      act(c, { type: 'ballot', choice: b.id });
+      act(m, { type: 'ballot', choice: b.id });
+      act(b, { type: 'ballot', choice: m.id });
+      assert.equal(g.caseSystem.epilogue!.winner, 'murderer');
+    } else {
+      for (const p of [a, b, c]) act(p, { type: 'ballot', choice: m.id });
+      act(m, { type: 'ballot', choice: a.id });
+      assert.equal(g.caseSystem.epilogue!.winner, 'innocents');
+    }
+    assert.throws(() => act(a, { type: 'ballot', choice: m.id }), /Aucun vote|terminée/);
+  }
 });
 
-test('empreintes de boue : le jardin salit les semelles, l’intérieur garde la trace', () => {
-  const { g, advance } = makeGame(1);
-  const [a] = [...g.players.values()];
-  a.pos = { x: 5.5, y: 3.5 }; // jardin, au-dessus de la porte de la cuisine
-  advance(200);
-  assert.ok(a.muddyUntil > 0);
-  g.setInput(a.id, 0, 1);
-  advance(2500);
-  assert.equal(a.roomId, 'kitchen');
-  const prints = g.evidence.filter((e) => e.kind === 'footprint');
-  assert.ok(prints.length > 0);
-  assert.equal(prints[0].data.pattern, a.shoe.pattern);
+// ───────────────────────── éliminations ─────────────────────────
+
+test('élimination : réservée au meurtrier, seulement contre un opposant officiel, sans témoin', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation, advance, goTo } = makeGame(5, 17);
+  startInvestigation();
+  const m = murderer();
+  const [a, b] = innocents();
+  const knife = [...g.objects.values()].find((o) => o.type === 'knife')!;
+  fetch(m, knife);
+  const lonely = roomById('office') ? 'office' : 'kitchen';
+  const spot = { x: roomById(lonely)!.rect.x + 2.5, y: roomById(lonely)!.rect.y + 2.5 };
+  for (const p of g.players.values()) if (p !== m && p !== a) goTo(p, { x: 4.5, y: 24.5 }, 'exterior');
+  goTo(m, spot, lonely);
+  goTo(a, spot, lonely);
+  // a ne s'est pas opposé à m : aucune occasion
+  assert.equal(g.caseSystem.opportunityFor(m), null);
+  assert.throws(() => act(m, { type: 'act', targetId: a.id, objectId: knife.id }), /occasion/);
+  // un innocent n'a jamais d'occasion
+  fetch(a, [...g.objects.values()].find((o) => o.type === 'rope' || o.type === 'fire_poker' || o.type === 'candlestick') ?? knife);
+  assert.equal(g.caseSystem.opportunityFor(a), null);
+  // a dénonce formellement m (pièce versée contre lui) → opposant officiel
+  fetch(a, ref('group_photo'));
+  goTo(a, spot, lonely);
+  goTo(m, spot, lonely);
+  act(a, { type: 'examine', objectId: ref('group_photo').id });
+  act(a, { type: 'present', objectId: ref('group_photo').id, againstId: m.id });
+  // un témoin dans la pièce empêche l'acte
+  goTo(b, spot, lonely);
+  assert.equal(g.caseSystem.opportunityFor(m), null);
+  goTo(b, { x: 4.5, y: 24.5 }, 'exterior');
+  advance(100);
+  const opp = g.caseSystem.opportunityFor(m);
+  assert.ok(opp && opp.target.id === a.id);
+  act(m, { type: 'act', targetId: a.id, objectId: knife.id });
+  assert.equal(a.alive, false);
+  assert.ok(g.bodies.some((x) => x.playerId === a.id));
+  // délai entre deux éliminations
+  assert.equal(g.caseSystem.opportunityFor(m), null);
 });
 
-test('cacher puis fouiller : seul celui qui fouille découvre l’objet', () => {
-  const { g, place } = makeGame(2, 3);
-  const [a, b] = [...g.players.values()];
-  const cloth = [...g.objects.values()].find((o) => o.type === 'cloth')!;
-  const loc = cloth.location as { roomId: string; pos: { x: number; y: number } };
-  place(a, loc.roomId);
-  a.pos = { ...loc.pos };
+test('le meurtrier gagne quand il ne reste qu’un seul joueur libre face à lui', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation } = makeGame(3, 19);
+  startInvestigation();
+  const [a, b] = innocents();
+  fetch(a, ref('group_photo'));
+  act(a, { type: 'examine', objectId: ref('group_photo').id });
+  act(a, { type: 'accuse', targetId: b.id, evidenceIds: [ref('group_photo').id], text: '' });
+  act(murderer(), { type: 'ballot', choice: 'guilty' });
+  assert.equal(b.arrested, true);
+  assert.equal(g.caseSystem.epilogue?.winner, 'murderer');
+});
+
+test('protecteur : connaît le meurtrier, gagne avec lui sauf s’il le dénonce', () => {
+  const { g, act, ref, fetch, murderer, startInvestigation } = makeGame(6, 23);
+  startInvestigation();
+  const prId = g.caseSystem.truth.protectorIds[0];
+  const pr = g.players.get(prId)!;
+  const d = g.caseSystem.dossierView(pr);
+  assert.equal(d.camp, 'protector');
+  assert.ok(d.objective.includes(murderer().name));
+  // le meurtrier détient la preuve du secret du protecteur
+  assert.ok(murderer().inventory.some((id) => g.objects.get(id)!.props.ref === `secret_${prId}`));
+  fetch(pr, ref('group_photo'));
+  act(pr, { type: 'examine', objectId: ref('group_photo').id });
+  act(pr, { type: 'present', objectId: ref('group_photo').id, againstId: murderer().id });
+  assert.equal(g.caseSystem.dossierView(pr).camp, 'innocent', 'la dénonciation libère le protecteur');
+});
+
+test('déconnexion : le joueur reste dans l’histoire, retrouve sa vue complète à la reconnexion', () => {
+  const { g, innocents, startInvestigation } = makeGame(4, 25);
+  startInvestigation();
+  const p = innocents()[0];
+  g.setConnected(p.id, false);
+  g.setInput(p.id, 1, 0);
+  assert.deepEqual(p.input, { x: 1, y: 0 }); // l'entrée est conservée mais le joueur ne bouge pas
+  const pos = { ...p.pos };
   g.tick();
-  g.action(a.id, { type: 'take', objectId: cloth.id });
-  place(a, 'living');
-  a.pos = { x: 15.5, y: 8.5 }; // sous le canapé
-  g.tick();
-  g.action(a.id, { type: 'hide', objectId: cloth.id, furnitureId: 'f_living_sofa' });
-  assert.equal(cloth.location.kind, 'hidden');
-  place(b, 'living');
-  b.pos = { x: 14.5, y: 8.5 };
-  g.tick();
-  assert.ok(!g.buildSnapshot(b).objects.some((o) => o.id === cloth.id));
-  g.action(b.id, { type: 'search', furnitureId: 'f_living_sofa' });
-  assert.ok(g.buildSnapshot(b).objects.some((o) => o.id === cloth.id));
-  g.action(b.id, { type: 'take', objectId: cloth.id });
-  assert.ok(b.inventory.includes(cloth.id));
-  assert.ok(cloth.history.length >= 4);
+  assert.deepEqual(p.pos, pos);
+  g.setConnected(p.id, true);
+  const v = g.fullView(p.id)!;
+  assert.equal(v.you, p.id);
+  assert.ok(v.dossier!.memories.length);
 });
 
-test('nuit calme : sans événement majeur, l’aube révèle les secrets', () => {
-  const { g, advance, isFinished } = makeGame(2, 5);
-  // retire le collier pour éviter le vol
-  for (const o of g.objects.values()) if (o.type === 'necklace') o.location = { kind: 'floor', roomId: 'bedroom2', pos: (o.location as { pos: { x: number; y: number } }).pos };
-  advance(70_000, 200);
-  assert.ok(isFinished());
-  assert.equal(g.investigation.epilogue?.caseType, 'quiet');
+test('mouvement bloqué par les murs ; un joueur arrêté ne bouge plus', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation, advance } = makeGame(5, 27);
+  startInvestigation();
+  const [a, b, c, d] = innocents();
+  fetch(a, ref('group_photo'));
+  act(a, { type: 'examine', objectId: ref('group_photo').id });
+  act(a, { type: 'accuse', targetId: b.id, evidenceIds: [ref('group_photo').id], text: '' });
+  for (const p of [c, d, murderer()]) act(p, { type: 'ballot', choice: 'guilty' });
+  assert.ok(b.arrested);
+  const pos = { ...b.pos };
+  g.setInput(b.id, 1, 0);
+  advance(500);
+  assert.deepEqual(b.pos, pos);
 });

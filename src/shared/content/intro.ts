@@ -49,6 +49,8 @@ export interface IntroPlan {
   vehicleId: string;
   driverId: string;
   occupants: IntroOccupant[];
+  /** personnage de la victime (plan final de la cinématique : découverte du corps) */
+  victimCastId?: string;
   /** graine commune (fenêtre de la silhouette, variations) */
   seed: number;
   /** horodatage serveur du début de la cinématique */
@@ -93,7 +95,7 @@ export function seededRandom(seed: number) {
  */
 export function buildIntroPlan(
   players: { userId: string; name: string; character: Character }[],
-  opts: { id: string; seed: number; startedAt: number; durationMs: number; config?: IntroConfig },
+  opts: { id: string; seed: number; startedAt: number; durationMs: number; config?: IntroConfig; victimCastId?: string },
 ): IntroPlan {
   if (!players.length) throw new Error('Aucun joueur pour la cinématique.');
   const vehicle: VehicleDefinition = getVehicleForPlayerCount(players.length);
@@ -114,6 +116,7 @@ export function buildIntroPlan(
     vehicleId: vehicle.id,
     driverId: driver.userId,
     occupants,
+    victimCastId: opts.victimCastId,
     seed: opts.seed,
     startedAt: opts.startedAt,
     durationMs: opts.durationMs,

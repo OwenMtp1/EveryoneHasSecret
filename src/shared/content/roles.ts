@@ -1,5 +1,5 @@
 /**
- * Rôles d'enquête — distribués dynamiquement après un événement majeur.
+ * Spécialités d'enquête — distribuées au début de la nuit (le meurtrier en reçoit une aussi, et peut mentir).
  * affinity : métriques (calculées par le serveur à partir du journal de vérité)
  * qui rendent un joueur plus susceptible d'obtenir ce rôle.
  * Chaque outil est implémenté par un handler générique côté serveur (roles.ts).
@@ -40,8 +40,8 @@ export const ROLES: RoleDef[] = [
     priority: 1,
     affinity: { socialActions: 2 },
     tools: [
-      { id: 'request_testimony', name: 'Interroger', description: 'Demande à un joueur où il se trouvait au moment des faits.', target: 'player' },
-      { id: 'verify_testimony', name: 'Vérifier un témoignage', description: 'Confronte un témoignage aux faits établis. Cohérent ou non ?', target: 'testimony', maxUses: 2 },
+      { id: 'request_testimony', name: 'Interroger', description: 'Exige d’un joueur une déclaration publique d’alibi pour 21h00–22h00.', target: 'player' },
+      { id: 'verify_testimony', name: 'Vérifier un alibi', description: 'Confronte une déclaration d’alibi aux faits : exacte, partiellement exacte ou fausse.', target: 'player', maxUses: 1 },
     ],
   },
   {
@@ -50,7 +50,7 @@ export const ROLES: RoleDef[] = [
     description: 'Examine le corps : cause, heure de la mort, et ce que la victime a laissé sous ses ongles.',
     priority: 2,
     affinity: { discoveredBody: 5, examinations: 1 },
-    tools: [{ id: 'examine_body', name: 'Autopsie', description: 'Examiner le corps (être à proximité).', target: 'body', maxUses: 1 }],
+    tools: [{ id: 'examine_body', name: 'Autopsie', description: 'Examiner le corps (être à proximité).', target: 'body', maxUses: 2 }],
   },
   {
     id: 'scientist',
@@ -75,12 +75,12 @@ export const ROLES: RoleDef[] = [
     ],
   },
   {
-    id: 'technician',
-    name: 'Technicien·ne',
-    description: 'Accède au moniteur de surveillance du bureau : passages filmés dans le hall et l’allée.',
-    priority: 5,
-    affinity: { timeInOffice: 3 },
-    tools: [{ id: 'camera_logs', name: 'Consulter les caméras', description: 'Utiliser le moniteur du bureau (être à côté).', target: 'none', maxUses: 2 }],
+    id: 'analyst',
+    name: 'Analyste numérique',
+    description: 'Contourne un verrouillage (téléphone, ordinateur, coffret) et lit les métadonnées des photos et fichiers.',
+    priority: 3,
+    affinity: {},
+    tools: [{ id: 'bypass_lock', name: 'Contourner un verrou', description: 'Déverrouille un appareil ou un coffret à portée, sans le code.', target: 'object', maxUses: 1 }],
   },
   {
     id: 'profiler',

@@ -32,7 +32,24 @@ export type GameAction =
   | { type: 'clean'; toolId: string; targetKind: 'object' | 'trace'; targetId: string }
   | { type: 'destroy'; objectId: string }
   | { type: 'wash' }
+  /** meurtrier uniquement : éliminer un opposant officiel, seul à seul */
   | { type: 'act'; targetId: string; objectId: string }
+  /** saisir un code (téléphone, ordinateur, coffret) */
+  | { type: 'unlock'; objectId: string; code: string }
+  /** ouvrir un contenant avec une clé détenue / lire un support dans un appareil */
+  | { type: 'open'; objectId: string }
+  | { type: 'insert'; mediaId: string; deviceId: string }
+  /** fouiller le corps de la victime */
+  | { type: 'search_body'; bodyId: string }
+  /** verser une pièce lue au dossier commun, éventuellement CONTRE un joueur (dénonciation formelle) */
+  | { type: 'present'; objectId: string; againstId?: string }
+  /** déclaration publique d'alibi pour la fenêtre du crime (21h00–22h00) */
+  | { type: 'alibi'; place: string; text: string }
+  /** accusation formelle : déclenche un vote, exige au moins une pièce lue */
+  | { type: 'accuse'; targetId: string; evidenceIds: string[]; text: string }
+  /** défense de l'accusé pendant le vote */
+  | { type: 'defend'; text: string }
+  | { type: 'ballot'; choice: string }
   | {
       type: 'relation';
       op: 'propose' | 'accept' | 'decline' | 'break';
@@ -43,8 +60,7 @@ export type GameAction =
   | { type: 'share'; knowledgeId: string; to: 'board' | 'player' | 'allies'; targetId?: string }
   | { type: 'claim'; text: string }
   | { type: 'tool'; toolId: string; targetId?: string }
-  | { type: 'testimony'; requestId: string; roomId: string; text: string }
-  | { type: 'vote'; suspectId: string };
+  | { type: 'testimony'; requestId: string; roomId: string; text: string };
 
 export interface ClientToServerEvents {
   // Amis & notifications

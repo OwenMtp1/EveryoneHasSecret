@@ -162,9 +162,11 @@ test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchr
 
   const hv = host.lastFull!;
   assert.equal(hv.players.length, 4);
-  assert.ok(hv.secret.length > 10, 'chacun reçoit son secret');
-  assert.notEqual(hv.secret, b.lastFull!.secret, 'secrets différents');
-  assert.ok(!JSON.stringify(b.lastFull).includes(hv.secret), 'le secret de l’hôte ne fuit pas');
+  assert.ok(hv.dossier!.secret.length > 10, 'chacun reçoit son secret');
+  assert.notEqual(hv.dossier!.secret, b.lastFull!.dossier!.secret, 'secrets différents');
+  assert.ok(!JSON.stringify(b.lastFull).includes(hv.dossier!.secret), 'le secret de l’hôte ne fuit pas');
+  assert.equal([host, b, c, d].filter((p) => p.lastFull!.dossier!.camp === 'murderer').length, 1, 'un seul meurtrier, humain');
+  assert.ok(hv.bodies.some((x) => x.npc), 'le corps de la victime est là dès le début');
   assert.equal(new Set([host, b, c, d].map((p) => JSON.stringify(p.lastFull!.players.find((x) => x.id === p.id)!.character))).size, 4, 'personnages distincts');
   // Tous dans le hall au départ : chacun voit les autres
   for (const p of [host, b, c, d]) assert.equal(p.lastFull!.players.filter((x) => x.pos).length, 4);
@@ -189,7 +191,11 @@ test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchr
 
   // Action invalide rejetée par le serveur
   await assert.rejects(call(b.socket, 'game:action', { type: 'take', objectId: 'nope' }), /introuvable/);
-  await assert.rejects(call(b.socket, 'game:action', { type: 'act', targetId: c.id, objectId: 'x' }), /occasion/);
+  await assert.rejects(call(b.socket, 'game:action', { type: 'act', targetId: c.id, objectId: 'x' }), /occasion|introuvable/);
+  // requêtes forgées : action inconnue, vote sans vote en cours, accusation sans pièce
+  await assert.rejects(call(b.socket, 'game:action', { type: 'hack' }), /inconnue|invalide/);
+  await assert.rejects(call(b.socket, 'game:action', { type: 'ballot', choice: 'guilty' }), /Aucun vote/);
+  await assert.rejects(call(b.socket, 'game:action', { type: 'accuse', targetId: c.id, evidenceIds: ['x'], text: '' }), /instants|pièce/);
 
   // Déconnexion / reconnexion : on retrouve sa partie
   d.socket.disconnect();

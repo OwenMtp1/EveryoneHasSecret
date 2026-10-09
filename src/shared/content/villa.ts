@@ -152,11 +152,11 @@ export const ROOMS: RoomDef[] = [
   { id: 'office', name: 'Bureau', rect: { x: 30, y: 6, w: 8, h: 7 }, floor: 'carpet', floorColor: '#2c3a4a' },
   { id: 'bathroom', name: 'Salle de bain', rect: { x: 39, y: 6, w: 8, h: 7 }, floor: 'tile', floorColor: '#3b4c55', hasSink: true },
   { id: 'cellar', name: 'Cave & garage', rect: { x: 1, y: 14, w: 10, h: 8 }, floor: 'concrete', floorColor: '#2c2b29' },
-  { id: 'hall', name: 'Hall', rect: { x: 12, y: 14, w: 17, h: 8 }, floor: 'stone', floorColor: '#45403a', camera: true },
+  { id: 'hall', name: 'Hall', rect: { x: 12, y: 14, w: 17, h: 8 }, floor: 'stone', floorColor: '#45403a' },
   { id: 'corridor', name: 'Couloir', rect: { x: 30, y: 14, w: 17, h: 2 }, floor: 'wood', floorColor: '#3e2c20' },
   { id: 'bedroom1', name: 'Chambre bleue', rect: { x: 30, y: 17, w: 8, h: 5 }, floor: 'carpet', floorColor: '#243049' },
   { id: 'bedroom2', name: 'Chambre de maître', rect: { x: 39, y: 17, w: 8, h: 5 }, floor: 'carpet', floorColor: '#43242c' },
-  { id: 'exterior', name: 'Allée extérieure', rect: { x: 1, y: 23, w: 46, h: 4 }, floor: 'gravel', floorColor: '#34332f', outdoor: true, camera: true },
+  { id: 'exterior', name: 'Allée extérieure', rect: { x: 1, y: 23, w: 46, h: 4 }, floor: 'gravel', floorColor: '#34332f', outdoor: true },
   // ── Étage ──
   { id: 'library', name: 'Bibliothèque', rect: upRect(1, 6, 12, 7), floor: 'wood', floorColor: '#3e2a1e', level: 1 },
   { id: 'guestroom', name: "Chambre d'amis", rect: upRect(1, 14, 12, 8), floor: 'carpet', floorColor: '#3a3226', level: 1 },
@@ -213,7 +213,7 @@ export const FURNITURE: FurnitureDef[] = [
   { id: 'f_living_fireplace', roomId: 'living', name: 'Cheminée', kind: 'fireplace', x: 12, y: 11, w: 1, h: 2, hiding: true },
   // Bureau
   { id: 'f_office_desk', roomId: 'office', name: 'Bureau en chêne', kind: 'desk', x: 32, y: 8, w: 3, h: 1, hiding: true },
-  { id: 'f_office_terminal', roomId: 'office', name: 'Moniteur de surveillance', kind: 'terminal', x: 37, y: 7, w: 1, h: 1 },
+  { id: 'f_office_terminal', roomId: 'office', name: 'Poste informatique', kind: 'terminal', x: 37, y: 7, w: 1, h: 1 },
   { id: 'f_office_shelf', roomId: 'office', name: 'Bibliothèque', kind: 'shelf', x: 31, y: 12, w: 4, h: 1, hiding: true },
   // Salle de bain
   { id: 'f_bath_tub', roomId: 'bathroom', name: 'Baignoire', kind: 'bath', x: 44, y: 7, w: 3, h: 2, hiding: true },
@@ -222,7 +222,6 @@ export const FURNITURE: FurnitureDef[] = [
   { id: 'f_cellar_shelf', roomId: 'cellar', name: 'Étagères à vin', kind: 'shelf', x: 1, y: 15, w: 1, h: 5, hiding: true },
   { id: 'f_cellar_crate', roomId: 'cellar', name: 'Caisses', kind: 'crate', x: 8, y: 18, w: 2, h: 2, hiding: true },
   // Hall
-  { id: 'f_hall_clock', roomId: 'hall', name: 'Horloge de parquet', kind: 'clock', x: 12, y: 14, w: 1, h: 1 },
   { id: 'f_hall_console', roomId: 'hall', name: 'Console', kind: 'table', x: 25, y: 14, w: 2, h: 1, hiding: true },
   { id: 'f_hall_stairs', roomId: 'hall', name: 'Escalier', kind: 'stairs', ...STAIRS, walkable: true },
   up({ id: 'f_landing_railing', roomId: 'landing', name: "Rambarde de l'escalier", kind: 'railing' as const, x: STAIRS.x, y: 19, w: STAIRS.w, h: 2 }),

@@ -24,6 +24,8 @@ import type {
   Character,
   GestureKind,
 } from '@shared/types';
+import { OBJECT_TYPES, objectTypeDef } from '@shared/content/objects';
+import { SHOE_PATTERNS, SHOE_SIZES } from '@shared/content/scenarios';
 import type { GameAction } from '@shared/protocol';
 import { GAME_CONFIG, META_CONFIG, formatClock } from '@shared/config';
 import {
@@ -36,13 +38,12 @@ import {
   roomAt,
   roomById,
   roomName,
+  randomFreeTile,
   type WorldGrid,
 } from '@shared/content/villa';
-import { MOTIVE_PHASES, OPPORTUNITY_PHASES, PRE_MAJOR_PHASES } from '@shared/content/events';
 import type { TruthEventType } from '@shared/content/events';
 import type {
   Body,
-  CaseState,
   Evidence,
   EvidenceKind,
   GameObject,
@@ -53,13 +54,11 @@ import type {
   Testimony,
   TruthEvent,
 } from './state';
-import { EventEngine } from './events/engine';
-import { ScenarioDirector } from './director';
 import { RelationshipSystem } from './relationships';
 import { ActionSystem } from './actions';
-import { InvestigationSystem } from './investigation';
+import { CaseSystem } from './case/system';
 import { doorsBetween } from './pathfinding';
-import { seededRandom, shortId, UserError } from '../util';
+import { pick, seededRandom, shortId, shuffle, UserError } from '../util';
 
 export interface GameInit {
   id: string;
@@ -68,8 +67,14 @@ export interface GameInit {
   players: { userId: string; name: string; character: Character }[];
   emit: (userId: string, event: 'game:full' | 'game:snapshot' | 'game:ended', payload?: unknown) => void;
   onFinished?: (epilogue: EpilogueView, game: GameInstance) => void;
-  /** < 1 accélère toute la nuit (tests). */
+  /** échelle de durée de la nuit (durée choisie × accélération de test) */
   timeScale?: number;
+  /** échelle des votes et délais d'action (accélération de test seulement) */
+  voteScale?: number;
+  /** personnage (catalogue) de la victime, non choisi par les joueurs */
+  victimCastId?: string;
+  /** scénario imposé (sinon tiré au sort) */
+  scenarioId?: string;
   seed?: number;
   /** horloge injectable (tests) */
   now?: () => number;
@@ -88,7 +93,8 @@ export class GameInstance {
   readonly grid: WorldGrid = buildWorldGrid();
   readonly rnd: () => number;
   readonly timeScale: number;
-  readonly maxMurders = 1;
+  readonly voteScale: number;
+  readonly maxMurders = 99;
 
   players = new Map<string, PlayerState>();
   objects = new Map<string, GameObject>();
@@ -102,7 +108,6 @@ export class GameInstance {
   testimonies: Testimony[] = [];
   unlockedDoors = new Set<string>();
   flags: Record<string, boolean> = {};
-  case: CaseState | null = null;
   phase: Phase = 'ARRIVAL';
   phaseStartedAt: number;
   startedAt: number;
@@ -110,11 +115,9 @@ export class GameInstance {
   murders = 0;
   ended = false;
 
-  readonly engine: EventEngine;
-  readonly director: ScenarioDirector;
   readonly relationships: RelationshipSystem;
   readonly actions: ActionSystem;
-  readonly investigation: InvestigationSystem;
+  readonly caseSystem: CaseSystem;
 
   private seq = 0;
   private gestureSeq = 0;
@@ -137,6 +140,7 @@ export class GameInstance {
     this.emitFn = init.emit;
     this.finishedFn = init.onFinished;
     this.timeScale = init.timeScale ?? 1;
+    this.voteScale = init.voteScale ?? 1;
     this.rnd = seededRandom(init.seed ?? Math.floor(Math.random() * 2 ** 31));
     this.now = init.now ?? (() => Date.now());
     this.startedAt = this.now();
@@ -174,21 +178,62 @@ export class GameInstance {
         motiveAgainst: new Set(),
         pendingTestimony: null,
         gesture: null,
+        arrested: false,
+        accusationsUsed: 0,
+        gloves: false,
         dirty: true,
       };
       p.roomHistory.push({ clock: this.clock(), roomId: p.roomId });
       this.players.set(p.id, p);
     });
 
-    this.engine = new EventEngine(this);
-    this.director = new ScenarioDirector(this);
     this.relationships = new RelationshipSystem(this);
     this.actions = new ActionSystem(this);
-    this.investigation = new InvestigationSystem(this);
+    this.caseSystem = new CaseSystem(this);
 
-    this.director.setup();
+    this.assignIdentities();
+    this.spawnAmbientObjects();
+    this.caseSystem.setup({ victimCastId: init.victimCastId, scenarioId: init.scenarioId });
     if (!init.manual) this.start();
-    this.log('GAME_STARTED', { text: `La nuit commence — ${this.title}`, data: { seeds: this.director.seeds } });
+    this.log('GAME_STARTED', { text: `La nuit commence — ${this.title}` });
+  }
+
+  /** Identités physiques uniques et cachées : empreintes digitales, motif et pointure des semelles. */
+  private assignIdentities() {
+    const patterns = shuffle(SHOE_PATTERNS, this.rnd);
+    const used = new Set<string>();
+    [...this.players.values()].forEach((p, i) => {
+      p.shoe = { pattern: patterns[i % patterns.length], size: pick(SHOE_SIZES, this.rnd) };
+      let code = '';
+      do code = `${String.fromCharCode(65 + Math.floor(this.rnd() * 26))}-${10 + Math.floor(this.rnd() * 89)}`;
+      while (used.has(code));
+      used.add(code);
+      p.fingerprint = code;
+    });
+  }
+
+  /** Objets utilitaires (lampes, briquets, torchons, gants, couteau, clé de la cave…) : chacun a un usage. */
+  private spawnAmbientObjects() {
+    for (const def of OBJECT_TYPES) {
+      if (def.eventOnly || !def.spawnRooms.length || this.rnd() > def.spawnChance) continue;
+      const roomId = pick(def.spawnRooms.filter((r) => roomById(r)), this.rnd);
+      if (!roomId) continue;
+      const t = randomFreeTile(this.grid, roomId, this.rnd);
+      const o: GameObject = {
+        id: shortId('o_'),
+        type: def.type,
+        def: objectTypeDef(def.type)!,
+        name: def.name,
+        location: { kind: 'floor', roomId, pos: { x: t.x + (this.rnd() - 0.5) * 0.3, y: t.y + (this.rnd() - 0.5) * 0.3 } },
+        spawnRoomId: roomId,
+        history: [{ clock: this.clock(), text: `Présent — ${roomName(roomId)}` }],
+        traces: [],
+        lit: false,
+        knownBy: new Set(),
+        props: {},
+      };
+      this.objects.set(o.id, o);
+    }
   }
 
   // ───────────────────────── temps ─────────────────────────
@@ -240,8 +285,7 @@ export class GameInstance {
     if (!this.ended) {
       this.recordSightings();
       this.checkBodyDiscovery();
-      this.engine.tick();
-      this.investigation.tick();
+      this.caseSystem.tick();
     }
   }
 
@@ -253,7 +297,6 @@ export class GameInstance {
   ): TruthEvent {
     const ev: TruthEvent = { seq: ++this.seq, type, t: this.now() - this.startedAt, clock: this.clock(), ...f };
     this.truth.push(ev);
-    this.engine?.onEvent(ev);
     return ev;
   }
 
@@ -269,16 +312,6 @@ export class GameInstance {
 
   adjacent(roomId: string) {
     return adjacentRooms(roomId);
-  }
-
-  opportunityPhases() {
-    return OPPORTUNITY_PHASES;
-  }
-  prePhases() {
-    return PRE_MAJOR_PHASES;
-  }
-  motivePhases() {
-    return MOTIVE_PHASES;
   }
 
   isBlackout() {
@@ -453,7 +486,7 @@ export class GameInstance {
   }
 
   private simulatePlayer(p: PlayerState, dt: number) {
-    if (!p.alive || !p.connected) return;
+    if (!p.alive || !p.connected || p.arrested) return;
     const len = Math.hypot(p.input.x, p.input.y);
     if (len > 0.01) {
       const speed = p.running ? GAME_CONFIG.runSpeed : GAME_CONFIG.walkSpeed;
@@ -526,6 +559,7 @@ export class GameInstance {
     body.discoveredBy = finderId ?? undefined;
     body.discoveredAt = this.clock();
     if (finderId) this.know(finderId, 'seen', `${formatClock(this.clock())} — J’ai découvert le corps de ${this.nameOf(body.playerId)} (${roomName(body.roomId)}).`, { important: true });
+    this.feedAll('danger', `${finderId ? this.nameOf(finderId) : npcName} découvre le corps de ${this.nameOf(body.playerId)} — ${roomName(body.roomId)}. Le meurtrier a frappé à nouveau.`);
     this.log('BODY_DISCOVERED', {
       actorId: finderId ?? undefined,
       targetId: body.playerId,
@@ -540,7 +574,7 @@ export class GameInstance {
 
   setInput(userId: string, dx: number, dy: number, run = false) {
     const p = this.players.get(userId);
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || p.arrested) return;
     const clamp = (v: number) => (Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0);
     p.input = { x: clamp(dx), y: clamp(dy) };
     p.running = run;
@@ -562,9 +596,9 @@ export class GameInstance {
     let msg: string | undefined;
     switch (a.type) {
       case 'relation':
-        if (!p.alive) throw new UserError('Vous n’êtes plus de ce monde.');
+        this.caseSystem.requireActive(p);
         if (!['propose', 'accept', 'decline', 'break'].includes(a.op)) throw new UserError('Action invalide.');
-        if (a.op === 'propose' && !['FRIEND', 'ALLY', 'PACT', 'ENEMY', 'VENDETTA'].includes(a.relType as string)) throw new UserError('Relation inconnue.');
+        if (a.op === 'propose' && !['FRIEND', 'ALLY', 'PACT', 'ENEMY'].includes(a.relType as string)) throw new UserError('Relation inconnue.');
         if (a.op === 'propose') msg = this.relationships.propose(p.id, a.relType!, a.targetId!);
         else if (a.op === 'accept' || a.op === 'decline') msg = this.relationships.respond(p.id, a.relationId!, a.op === 'accept');
         else msg = this.relationships.breakRelation(p.id, a.relationId!);
@@ -576,14 +610,39 @@ export class GameInstance {
         msg = this.claim(p, a.text);
         break;
       case 'tool':
-        if (!p.alive) throw new UserError('Vous n’êtes plus de ce monde.');
-        msg = this.investigation.useTool(p, a.toolId, a.targetId);
+        msg = this.caseSystem.useTool(p, String(a.toolId), a.targetId === undefined ? undefined : String(a.targetId));
         break;
-      case 'testimony':
-        msg = this.investigation.testify(p, a.requestId, a.roomId, a.text);
+      case 'unlock':
+        this.caseSystem.requireActive(p);
+        msg = this.caseSystem.unlock(p, this.actions.reachable(p, String(a.objectId)), String(a.code ?? ''));
         break;
-      case 'vote':
-        msg = this.investigation.vote(p, a.suspectId);
+      case 'open': {
+        this.caseSystem.requireActive(p);
+        const o = this.actions.reachable(p, String(a.objectId));
+        msg = o.def.tags.includes('container') ? this.caseSystem.open(p, o) : (this.caseSystem.eject(p, o) ?? 'Rien à retirer.');
+        break;
+      }
+      case 'insert':
+        msg = this.caseSystem.insert(p, String(a.mediaId), String(a.deviceId));
+        break;
+      case 'search_body':
+        msg = this.caseSystem.searchBody(p, String(a.bodyId));
+        break;
+      case 'present':
+        msg = this.caseSystem.present(p, String(a.objectId), a.againstId ? String(a.againstId) : undefined);
+        break;
+      case 'alibi':
+        msg = this.caseSystem.declareAlibi(p, String(a.place), String(a.text ?? ''));
+        break;
+      case 'accuse':
+        msg = this.caseSystem.accuse(p, String(a.targetId), a.evidenceIds, String(a.text ?? ''));
+        break;
+      case 'defend':
+        msg = this.caseSystem.defend(p, String(a.text ?? ''));
+        break;
+      case 'ballot':
+        if (!p.alive) throw new UserError('Les morts ne votent pas.');
+        msg = this.caseSystem.ballot(p, String(a.choice));
         break;
       default:
         msg = this.actions.handle(p, a);
@@ -593,7 +652,7 @@ export class GameInstance {
   }
 
   private share(p: PlayerState, knowledgeId: string, to: 'board' | 'player' | 'allies', targetId?: string) {
-    if (!p.alive) throw new UserError('Les morts ne parlent pas.');
+    this.caseSystem.requireActive(p);
     const k = p.knowledge.find((x) => x.id === knowledgeId);
     if (!k) throw new UserError('Information introuvable.');
     if (to === 'board') {
@@ -614,7 +673,7 @@ export class GameInstance {
   }
 
   private claim(p: PlayerState, text: string) {
-    if (!p.alive) throw new UserError('Les morts ne parlent pas.');
+    this.caseSystem.requireActive(p);
     const t = String(text ?? '').trim().slice(0, 240);
     if (t.length < 3) throw new UserError('Déclaration trop courte.');
     this.addBoard('claim', p.id, t, false);
@@ -632,9 +691,9 @@ export class GameInstance {
     if (!text) throw new UserError('Message vide.');
     let stored: StoredChat;
     const base = { id: shortId('c_'), fromId: p.id, fromName: p.name, text, at: this.clock() };
-    if (!p.alive && channel !== 'dead') {
+    if ((!p.alive || p.arrested) && channel !== 'dead') {
       if (this.ended) channel = 'general';
-      else throw new UserError('Les morts ne peuvent parler qu’entre eux.');
+      else throw new UserError('Hors jeu : vous ne pouvez parler qu’aux autres spectateurs.');
     }
     if (channel === 'general' || channel === 'dead') {
       stored = { ...base, channel, audience: null };
@@ -658,7 +717,7 @@ export class GameInstance {
   private chatFor(p: PlayerState): ChatMessage[] {
     const out: ChatMessage[] = [];
     for (const m of this.chat) {
-      if (m.channel === 'dead' && p.alive && !this.ended) continue;
+      if (m.channel === 'dead' && p.alive && !p.arrested && !this.ended) continue;
       if (m.audience && !m.audience.includes(p.id)) continue;
       let channel = m.channel as ChatChannel;
       if (m.channel.startsWith('dm:')) {
@@ -673,7 +732,7 @@ export class GameInstance {
   // ───────────────────────── vues (filtrage vérité → joueur) ─────────────────────────
 
   private visiblePlayers(viewer: PlayerState): GamePlayerView[] {
-    const spectator = !viewer.alive || this.ended;
+    const spectator = !viewer.alive || viewer.arrested || this.ended;
     const allies = new Set(this.relationships.alliesOf(viewer.id));
     return [...this.players.values()].map((p) => {
       const base: GamePlayerView = { id: p.id, name: p.name, character: p.character, alive: p.alive, connected: p.connected };
@@ -694,8 +753,8 @@ export class GameInstance {
     });
   }
 
-  private objectView(o: GameObject): ObjectView {
-    const v: ObjectView = { id: o.id, type: o.type, name: o.name, icon: o.def.icon };
+  private objectView(o: GameObject, viewer: PlayerState): ObjectView {
+    const v: ObjectView = { id: o.id, type: o.type, name: o.name, icon: o.def.icon, ...this.caseSystem.objectExtras(viewer, o) };
     if (o.location.kind === 'floor' || o.location.kind === 'hidden') {
       v.pos = o.location.pos;
       v.roomId = o.location.roomId;
@@ -707,19 +766,19 @@ export class GameInstance {
   }
 
   private visibleObjects(viewer: PlayerState): ObjectView[] {
-    const spectator = !viewer.alive || this.ended;
+    const spectator = !viewer.alive || viewer.arrested || this.ended;
     const seeRoom = this.canSeeRoom(viewer);
     const out: ObjectView[] = [];
     for (const o of this.objects.values()) {
-      if (o.location.kind === 'floor' && (spectator || (o.location.roomId === viewer.roomId && seeRoom))) out.push(this.objectView(o));
+      if (o.location.kind === 'floor' && (spectator || (o.location.roomId === viewer.roomId && seeRoom))) out.push(this.objectView(o, viewer));
       else if (o.location.kind === 'hidden' && (spectator ? false : o.knownBy.has(viewer.id) && o.location.roomId === viewer.roomId))
-        out.push({ ...this.objectView(o), name: `${o.name} (caché)` });
+        out.push({ ...this.objectView(o, viewer), name: `${o.name} (${o.location.furnitureId.startsWith('body:') ? 'sur le corps' : 'caché'})` });
     }
     return out;
   }
 
   private visibleTraces(viewer: PlayerState): TraceView[] {
-    const spectator = !viewer.alive || this.ended;
+    const spectator = !viewer.alive || viewer.arrested || this.ended;
     const seeRoom = this.canSeeRoom(viewer);
     const out: TraceView[] = [];
     for (const e of this.evidence) {
@@ -734,17 +793,18 @@ export class GameInstance {
   }
 
   private visibleBodies(viewer: PlayerState) {
-    const spectator = !viewer.alive || this.ended;
+    const spectator = !viewer.alive || viewer.arrested || this.ended;
     return this.bodies
       .filter((b) => spectator || b.discovered || (b.roomId === viewer.roomId && this.canSeeRoom(viewer)) || b.killerId === viewer.id)
       .map((b) => {
+        if (b.npc) return { id: b.id, playerId: b.playerId, npc: true, name: b.npc.name, character: b.npc.character, pos: b.pos, roomId: b.roomId };
         const p = this.players.get(b.playerId)!;
         return { id: b.id, playerId: b.playerId, name: p.name, character: p.character, pos: b.pos, roomId: b.roomId };
       });
   }
 
   private opportunityView(p: PlayerState) {
-    const o = this.actions.opportunityFor(p);
+    const o = this.caseSystem.opportunityFor(p);
     if (!o) return null;
     return {
       targetId: o.target.id,
@@ -753,7 +813,7 @@ export class GameInstance {
       objectName: o.weapon.name,
       text: o.dark
         ? `Dans le noir, personne ne vous voit. ${o.target.name} est tout près. ${o.weapon.name} est dans votre main.`
-        : `Vous êtes seul·e avec ${o.target.name}. ${o.weapon.name} pèse dans votre main.`,
+        : `${o.target.name} s’est officiellement opposé·e à vous, et vous êtes seuls. ${o.weapon.name} pèse dans votre main.`,
     };
   }
 
@@ -772,8 +832,8 @@ export class GameInstance {
 
   buildSelfView(p: PlayerState): GameSelfView {
     const snap = this.buildSnapshot(p);
-    const inv = p.inventory.map((id) => this.objectView(this.objects.get(id)!));
-    const voting = this.phase === 'RESOLUTION' && this.investigation.voteEndsAt > 0 && !this.ended;
+    const inv = p.inventory.map((id) => this.objectView(this.objects.get(id)!, p));
+    const cs = this.caseSystem;
     return {
       gameId: this.id,
       lobbyId: this.lobbyId,
@@ -784,37 +844,24 @@ export class GameInstance {
       inventory: inv,
       relations: this.relationships.viewFor(p.id),
       knowledge: p.knowledge.slice(-200),
-      secret: p.secretText,
-      role: this.investigation.roleView(p),
-      caseInfo: this.investigation.caseView(),
+      role: cs.roleView(p),
+      caseInfo: cs.caseView(p),
+      dossier: cs.dossierView(p),
+      publicEvidence: cs.publicEvidenceView(),
+      alibis: cs.alibiViews(),
+      oppositions: cs.oppositions,
       board: this.board.slice(-120),
       feed: p.feed,
       chat: this.chatFor(p),
-      vote: voting
-        ? {
-            candidates: this.investigation.candidates(),
-            myVote: p.vote,
-            votesCast: this.alivePlayers().filter((x) => x.vote).length,
-            votesNeeded: this.alivePlayers().length,
-            endsAt: Date.now() + Math.max(0, this.investigation.voteEndsAt - this.now()),
-          }
-        : null,
-      epilogue: this.investigation.epilogue,
+      vote: cs.voteView(p),
+      epilogue: cs.epilogue,
       unlockedDoors: [...this.unlockedDoors],
       muddy: p.muddyUntil > this.now(),
       testimonyRequest: p.pendingTestimony
         ? { requestId: p.pendingTestimony.requestId, question: p.pendingTestimony.question, fromName: p.pendingTestimony.fromName }
         : null,
-      pactInventories: this.pactInventories(p),
+      arrested: [...this.players.values()].filter((x) => x.arrested).map((x) => x.id),
     };
-  }
-
-  /** Inventaires visibles grâce aux pactes : avantage concret d'un pacte. */
-  pactInventories(p: PlayerState) {
-    return this.relationships.pactPartners(p.id).map((id) => ({
-      playerId: id,
-      items: (this.players.get(id)?.inventory ?? []).map((oid) => this.objects.get(oid)!.name),
-    }));
   }
 
   fullView(userId: string): GameSelfView | null {
