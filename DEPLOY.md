@@ -11,10 +11,14 @@ Il suffit donc d’un hébergeur capable de lancer `npm start` et d’accepter l
 4. Valider. Au bout de quelques minutes : une adresse du type `https://everyone-has-a-secret.onrender.com`.
 5. Partager ce lien avec vos amis : chacun crée son compte, l’un crée une partie, les autres rejoignent avec le code.
 
+6. **Comptes persistants (indispensable)** : suivre [docs/SUPABASE.md](docs/SUPABASE.md) puis renseigner dans
+   *Environment* : `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DATABASE_URL` (et `SUPABASE_JWT_SECRET` pour un projet « legacy »).
+   Sans cela, l’offre gratuite efface la base à chaque mise en veille : c’était la cause des comptes à recréer.
+
 Limites de l’offre gratuite :
-- le serveur **s’endort après 15 min sans visite** (le premier chargement suivant prend ~1 min) ;
-- le disque est **éphémère** : comptes, personnages et amis sont remis à zéro à chaque redéploiement/redémarrage.
-  Pour les conserver : offre payante + **Disk** monté sur `/var/data`, et `EHAS_DB=/var/data/ehas.sqlite`.
+- le serveur **s’endort après 15 min sans visite** : le premier chargement suivant prend ~1 min (le jeu affiche
+  « Le serveur se réveille… » et garde la session ouverte) ;
+- une partie en cours est perdue si le serveur redémarre (les comptes, amis et historique sont dans Supabase).
 
 ## Option 2 — Docker (n’importe quel hébergeur : Fly.io, Railway, un VPS…)
 
@@ -35,15 +39,12 @@ Mettre un reverse proxy (Caddy, Nginx) devant pour le HTTPS, en laissant passer 
 
 ## Variables d’environnement
 
-| Variable | Défaut | Rôle |
-|---|---|---|
-| `PORT` | `3001` | Port d’écoute (fourni automatiquement par Render/Fly/Railway) |
-| `EHAS_DB` | `data/ehas.sqlite` | Fichier de base de données |
-| `EHAS_TIME_SCALE` | `1` | Accélère la nuit (< 1) — tests uniquement |
-| `EHAS_TRANSITION_MS` | `20000` | Durée de la cinématique d'arrivée |
-| `EHAS_LOAD_TIMEOUT_MS` | `30000` | Attente maximale du chargement des joueurs |
+Voir le tableau du [README](README.md#variables-denvironnement). Secrets : `DATABASE_URL`, `SUPABASE_JWT_SECRET`
+(jamais dans le dépôt). Publiques : `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
 
 ## À savoir avant une ouverture publique
-- Les modèles 3D provisoires (`public/models`) viennent des exemples Three.js (origine Mixamo / Ready Player Me) : licence à valider avant une diffusion publique.
-- Une partie en cours vit en mémoire : un redémarrage du serveur la termine (les comptes restent si le disque est persistant).
-- Node.js ≥ 22.5 requis (SQLite intégré).
+- Les 40 personnages viennent de Microsoft Rocketbox (licence MIT, attribution dans `public/characters/LICENSE-ROCKETBOX.txt`).
+  La musique est une composition procédurale originale. Les anciens modèles d’exemple à licence incertaine ont été retirés.
+- Une partie en cours vit en mémoire : un redémarrage du serveur la termine.
+- Node.js ≥ 22.5 requis.
+- Le service d’e-mails intégré de Supabase est limité : configurer un SMTP pour l’inscription de nombreux joueurs.

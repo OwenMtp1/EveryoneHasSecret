@@ -2,112 +2,114 @@
 
 ## 1. Vision
 
-Un jeu social narratif multijoueur à **événements émergents**. Des joueurs entrent dans une villa. Personne ne sait ce qui va arriver : il n’y a ni tueur désigné, ni détective désigné, ni scénario écrit, ni solution prédéterminée. Les joueurs explorent, parlent, s’allient, se trahissent, ramassent et cachent des objets, mentent… et ces actions finissent par **produire une histoire**.
+Un groupe d’amis, une villa coupée du monde par l’orage, et l’un d’eux mort : un ami du groupe, pas un inconnu.
+**Un des joueurs l’a tué.** Les autres ont chacun un secret qui les rend suspects. On enquête, on ment, on se
+couvre, on s’allie, on trahit, on vote — et chaque acte officiel a des conséquences.
 
-> **Les joueurs créent l’histoire, le système conserve la vérité.**
-
-Le cœur : **SOCIAL + CHOIX + CONSÉQUENCES + SECRETS + ÉVÉNEMENTS ÉMERGENTS + ENQUÊTE.**
-
-La courbe émotionnelle visée :
-« Je ne sais pas ce qui va se passer » → « Je dois parler aux autres » → « Cette preuve contredit ce qu’il vient de dire » → « Je crois savoir » → « J’avais complètement tort » → « Il faut rejouer ».
-
-## 2. Trois niveaux d’information
-
-| Niveau | Où | Qui y accède |
-|---|---|---|
-| **Vérité** | Journal append-only du serveur (`GameInstance.truth`) | Le serveur seul. Révélée à l’épilogue. |
-| **Connaissance** | Carnet de chaque joueur (`player.knowledge`) | Le joueur : ce qu’il a vu, entendu, déduit, reçu, découvert via son rôle. |
-| **Déclaration** | Chat, tableau d’enquête (claims, témoignages) | Tout le monde — vrai ou faux. |
-
-Le tableau d’enquête distingue un **constat** (connaissance réelle partagée telle quelle) d’un **rapporté** (information reçue d’un tiers) et d’une **déclaration** (texte libre, potentiellement mensonger).
-
-## 3. Parcours du joueur (implémenté)
+## 2. Parcours du joueur
 
 ```
-Ouverture (fond vivant : villa de nuit, pluie, fenêtres, éclairs)
-→ Connexion / Inscription
-→ CREATE YOUR CHARACTER (1re connexion)
-→ Menu principal (JOUER · SERVEURS · AMIS · PROFIL · PARAMÈTRES)
-→ Créer une partie (publique/privée + code) / Rejoindre par code / Serveurs publics
-→ Lobby (personnages en scène, READY, chat, invitations, hôte)
-→ Cinématique d'arrivée en 3D (les joueurs en voiture ou en minibus, révélation de la Villa Beaumont, 22h00)
-→ Villa → Exploration → Relations → Objets → Événements → Drame
-→ Enquête (rôles) → Accusation → Épilogue (la vérité) → Retour lobby / Rejouer
+Compte (Supabase ou local) → Menu → Créer / rejoindre une partie (code privé ou serveurs publics)
+→ Salon : galerie des 40 personnages (réservation unique), prêt·e, lancement par l’hôte (3 à 8 joueurs)
+→ Chargement de la villa et des personnages → Cinématique d’arrivée (22h00) → plan sur le corps
+→ Enquête (fouilles, lectures, codes, alibis, dossier commun, accusations, votes)
+→ Délibération finale à l’arrivée de la police → Épilogue (toute la vérité) → retour au salon
 ```
 
-## 4. La nuit : phases (souples, pilotées par événements)
+## 3. Rôles secrets (distribués par le serveur, indépendamment de l’apparence)
 
-| Phase | Déclencheur (données, `events.ts`) | Effet |
+| Camp | Qui | Sait | Gagne si |
+|---|---|---|---|
+| Meurtrier·ère | 1 joueur, tiré au sort | sa vraie soirée, sa version à défendre, la liste des preuves qui peuvent le trahir | il ou elle n’est pas arrêté·e à l’issue de la délibération finale, ou s’il ne reste qu’un joueur libre face à lui |
+| Protecteur·rice | 1 joueur à partir de 6, 2 à 8 | l’identité du meurtrier, qui détient la preuve de son secret | le meurtrier reste libre — sauf s’il s’est opposé officiellement à lui ou si son secret a été révélé publiquement : il rejoint alors les innocents |
+| Innocent·e | tous les autres | sa soirée, ses souvenirs (qui s’est absenté, quand) | le meurtrier est arrêté |
+
+Chaque joueur reçoit aussi une **spécialité d’enquête** (le meurtrier aussi, et il peut mentir sur ses résultats) :
+médecin légiste (autopsie : heure, arme, fibres), scientifique (empreintes), inspecteur·rice (traces, semelles),
+analyste numérique (contourne un verrou), enquêteur·rice (exige / vérifie un alibi), profileur·se (tensions sociales).
+
+## 4. Les trois scénarios (vérité générée une fois, stable toute la partie)
+
+Commun : à 20h45 le groupe part en ville, la victime reste seule à la villa. Le meurtrier quitte son groupe vers
+21h10 (« cigarettes »), passe à la station-service du col, tue la victime vers 21h25–21h36, cache l’arme, se lave les
+mains et rentre vers 21h50, chaussures boueuses. À 22h, tout le monde rentre et découvre le corps.
+
+| | A — Le Pacte / Le Prix du Silence | B — La Nuit des mensonges / Les Dernières Confidences | C — Le Dernier Testament / 180 000 euros disparus |
+|---|---|---|---|
+| Passé | Il y a 3 ans, chute de Théo à la falaise ; le groupe a menti aux gendarmes | Il y a 8 mois, vidéo d’un baiser qui a brisé un couple et annulé un mariage | Il y a 6 mois, mort de Bernard Aubert puis 180 000 € virés avec ses identifiants |
+| Mobile | le meurtrier a poussé Théo ; la victime avait une photo de 23h42 | le meurtrier, amoureux en secret, a filmé et publié la vidéo | le meurtrier a détourné l’argent ; la victime avait l’ordre falsifié et les connexions |
+| Pièce décisive | photo de la falaise (clé USB) | fichier original et adresse de récupération du compte (clé USB) | journaux de connexion de la banque (clé USB) |
+| Secrets des innocents (7 possibles) | fausse déposition, téléphone jeté, photos effacées, liaison secrète, assurance, dispute entendue, voiture déplacée | ex trahi·e, personne de la vidéo, premier partage, vente à un site, liaison avec l’ex, témoin muet, cagnotte gardée | identifiants perdus, 5 000 € anonymes, signature imitée, héritier·ère, caisse empruntée, dispute avec Bernard, audit caché |
+
+Le directeur (`server/game/case/director.ts`) adapte tout au nombre réel de joueurs (groupes de la soirée, témoins
+de l’absence du meurtrier, absences d’innocents qui servent de fausses pistes, protecteurs) et aux identifiants internes.
+
+## 5. Chaînes d’enquête (plusieurs pièces à recouper, jamais le hasard seul)
+
+- **corps** → clé dorée → **boîte cadenassée** (chambre de la victime) → **journal** : code du téléphone, mot de passe de l’ordinateur, code du coffre-fort
+- **téléphone** (code) → messages signés de **surnoms** → **photo de groupe** (surnoms au dos) → identité de l’expéditeur
+- **tiroir du bureau** (clé sur le corps) → **ordinateur** (mot de passe) → notes sur chacun + code du coffret → **malle du grenier** (clé cachée) → **coffret** → **clé USB** → (lue dans l’ordinateur) **mobile**
+- **coffre-fort** (code du journal) → documents de l’histoire passée (impliquent plusieurs personnes)
+- **appareil photo + carte mémoire** → photo horodatée du groupe du meurtrier… sans lui (rendue avec les vrais personnages)
+- **tickets** → station-service à 21h1x au nom du meurtrier ; additions et selfies qui confirment les alibis des autres
+- **autopsie / empreintes / semelles / sang dilué / empreintes de boue** → heure, arme essuyée avec empreinte partielle, fibres du vêtement du meurtrier (visible sur son personnage), trajet jardin → pièce du crime
+
+## 6. Alibis et dossier commun
+
+- **Déclaration d’alibi** (publique) : lieu entre 21h et 22h + précisions. On peut mentir.
+- **Verser une pièce au dossier commun** : texte authentique tiré de la preuve (impossible à falsifier), photos comprises.
+  Le serveur recoupe automatiquement : « ⚠ contredit l’alibi de X » / « ✓ confirme l’alibi de Y ».
+- Une pièce révélant le **secret** d’un joueur le rend public : crédibilité entamée (une accusation de moins),
+  et un protecteur dont le secret est révélé est libéré du chantage.
+
+## 7. Opposition officielle (irrévocable)
+
+Seuls trois actes l’enregistrent : **accusation formelle**, **vote « coupable »**, **pièce versée « contre » quelqu’un**.
+Soupçons, messages privés, questions et discussions n’en créent jamais. La liste est publique.
+**Le meurtrier ne peut éliminer que ses opposants officiels**, seul à seul, sans témoin, arme en main, avec un délai entre deux éliminations.
+Ses alliés qui ne l’ont jamais dénoncé ne peuvent pas être visés.
+
+## 8. Votes
+
+| | Vote d’accusation | Délibération finale |
 |---|---|---|
-| ARRIVAL | début | narration d’introduction, secrets distribués |
-| EXPLORATION | 20 s | découverte libre |
-| SOCIAL | 100 s | « le dîner n’est jamais servi » |
-| ESCALATION | 1re hostilité/trahison après 60 s, sinon 210 s | les opportunités deviennent possibles |
-| (blackout) | 300 s si aucun drame | 45 s de noir : on ne voit plus personne sans lampe |
-| MAJOR_EVENT | corps découvert / collier disparu | annonce, l’affaire est ouverte |
-| INVESTIGATION | 8 s après | rôles distribués, outils exclusifs, 300 s |
-| RESOLUTION | fin d’enquête | vote d’accusation (75 s ou tous votants) |
-| EPILOGUE | fin du vote | révélation : coupable, chronologie vraie, secrets, votes |
+| Déclencheur | accusation formelle (au moins une pièce lue jointe) | fin du temps d’enquête (« la police arrive à l’aube ») |
+| Participants | joueurs libres sauf l’accusé·e (l’accusateur vote « coupable ») | tous les joueurs libres |
+| Informations | accusateur, raisonnement, pièces jointes, défense publique de l’accusé·e | dossier commun, alibis, oppositions |
+| Durée | 60 s (ou dès que tous ont voté) | 90 s (ou dès que tous ont voté) |
+| Résultat | arrestation si plus de la moitié des votants possibles votent « coupable » | la personne la plus désignée est livrée ; égalité = personne |
+| Conséquences | meurtrier arrêté → victoire des innocents ; innocent arrêté → secret révélé, il devient spectateur, **la nuit continue** | meurtrier livré → innocents ; sinon → meurtrier |
+| Limites | 2 accusations par joueur, 75 s entre deux, un seul vote à la fois, aucune pendant la découverte du corps | — |
 
-Les phases ne sont pas une histoire linéaire : ce sont des **gardes** que les règles d’événements consultent. Si rien n’arrive, la nuit peut finir sur un **vol** découvert (si le collier a bougé) ou une **aube calme** qui révèle tous les secrets.
+Votes définitifs. Égalité au vote d’accusation = relâché·e. Déconnexions : le vote se termine au délai.
 
-## 5. Le meurtre est une conséquence du monde
+## 9. Objets
 
-Il n’y a **pas de bouton « tuer »**. Une **opportunité** n’apparaît (discrètement, en rouge) que si **toutes** ces conditions sont réunies :
+Inventaire détaillé (fonction, interactions, conditions, conséquences) : `docs/VALIDATION.md`, section « Inventaire des objets ».
+Objets volontairement absents : horloge, montre, enregistreur audio, dictaphone, disque dur externe, tableau blanc,
+plateau à boissons, badge d’accès, disjoncteur secondaire, sonnette connectée, caméra de surveillance (vérifié par un test).
 
-1. vous tenez un objet `weapon` + `lethal` ;
-2. une cible vivante est à portée, dans la même pièce ;
-3. **aucun témoin capable de vous voir** (ou le noir complet) ;
-4. le contexte s’y prête : phase de tension, coupure de courant, ou **mobile** (vendetta / secret de rancune).
+## 10. La villa
 
-Le joueur peut l’ignorer (« Chasser cette pensée ») ou la saisir en deux temps. Conséquences physiques automatiques : sang sur l’arme, vêtements tachés, flaque de sang, bruit entendu dans les pièces voisines, fibres de la tenue du tueur sous les ongles de la victime, inventaire de la victime au sol.
+Quatre niveaux : sous-sol (chaufferie, cave à vin fermée à clé), rez-de-chaussée (hall, salon avec cheminée, salle à
+manger, cuisine, salle de jeux, bureau, toilettes séparées, buanderie, vestiaire de jardin, couloir, garage), étage (palier, bibliothèque, salon de
+musique, chambres, suite, salles de bains, chambre d’enfant, atelier), grenier ; jardin, verger avec deux cabanes dans
+les arbres, allée. Chaque pièce a au moins deux cachettes ; trois meubles sont verrouillés (coffre-fort à code, tiroir et malle à clé).
 
-**Le meurtrier joue l’enquête** : il reçoit un rôle comme les autres (il peut même être médecin légiste), peut mentir, se laver (laisse du sang dilué dans le siphon), essuyer l’arme (laisse des résidus), nettoyer le sol (laisse une zone frottée), accuser quelqu’un.
+## 11. Relations entre joueurs
 
-## 6. Enquête : asymétrie et coopération
-
-Aucun rôle ne peut tout découvrir seul.
-
-| Rôle | Sait faire | Limite |
+| Type | Consentement | Effet concret |
 |---|---|---|
-| Enquêteur·rice | interroger (témoignage public), vérifier un témoignage contre les faits (2×) | ne voit pas les traces |
-| Médecin légiste | autopsie : cause, fenêtre horaire, fibres sous les ongles | 1 autopsie, doit être près du corps |
-| Scientifique | codes d’empreintes sur un objet, relevé des empreintes d’un joueur | un code ne dit pas à qui il appartient |
-| Inspecteur·rice | traces de la pièce (motifs de semelles, sang dilué, zones frottées, cachettes), semelles d’un joueur | doit se rendre dans chaque pièce |
-| Technicien·ne | caméras du hall et de l’allée (au moniteur du bureau) | 2 consultations, trous pendant les coupures |
-| Profileur·se | lecture des tensions sociales (hostilités, trahisons, liens discrets) | 2 analyses, pas de preuve matérielle |
+| Ami·e | mutuel, face à face | signal social |
+| Allié·e | mutuel, face à face | canal privé, position partagée sur le plan, transmission de notes en un clic |
+| Pacte | mutuel, secret | comme l’alliance ; le rompre est une trahison visible du profileur |
+| Ennemi·e | unilatéral, la cible est prévenue | hostilité visible |
 
-Les rôles sont **distribués dynamiquement** selon ce que chacun a fait pendant la nuit (le découvreur du corps → légiste, celui qui a passé du temps au bureau → technicien, etc.), avec une part d’aléatoire.
+Les relations ne créent **jamais** d’opposition officielle : seuls les trois actes du §7 le font.
 
-## 7. Relations
+## 12. Garde-fous
 
-| Type | Consentement | Utilité concrète |
-|---|---|---|
-| FRIEND | mutuel, en face à face | signal social, historique |
-| ALLY | mutuel, en face à face | canal privé, position partagée sur la carte, partage de connaissances en un clic |
-| PACT | mutuel, secret | tout ALLY + poches visibles ; le rompre = **TRAHISON** |
-| ENEMY | unilatéral, la cible est prévenue | dispute visible des témoins, fait monter la tension |
-| VENDETTA | unilatéral, **secret**, exige un mobile | ouvre l’opportunité dès la phase sociale contre cette cible |
-
-Le système ne force jamais un joueur à agir contre son ennemi.
-
-## 8. Rejouabilité (V1)
-
-À chaque partie : objets tirés dans des pièces différentes (et parfois absents), secrets différents et ciblant d’autres joueurs, graines de scénario (vol, conspiration) présentes ou non, empreintes et semelles réattribuées, téléphone avec un message différent, lettre anonyme révélant le secret d’un joueur au hasard, événements aléatoires (téléphone qui sonne…), rôles qui dépendent de la nuit jouée.
-
-## 9. Contenu V1
-
-- **Villa Beaumont** (4 niveaux) :
-  - *Sous-sol* : chaufferie (escalier depuis la buanderie), cave à vin (verrouillée, clé de la cave).
-  - *Rez-de-chaussée* : hall (escalier), salon (cheminée), salle à manger, cuisine, salle de jeux, couloir, bureau (coffre-fort à code, tiroir à clé), toilettes, buanderie, garage (porte basculante verrouillée), vestiaire de jardin.
-  - *Étage* : palier, bibliothèque, chambre de maître, suite parentale + salle de bain, chambre d'enfant, chambre d'amis, salle de bain, chambre bleue, atelier, salon de musique.
-  - *Grenier* (échelle escamotable depuis le palier) : malles (dont une cadenassée), cartons, mannequin, cheval à bascule.
-  - *Extérieurs* : jardin, allée, verger avec deux cabanes perchées (échelle de bois, échelle de corde).
-  - Au moins deux cachettes par pièce ; aucun objet interdit (horloge, enregistreur, disque dur, tableau blanc, plateau de boissons, badge, disjoncteur, sonnette connectée, caméra) dans le décor.
-- **17 types d’objets** : couteau, chandelier, corde, coupe-papier, bouteille, clé de la cave, tournevis, lampe torche, torchon, briquet, téléphone, somnifères, montre, badge, collier, lettre, photo.
-- **12 secrets**, **6 rôles**, **15 règles d’événements**, **3 familles de scénarios** actives (meurtre, vol, conspiration) + 2 prévues.
-- **Personnages** : 2 apparences, 8 teintes de peau, 10 coiffures, 8 couleurs de cheveux, 20 tenues.
-
-## 10. Garde-fous de design (règle finale)
-
-Avant d’intégrer une fonctionnalité : sert-elle la vision ? marche-t-elle à plusieurs ? est-elle générique ? peut-elle évoluer ? préserve-t-elle l’émergence ? **sépare-t-elle vérité serveur et connaissance joueur ?** Ne pas transformer le jeu en scénario linéaire, en simple murder mystery, ni en clone.
+- La vérité (meurtrier, faits, codes, contenus non lus) reste sur le serveur ; le client ne reçoit que ce que le joueur a découvert.
+- Aucun objet décoratif cliquable « pour rien » : chaque interaction informe, change un état ou a une conséquence.
+- Aucun vote aléatoire : seulement l’accusation formelle et la délibération finale.
+- Le meurtrier ne gagne jamais parce qu’un innocent a été soupçonné ou arrêté.

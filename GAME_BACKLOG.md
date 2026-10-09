@@ -69,9 +69,18 @@ Scène 3D temps réel de 20 s (réglable) qui masque le chargement : les **vrais
 - **Chargement avant la cinématique** : personnages, villa de la partie (pré-construite), textures et shaders chargés d'abord ; le serveur attend que tous les joueurs soient prêts (30 s max) ; la cinématique ne se termine qu'après la première image de la partie.
 - **Durées** : courte ~10 min, normale ~25 min, longue ~45 min. Panneau « Première nuit » retiré.
 
+### V1.0 — enquête complète, comptes persistants, 40 personnages, villa sur 4 niveaux
+- **Comptes** : cause des comptes perdus trouvée (SQLite dans `/tmp` sur Render + déconnexion sur panne réseau) ; Supabase Auth + Postgres (RLS), mode local conservé ; tests sur Postgres réel (PGlite).
+- **Personnages** : 40 personnages Rocketbox (MIT) distincts, galerie dans le salon avec réservation atomique serveur ; créateur de personnage retiré ; photos d'enquête rendues avec les vrais personnages.
+- **Règles** : meurtrier désigné, protecteurs, 3 scénarios (Le Pacte, La Nuit des mensonges, Le Dernier Testament), chaînes de preuves, codes et verrous, dossier commun avec recoupement d'alibis, opposition officielle, accusations et votes, éliminations réservées aux opposants, délibération finale, épilogue.
+- **Villa** : sous-sol, grenier, garage, buanderie, toilettes, salle de jeux, salle à manger, verger et deux cabanes ; meubles verrouillés intégrés à l'enquête.
+- **Audio** : pluie supprimée, partition d'enquête procédurale originale, musique et effets séparés.
+- **Contrôles** : une seule cible visée (raycast) avec E / F, menu pause Échap, dossier personnel.
+- **Validation** : 79 tests, partie de bout en bout dans un vrai navigateur sans erreur — voir `docs/VALIDATION.md`.
+
 ### Problèmes découverts pendant le développement
 - Rendu lent (GPU logiciel) + 12 vues/s → rafale de rendus React (#185) : corrigé par regroupement par image.
-- `rollup@4.64.2` (tiré par Vite 6.3) bloque indéfiniment en bundlant `react-dom` → épinglé à 4.40.2 via `overrides`. À réévaluer à la prochaine montée de Vite.
+- `rollup@4.64.2` (tiré par Vite 6.3) bloquait indéfiniment en bundlant `react-dom` → épinglé via `overrides`, désormais en 4.59.1 (corrige la vulnérabilité GHSA-mw96-cpmx-2vgc, build vérifié).
 - Le serveur émet `session:state` dès la connexion : un client doit brancher ses écouteurs **avant** `connect` (corrigé dans les tests).
 - Les animations CSS utilisant `transform` écrasaient les centrages `translateX(-50%)` → les keyframes utilisent `translate`.
 - Avec une échelle de temps très courte, le chien découvre le corps avant les joueurs : réglage `body_found_by_dog` à surveiller en playtest réel.
