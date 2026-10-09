@@ -1,22 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatClock } from '@shared/config';
 import { roomName } from '@shared/content/villa';
-import { useStore, attempt, liveGame } from '../../store';
-import { call, getSocket } from '../../net/socket';
+import { useStore, liveGame } from '../../store';
+import { getSocket } from '../../net/socket';
 import { drawFrame, createRenderState, camera } from '../../render/villaRenderer';
 import { GameView3D } from '../../three/GameView3D';
-import { audio } from '../../audio';
-import { PHASE_LABEL, useChatFocus, usePicker } from './helpers';
-import { ActionBar } from './ActionBar';
+import { audio, music } from '../../audio';
+import { PHASE_LABEL, useChatFocus, usePicker, useTarget } from './helpers';
+import { ActionBar, triggerTarget } from './ActionBar';
 import { ChatPanel } from './ChatPanel';
 import { Announcement } from './FeedPanel';
 import { Notifications } from './Notifications';
 import { VoiceControls } from './VoiceControls';
 import { InventoryTab } from './InventoryTab';
 import { RelationsTab } from './RelationsTab';
-import { NotebookTab } from './NotebookTab';
+import { DossierTab } from './DossierTab';
 import { InvestigationTab } from '../investigation/InvestigationTab';
-import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker } from './Overlays';
+import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker, PauseMenu } from './Overlays';
 
 
 export function GameScreen() {
@@ -31,8 +31,8 @@ export function GameScreen() {
   const tab = useChatFocus((s) => s.tab);
   const setTab = useChatFocus((s) => s.setTab);
   const toggleTab = useChatFocus((s) => s.toggleTab);
-  const [showSecret, setShowSecret] = useState(false);
   const hasGame = !!game;
+  const [revealing, setRevealing] = useState(false);
 
   // Vue 3D (créée quand le conteneur existe)
   useEffect(() => {
@@ -45,6 +45,11 @@ export function GameScreen() {
     v.onInput = (dx, dy, run) => getSocket()?.emit('game:input', { dx, dy, run });
     v.onModeChange = setCamMode;
     v.onFirstFrame = () => useStore.setState({ gameViewReady: true });
+    v.onTarget = (k) => useTarget.getState().set(k);
+    v.onReveal = (on) => {
+      setRevealing(on);
+      if (on) music.mark('bodyDiscovered');
+    };
     const g0 = liveGame.current ?? useStore.getState().game;
     if (g0) v.setView(g0);
     const unsub = liveGame.subscribe((g) => v.setView(g));
@@ -70,6 +75,9 @@ export function GameScreen() {
     };
   }, [hasGame]);
 
+  const showMapRef = useRef(false);
+  showMapRef.current = showMap;
+
   // Clavier → intentions (relatives à la caméra) ; le serveur simule
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -84,8 +92,9 @@ export function GameScreen() {
       audio.unlock();
       if (viewRef.current?.key(e.code, true)) {
         e.preventDefault();
-      } else if (e.code === 'KeyE') {
-        (document.querySelector('.action-bar .btn') as HTMLButtonElement | null)?.click();
+      } else if (e.code === 'KeyE' || e.code === 'KeyF') {
+        if (usePicker.getState().open || useChatFocus.getState().paused) return;
+        triggerTarget(e.code === 'KeyF');
       } else if (e.code === 'Enter') {
         e.preventDefault();
         if (document.pointerLockElement) document.exitPointerLock();
@@ -97,9 +106,14 @@ export function GameScreen() {
       } else if (e.code === 'KeyM') {
         setShowMap((m) => !m);
       } else if (e.code === 'Escape') {
-        usePicker.getState().close();
-        setShowMap(false);
-        setTab(null);
+        // Échap ferme d'abord ce qui est ouvert ; sinon ouvre/ferme le menu pause
+        const ui = useChatFocus.getState();
+        if (usePicker.getState().open) usePicker.getState().close();
+        else if (ui.tab !== null || showMapRef.current) {
+          setShowMap(false);
+          setTab(null);
+        } else ui.setPaused(!ui.paused);
+        viewRef.current?.releaseAll();
       }
     };
     const up = (e: KeyboardEvent) => {
@@ -120,23 +134,14 @@ export function GameScreen() {
   const me = game.players.find((p) => p.id === game.you);
   const investigation = !!game.caseInfo;
 
-  const abandon = async () => {
-    if (game.epilogue) {
-      await attempt(call('game:leave'));
-      return;
-    }
-    if (!confirm('Abandonner la partie ? Votre personnage restera immobile dans la villa.')) return;
-    await attempt(call('lobby:leave'));
-    useStore.setState({ game: null, inGame: false, lobby: null, screen: 'menu' });
-  };
-
   const pendingRelations = game.relations.filter((r) => r.status === 'pending' && r.to === game.you).length;
   const DOCK = [
+    { icon: '📁', label: 'Mon dossier', badge: game.dossier?.evidence.length || null },
     { icon: '🎒', label: 'Inventaire', badge: game.inventory.length || null },
+    { icon: '🔎', label: 'Enquête', badge: game.publicEvidence.length || null, alert: investigation && !!game.vote },
     { icon: '👥', label: 'Relations', badge: pendingRelations || null, alert: pendingRelations > 0 },
-    { icon: '📓', label: 'Carnet', badge: null },
-    { icon: '🔎', label: 'Enquête', badge: null, alert: investigation },
   ];
+  const arrested = game.arrested.includes(game.you);
 
   return (
     <div className={`game game-full ${game.alive ? '' : 'is-dead'} ${game.blackout ? 'is-blackout' : ''} ${reduced ? 'reduced' : ''}`}>
@@ -152,19 +157,23 @@ export function GameScreen() {
         {me?.stained && <div className="chip chip-danger">🩸 Vêtements tachés</div>}
         <div className="spacer" />
         <VoiceControls />
-        <button className="btn btn-ghost btn-sm secret-btn" onMouseDown={() => setShowSecret(true)} onMouseUp={() => setShowSecret(false)} onMouseLeave={() => setShowSecret(false)} onTouchStart={() => setShowSecret(true)} onTouchEnd={() => setShowSecret(false)}>
-          🤫 Mon secret
-        </button>
-        <button className="btn btn-ghost btn-sm" onClick={abandon}>{game.epilogue ? 'Retour au lobby' : 'Quitter'}</button>
-        {showSecret && <div className="secret-pop">{game.secret}</div>}
+        <button className="btn btn-ghost btn-sm" onClick={() => useChatFocus.getState().setPaused(true)} title="Menu (Échap)">☰ Menu</button>
       </header>
 
       <div className="cam-hint">
-        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'clic : orienter la caméra'} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> menus · <kbd>M</kbd> plan
+        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'clic : orienter la caméra'} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> plus · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Échap</kbd> menu
       </div>
 
+      {revealing && game.caseInfo && (
+        <div className="reveal-caption fade-in">
+          <div className="reveal-kicker">{game.caseInfo.scenarioTitle}</div>
+          <div className="reveal-title">{game.caseInfo.victimName}</div>
+          <div className="reveal-sub">retrouvé·e sans vie — {game.caseInfo.roomName}</div>
+        </div>
+      )}
       <Notifications />
       {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
+      {arrested && game.alive && !game.epilogue && <div className="dead-banner">Vous êtes arrêté·e. Vous observez jusqu’à la fin de la nuit.</div>}
       <Announcement />
       <OpportunityPrompt />
       <ActionBar />
@@ -192,10 +201,10 @@ export function GameScreen() {
             <button className="drawer-close" onClick={() => setTab(null)} aria-label="Fermer">×</button>
           </div>
           <div className="tab-body">
-            {tab === 0 && <InventoryTab />}
-            {tab === 1 && <RelationsTab />}
-            {tab === 2 && <NotebookTab />}
-            {tab === 3 && <InvestigationTab />}
+            {tab === 0 && <DossierTab />}
+            {tab === 1 && <InventoryTab />}
+            {tab === 2 && <InvestigationTab />}
+            {tab === 3 && <RelationsTab />}
           </div>
         </aside>
       )}
@@ -203,6 +212,7 @@ export function GameScreen() {
       <VoteModal />
       <TestimonyModal />
       <Picker />
+      <PauseMenu />
       <Epilogue />
     </div>
   );

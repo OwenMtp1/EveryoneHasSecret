@@ -61,7 +61,6 @@ export function RelationsTab() {
                     </button>
                   ))}
                   <button className="btn btn-xs btn-ghost danger" onClick={() => confirm(`Déclarer ${p.name} ennemi·e ? Cette personne le saura.`) && act({ type: 'relation', op: 'propose', relType: 'ENEMY', targetId: p.id })}>Ennemi·e</button>
-                  <button className="btn btn-xs btn-ghost danger" onClick={() => act({ type: 'relation', op: 'propose', relType: 'VENDETTA', targetId: p.id })}>Vendetta</button>
                 </div>
               )}
             </div>

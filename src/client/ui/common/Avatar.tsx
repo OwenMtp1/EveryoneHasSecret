@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { Character } from '@shared/types';
 import { avatarSvg } from '../../render/avatar';
+import { CastPortrait } from './CastPortrait';
 
 export function Avatar({
   character,
@@ -25,7 +26,13 @@ export function Avatar({
 export function Portrait({ character, size = 44, online }: { character: Character | null; size?: number; online?: string }) {
   return (
     <div className="portrait" style={{ width: size, height: size }}>
-      {character ? <Avatar character={character} size={size} crop="bust" /> : <div className="portrait-empty">?</div>}
+      {character?.castId ? (
+        <CastPortrait castId={character.castId} size={size} style={{ width: size, height: size, borderRadius: '50%' }} />
+      ) : character ? (
+        <Avatar character={character} size={size} crop="bust" />
+      ) : (
+        <div className="portrait-empty">?</div>
+      )}
       {online && <span className={`dot dot-${online.toLowerCase()}`} />}
     </div>
   );

@@ -20,7 +20,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { applyPortal, buildWorldGrid, doorAt, elevationAt, localX, stepAllowed } from '@shared/content/villa';
+import { allFurniture, applyPortal, buildWorldGrid, doorAt, elevationAt, localX, stepAllowed } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
 
 type CamMode = 'third' | 'first';
@@ -108,6 +108,14 @@ export class GameView3D {
   onFirstFrame: () => void = () => {};
   private framesDrawn = 0;
   onModeChange: (m: CamMode) => void = () => {};
+  /** cible d'interaction visée (raycast), notifiée seulement quand elle change */
+  onTarget: (key: string | null) => void = () => {};
+  private target: string | null = null;
+  private lastPick = 0;
+  /** plan de découverte du corps (début de partie) : la caméra tourne autour de la victime */
+  private reveal: { t0: number; target: THREE.Vector3 } | null = null;
+  private revealDone = false;
+  onReveal: (active: boolean) => void = () => {};
 
   constructor(private container: HTMLElement, opts: { reducedMotion?: boolean } = {}) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -260,6 +268,21 @@ export class GameView3D {
 
   setView(v: GameSelfView) {
     this.view = v;
+    if (!this.revealDone) {
+      this.revealDone = true;
+      const body = v.bodies.find((b) => b.npc);
+      let seen = false;
+      try {
+        seen = sessionStorage.getItem(`ehas.reveal.${v.gameId}`) === '1';
+        sessionStorage.setItem(`ehas.reveal.${v.gameId}`, '1');
+      } catch {
+        /* stockage indisponible */
+      }
+      if (body && v.phase === 'ARRIVAL' && !seen) {
+        this.reveal = { t0: performance.now(), target: toRender(body.pos.x, body.pos.y, new THREE.Vector3()) };
+        this.onReveal(true);
+      }
+    }
     const t = performance.now();
     for (const p of v.players) {
       if (!p.pos) continue;
@@ -558,6 +581,19 @@ export class GameView3D {
   private updateCamera() {
     const v = this.view;
     const me = v ? this.actors.get(v.you) : undefined;
+    if (this.reveal) {
+      const k = (performance.now() - this.reveal.t0) / 1000;
+      if (k > 6 || this.pressed.size) {
+        this.reveal = null;
+        this.onReveal(false);
+      } else {
+        const a = 0.6 + k * 0.32;
+        const r = 3.4 - k * 0.25;
+        this.camera.position.set(this.reveal.target.x + Math.cos(a) * r, this.reveal.target.y + 2.1 - k * 0.12, this.reveal.target.z + Math.sin(a) * r);
+        this.camera.lookAt(this.reveal.target.x, this.reveal.target.y + 0.2, this.reveal.target.z);
+        return;
+      }
+    }
     const spectator = !v || !v.alive || !!v.epilogue || !me;
     if (spectator) {
       // Vue plongeante lente autour de la villa
@@ -653,6 +689,14 @@ export class GameView3D {
     this.selfLight.intensity = blackout ? 0.8 : 2.2;
     this.flash = Math.max(0, this.flash - dt * 4);
     this.updateCamera();
+    if (t - this.lastPick > 0.1) {
+      this.lastPick = t;
+      const k = this.pickTarget();
+      if (k !== this.target) {
+        this.target = k;
+        this.onTarget(k);
+      }
+    }
     // Ombres de la lampe de la pièce où l'on se trouve
     const me = this.view ? this.actors.get(this.view.you) : undefined;
     const meView = this.view?.players.find((p) => p.id === this.view!.you);
@@ -662,6 +706,74 @@ export class GameView3D {
     else this.renderer.render(this.scene, this.camera);
     if (++this.framesDrawn === 2) this.onFirstFrame();
   };
+
+  // ───────────── cible d'interaction (raycast) ─────────────
+
+  /**
+   * Une seule cible à la fois : le rayon partant du centre de l'écran touche le volume d'interaction
+   * le plus proche (objets, corps, joueurs, meubles utiles, traces) ; les murs l'arrêtent. À défaut,
+   * la cible la plus proche dans un cône étroit devant le personnage, à vue directe.
+   * Seules les cibles à portée d'interaction du personnage (même pièce) sont candidates.
+   */
+  private pickTarget(): string | null {
+    const v = this.view;
+    const me = v ? this.actors.get(v.you) : undefined;
+    const meV = v?.players.find((p) => p.id === v.you);
+    if (!v || !me || !meV?.pos || !v.alive || v.epilogue || v.arrested.includes(v.you)) return null;
+    const R = GAME_CONFIG.interactRange;
+    const near = (x: number, y: number, extra = 0) => Math.hypot(x - meV.pos!.x, y - meV.pos!.y) <= R + extra;
+    const cands: { key: string; c: THREE.Vector3; r: number }[] = [];
+    const at = (x: number, y: number, h: number) => toRender(x, y, new THREE.Vector3()).add(new THREE.Vector3(0, h, 0));
+    for (const o of v.objects) if (o.pos && o.roomId === meV.roomId && near(o.pos.x, o.pos.y, 0.6)) cands.push({ key: `o:${o.id}`, c: at(o.pos.x, o.pos.y, 0.15), r: 0.32 });
+    for (const b of v.bodies) if (b.roomId === meV.roomId && near(b.pos.x, b.pos.y, 0.6)) cands.push({ key: `b:${b.id}`, c: at(b.pos.x, b.pos.y, 0.2), r: 0.75 });
+    for (const p of v.players)
+      if (p.id !== v.you && p.alive && p.pos && !p.viaAlliance && p.roomId === meV.roomId && near(p.pos.x, p.pos.y, 0.4)) cands.push({ key: `p:${p.id}`, c: at(p.pos.x, p.pos.y, 1.0), r: 0.45 });
+    for (const f of allFurniture()) {
+      if (f.roomId !== meV.roomId || !(f.hiding || f.kind === 'sink' || f.kind === 'fireplace')) continue;
+      const cx = Math.max(f.x, Math.min(meV.pos.x, f.x + f.w));
+      const cy = Math.max(f.y, Math.min(meV.pos.y, f.y + f.h));
+      if (Math.hypot(cx - meV.pos.x, cy - meV.pos.y) > R) continue;
+      cands.push({ key: `f:${f.id}`, c: at(f.x + f.w / 2, f.y + f.h / 2, 0.55), r: Math.max(0.45, Math.min(1.1, Math.max(f.w, f.h) * 0.55)) });
+    }
+    if (v.inventory.some((o) => o.type === 'cloth'))
+      for (const t of v.traces) if (t.roomId === meV.roomId && near(t.pos.x, t.pos.y, 0.4)) cands.push({ key: `t:${t.id}`, c: at(t.pos.x, t.pos.y, 0.05), r: 0.3 });
+    if (!cands.length) return null;
+    const occluded = (from: THREE.Vector3, to: THREE.Vector3) => {
+      const dir = to.clone().sub(from);
+      const d = dir.length();
+      this.raycaster.set(from, dir.normalize());
+      this.raycaster.far = Math.max(0.01, d - 0.2);
+      return this.raycaster.intersectObjects(this.villa.colliders, false).length > 0;
+    };
+    // 1) rayon du centre de l'écran
+    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    const ray = this.raycaster.ray.clone();
+    let best: { key: string; t: number } | null = null;
+    for (const c of cands) {
+      const toC = c.c.clone().sub(ray.origin);
+      const t = toC.dot(ray.direction);
+      if (t < 0) continue;
+      const dist2 = toC.lengthSq() - t * t;
+      if (dist2 > c.r * c.r) continue;
+      if (!best || t < best.t) best = { key: c.key, t };
+    }
+    if (best) {
+      const hit = cands.find((c) => c.key === best!.key)!;
+      if (!occluded(this.camera.position.clone(), hit.c)) return best.key;
+    }
+    // 2) repli : devant le personnage (cône de 40°), le plus proche, sans mur entre les deux
+    const eye = me.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
+    const fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    let fb: { key: string; d: number } | null = null;
+    for (const c of cands) {
+      const flat = c.c.clone().sub(me.pos).setY(0);
+      const d = flat.length();
+      if (d > 0.35 && flat.normalize().dot(fwd) < Math.cos(THREE.MathUtils.degToRad(40))) continue;
+      if (occluded(eye, c.c)) continue;
+      if (!fb || d < fb.d) fb = { key: c.key, d };
+    }
+    return fb?.key ?? null;
+  }
 
   // ───────────── qualité adaptative ─────────────
 

@@ -4,6 +4,7 @@ import { call } from '../../net/socket';
 import { attempt, useStore } from '../../store';
 import { Portrait } from '../common/Avatar';
 import { Stage3D } from '../common/Stage3D';
+import { CharacterGallery } from './CharacterGallery';
 
 export function LobbyScreen() {
   const lobby = useStore((s) => s.lobby);
@@ -65,13 +66,14 @@ export function LobbyScreen() {
             }))}
         />
       </div>
+      {lobby.status === 'WAITING' && !inGame && <CharacterGallery lobby={lobby} userId={user.id} />}
       <div className="lobby-roster">
         {slots.map((p, i) =>
           p ? (
             <div key={p.userId} className={`roster-item ${p.ready || p.isHost ? 'is-ready' : ''} ${!p.connected ? 'is-away' : ''}`}>
               <Portrait character={p.character} size={34} />
               <span className="grow">
-                {p.character ? `${p.character.firstName} ${p.character.lastName}` : p.username}
+                {p.character ? `${p.character.firstName} ${p.character.lastName}` : 'Personnage à choisir'} <span className="muted small">@{p.username}</span>
               </span>
               <span className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'READY ✓' : 'NOT READY'}</span>
               {isHost && !p.isHost && lobby.status === 'WAITING' && (
@@ -106,17 +108,17 @@ export function LobbyScreen() {
             <button className="btn btn-primary btn-lg" onClick={() => go('game')}>REVENIR À LA PARTIE</button>
           )}
           {!isHost && me && lobby.status === 'WAITING' && (
-            <button className={`btn btn-lg ${me.ready ? 'btn-ghost' : 'btn-primary'}`} onClick={() => attempt(call('lobby:ready', !me.ready))}>
-              {me.ready ? 'PAS ENCORE' : "I'M READY"}
+            <button className={`btn btn-lg ${me.ready ? 'btn-ghost' : 'btn-primary'}`} disabled={!me.castId} title={me.castId ? '' : 'Choisissez d’abord un personnage'} onClick={() => attempt(call('lobby:ready', !me.ready))}>
+              {me.ready ? 'PAS ENCORE' : 'JE SUIS PRÊT·E'}
             </button>
           )}
           {isHost && (
-            <button className="btn btn-primary btn-lg" disabled={!lobby.canStart} onClick={() => attempt(call('lobby:start'))} title={lobby.canStart ? '' : 'Tous les joueurs doivent être prêts'}>
+            <button className="btn btn-primary btn-lg" disabled={!lobby.canStart} onClick={() => attempt(call('lobby:start'))} title={lobby.canStart ? '' : `Il faut ${lobby.minPlayers} joueurs minimum, tous prêts, chacun avec un personnage`}>
               {lobby.status === 'STARTING' ? 'LANCEMENT…' : 'LANCER LA PARTIE'}
             </button>
           )}
           <div className="row-actions">
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowInvite(!showInvite)}>INVITE FRIENDS</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowInvite(!showInvite)}>INVITER DES AMIS</button>
             {isHost && <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(!showSettings)}>Paramètres</button>}
             {isHost && <button className="btn btn-ghost btn-sm danger" onClick={() => confirm('Fermer la partie pour tout le monde ?') && attempt(call('lobby:close'))}>Fermer</button>}
             <button className="btn btn-ghost btn-sm" onClick={leave}>Quitter</button>

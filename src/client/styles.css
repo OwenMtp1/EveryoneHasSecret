@@ -560,3 +560,72 @@ kbd {
 .boot-message { margin-top: 12px; font-size: 14px; letter-spacing: 0; }
 .player-chip-initial { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.08); border: 1px solid var(--line); font-size: 22px; color: var(--gold-2); }
 .profile-layout-single { grid-template-columns: 1fr; max-width: 640px; }
+
+/* ───────── enquête : invite d'interaction, dossier, preuves, votes, pause ───────── */
+.interact-prompt {
+  position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); z-index: 6;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 14px;
+  text-align: center; pointer-events: none; max-width: min(520px, calc(100vw - 32px)); backdrop-filter: blur(6px);
+}
+.interact-title { font-family: var(--serif); font-size: 17px; color: var(--gold-2); }
+.interact-keys { display: flex; gap: 14px; justify-content: center; font-size: 13px; margin-top: 2px; flex-wrap: wrap; }
+.view3d::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: rgba(255, 255, 255, 0.55); pointer-events: none; }
+.dossier, .investigation { display: flex; flex-direction: column; gap: 10px; }
+.camp-card { border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; background: rgba(255, 255, 255, 0.03); }
+.camp-card p { margin: 6px 0 0; font-size: 13px; }
+.camp-murderer { border-color: rgba(216, 64, 79, 0.7); background: rgba(90, 10, 20, 0.35); }
+.camp-protector { border-color: rgba(230, 160, 70, 0.6); background: rgba(80, 50, 10, 0.3); }
+.memories { margin: 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.evidence-card { background: #f1e9d6; color: #2a241c; border-radius: 6px; padding: 10px 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); }
+.evidence-title { font-family: var(--serif); font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+.evidence-line { margin: 4px 0; font-size: 13px; line-height: 1.4; }
+.evidence-photo { display: block; margin: 6px 0; border: 6px solid #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); max-width: 100%; height: auto; }
+.evidence-card .btn { color: #2a241c; border-color: rgba(0, 0, 0, 0.3); }
+.public-evidence { display: flex; flex-direction: column; gap: 4px; border-left: 2px solid var(--line-strong); padding-left: 8px; }
+.check { font-size: 12px; padding: 4px 8px; border-radius: 6px; }
+.check.ok { background: rgba(80, 160, 100, 0.15); }
+.check.bad { background: rgba(163, 32, 47, 0.25); }
+.ok { color: var(--ok); }
+.bad { color: #ff9a9a; }
+.alibi { font-size: 13px; padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.03); }
+.alibi-contradicted { background: rgba(163, 32, 47, 0.22); }
+.alibi-confirmed { background: rgba(80, 160, 100, 0.14); }
+.alibi-form, .accuse-form { display: flex; flex-direction: column; gap: 8px; }
+.suspect-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.suspect { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); cursor: pointer; font-size: 12px; text-align: center; }
+.suspect.active { border-color: var(--blood-2); background: rgba(163, 32, 47, 0.25); }
+.check-line { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.case-head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+.vote-accused { display: flex; gap: 12px; align-items: center; }
+.vote-accused h3 { margin: 0; }
+.vote-evidence { display: flex; flex-direction: column; gap: 6px; max-height: 32vh; overflow-y: auto; }
+.vote-card.guilty { border-color: rgba(216, 64, 79, 0.5); }
+.vote-card:disabled { opacity: 0.55; cursor: default; }
+.defense { font-style: italic; }
+.vote-reopen { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 9; }
+.vote-modal { max-height: calc(100vh - 32px); overflow-y: auto; }
+.pause-menu { display: flex; flex-direction: column; gap: 10px; min-width: min(380px, calc(100vw - 32px)); }
+.pause-menu label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.pause-menu label.check-line { flex-direction: row; }
+.picker form { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+@media (max-width: 640px) {
+  .interact-prompt { bottom: 150px; }
+}
+
+/* ───────── galerie des personnages (salon) ───────── */
+.cast-gallery { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow: hidden; }
+.cast-gallery-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cast-detail { display: flex; gap: 10px; align-items: center; min-height: 64px; }
+.cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; overflow-y: auto; padding-right: 4px; }
+.cast-card { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); cursor: pointer; }
+.cast-card:hover:not(:disabled) { border-color: var(--line-strong); }
+.cast-name { font-size: 12px; }
+.cast-status { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.2; }
+.cast-mine { border-color: var(--gold); background: rgba(201, 164, 92, 0.15); }
+.cast-mine .cast-status { color: var(--gold-2); }
+.cast-taken { opacity: 0.45; cursor: not-allowed; }
+.cast-taken img { filter: grayscale(1); }
+.reveal-caption { position: absolute; left: 0; right: 0; bottom: 18vh; text-align: center; z-index: 7; pointer-events: none; text-shadow: 0 2px 12px #000; }
+.reveal-kicker { letter-spacing: 0.3em; font-size: 12px; color: var(--gold-2); text-transform: uppercase; }
+.reveal-title { font-family: var(--serif); font-size: clamp(28px, 5vw, 52px); }
+.reveal-sub { color: var(--muted); font-size: 15px; }
