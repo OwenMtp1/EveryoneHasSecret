@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { formatClock } from '@shared/config';
 import type { FeedMessage } from '@shared/types';
 import { useStore } from '../../store';
-import { audio } from '../../audio';
 
 export function FeedPanel() {
   const EMPTY: never[] = [];
@@ -36,7 +35,6 @@ export function Announcement() {
     // à la reconnexion, on ne rejoue pas une vieille narration
     if (firstLoad && feed.length > 3) return;
     setCurrent(last);
-    if (last.style === 'danger') audio.thunder();
   }, [feed]);
   useEffect(() => {
     if (!current) return;

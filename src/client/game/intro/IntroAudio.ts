@@ -1,69 +1,70 @@
 /**
- * Son de la cinématique, en couches indépendantes mixées selon l'état :
- *   Music            — groove de soirée à l'autoradio (net dans l'habitacle, étouffé dehors)
+ * Son de la cinématique :
+ *   Musique          — cue « intro » du directeur musical (audio.ts / music.ts) : piano espacé, nappes,
+ *                      repères calés sur les moments clés (route, villa, silhouette, entrée…)
  *   Car ambience     — moteur, régime selon la vitesse
- *   Road ambience    — roulement des pneus (surtout audible dehors)
+ *   Road ambience    — roulement des pneus (grave, surtout audible dehors)
  *   Character voices — brouhaha et rires indistincts dans l'habitacle (aucune parole)
- *   Cinematic sounds — nappe grave à la révélation, frisson quasi imperceptible pour la silhouette
- * Tout est synthétisé (Web Audio) ; de vrais enregistrements pourront remplacer chaque couche.
+ * Plus d'autoradio ni de nappe « cinématique » séparée : une seule musique à la fois.
+ * Moteur, route et voix passent par le bus EFFETS ; la musique par le bus MUSIQUE.
  */
 import type { GameIntroState } from '@shared/content/intro';
-import { audio } from '../../audio';
+import { audio, music, type MusicMark } from '../../audio';
 
-type Layer = 'music' | 'car' | 'road' | 'voices' | 'cinematic';
+type Layer = 'car' | 'road' | 'voices';
 
 /** Volume de chaque couche par état (dans l'habitacle jusqu'à la révélation). */
 const MIX: Record<GameIntroState, Record<Layer, number>> = {
-  INTRO_START: { music: 0.22, car: 0.1, road: 0.03, voices: 0.03, cinematic: 0 },
-  INTRO_CAR: { music: 0.32, car: 0.11, road: 0.035, voices: 0.06, cinematic: 0 },
-  INTRO_POINT: { music: 0.24, car: 0.1, road: 0.035, voices: 0.03, cinematic: 0.02 },
-  INTRO_REVEAL: { music: 0.12, car: 0.05, road: 0.12, voices: 0, cinematic: 0.08 },
-  INTRO_VILLA: { music: 0.05, car: 0.03, road: 0.05, voices: 0, cinematic: 0.12 },
-  GAME_START: { music: 0, car: 0, road: 0, voices: 0, cinematic: 0 },
+  INTRO_START: { car: 0.1, road: 0.03, voices: 0.03 },
+  INTRO_CAR: { car: 0.11, road: 0.035, voices: 0.06 },
+  INTRO_POINT: { car: 0.1, road: 0.035, voices: 0.03 },
+  INTRO_REVEAL: { car: 0.05, road: 0.09, voices: 0 },
+  INTRO_VILLA: { car: 0.03, road: 0.04, voices: 0 },
+  GAME_START: { car: 0, road: 0, voices: 0 },
 };
 
-const CHORDS = [
-  [110, 130.8, 164.8], // la mineur
-  [87.3, 110, 130.8], // fa
-  [130.8, 164.8, 196], // do
-  [98, 123.5, 146.8], // sol
-];
+/** Repère musical à l'entrée de chaque état. */
+export const STATE_MARK: Partial<Record<GameIntroState, MusicMark>> = {
+  INTRO_CAR: 'drive',
+  INTRO_POINT: 'pointing',
+  INTRO_REVEAL: 'villaReveal',
+  INTRO_VILLA: 'arrival',
+  GAME_START: 'end',
+};
 
 export class IntroAudio {
   private ctx: AudioContext | null = null;
   private gains = new Map<Layer, GainNode>();
-  private musicFilter: BiquadFilterNode | null = null;
   private engine: OscillatorNode[] = [];
-  private stoppables: (AudioScheduledSourceNode | null)[] = [];
+  private stoppables: AudioScheduledSourceNode[] = [];
+  private unregister: (() => void)[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private nextBeat = 0;
-  private beat = 0;
   private state: GameIntroState = 'INTRO_START';
+  private marked: GameIntroState | null = null;
   private lastMix = 0;
   private stung = false;
+  private entered = false;
 
   start() {
+    // la musique démarre même si l'audio n'est pas encore débloqué (elle entrera au premier geste)
+    music.play('intro', { fade: 2.5 });
     const b = audio.buses();
-    if (!b) return; // audio non débloqué : la cinématique reste muette
-    const { ctx, music, sfx } = b;
+    if (!b) return; // audio non débloqué : pas d'ambiance de voiture
+    const { ctx, sfx } = b;
     this.ctx = ctx;
-    const mk = (layer: Layer, dest: AudioNode) => {
+    const mk = (layer: Layer) => {
       const g = ctx.createGain();
       g.gain.value = 0;
-      g.connect(dest);
+      g.connect(sfx);
       this.gains.set(layer, g);
       return g;
     };
-    // Music : groove → filtre (autoradio / entendu de dehors)
-    this.musicFilter = ctx.createBiquadFilter();
-    this.musicFilter.type = 'lowpass';
-    this.musicFilter.frequency.value = 2600;
-    this.musicFilter.connect(mk('music', music));
     // Car : moteur
     const engLp = ctx.createBiquadFilter();
     engLp.type = 'lowpass';
     engLp.frequency.value = 170;
-    engLp.connect(mk('car', sfx));
+    engLp.connect(mk('car'));
     for (const [f, type] of [[42, 'sawtooth'], [84, 'square']] as const) {
       const o = ctx.createOscillator();
       o.type = type;
@@ -75,81 +76,63 @@ export class IntroAudio {
       this.engine.push(o);
       this.stoppables.push(o);
     }
-    // Road : bruit filtré en boucle
+    this.unregister.push(audio.registerLoop('intro:engine'));
+    // Road : bruit grave filtré en boucle (roulement des pneus, pas de pluie)
     const road = ctx.createBufferSource();
     road.buffer = audio.noiseBuffer(3);
     road.loop = true;
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 320;
-    bp.Q.value = 0.6;
-    road.connect(bp).connect(mk('road', sfx));
+    bp.frequency.value = 260;
+    bp.Q.value = 0.8;
+    road.connect(bp).connect(mk('road'));
     road.start();
     this.stoppables.push(road);
+    this.unregister.push(audio.registerLoop('intro:road'));
     // Voices : sortie seulement ; les syllabes sont planifiées
-    mk('voices', sfx);
-    // Cinematic : nappe grave
-    const cine = mk('cinematic', music);
-    for (const f of [55, 55.35, 82.4]) {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      o.connect(cine);
-      o.start();
-      this.stoppables.push(o);
-    }
+    mk('voices');
     this.nextBeat = ctx.currentTime + 0.1;
     this.timer = setInterval(() => this.schedule(), 100);
   }
 
-  /** Mixage selon l'état ; `outside` 0 → 1 quand la caméra quitte l'habitacle. */
-  update(state: GameIntroState, speed: number, outside: number) {
+  /** Mixage selon l'état ; `outside` 0 → 1 quand la caméra quitte l'habitacle ; `u` = progression dans l'état. */
+  update(state: GameIntroState, speed: number, outside: number, u = 0) {
+    this.state = state;
+    // repères musicaux (indépendants du déblocage des effets)
+    if (state !== this.marked) {
+      this.marked = state;
+      const m = STATE_MARK[state];
+      if (m) music.mark(m);
+    }
+    if (state === 'INTRO_VILLA' && u > 0.84 && !this.entered) {
+      this.entered = true;
+      music.mark('enterHouse'); // fondu au noir : on passe la porte
+    }
     const ctx = this.ctx;
     if (!ctx) return;
-    this.state = state;
     const now = ctx.currentTime;
     if (now - this.lastMix < 0.1) return; // transitions douces : on ne réajuste que 10×/s
     this.lastMix = now;
-    for (const [layer, g] of this.gains) g.gain.setTargetAtTime(MIX[state][layer], now, 0.6);
-    this.musicFilter?.frequency.setTargetAtTime(2600 - outside * 2100, now, 0.4);
+    const away = 1 - outside * 0.4; // dehors, le moteur s'éloigne
+    for (const [layer, g] of this.gains) g.gain.setTargetAtTime(MIX[state][layer] * (layer === 'car' ? away : 1), now, 0.6);
     for (const [i, o] of this.engine.entries()) o.frequency.setTargetAtTime((i + 1) * (34 + speed * 1.6), now, 0.3);
   }
 
-  /** Frisson discret au passage de la silhouette (identique pour tous : déclenché par l'horloge commune). */
+  /** Note discrète au passage de la silhouette (identique pour tous : déclenchée par l'horloge commune). */
   silhouette() {
-    const ctx = this.ctx;
-    const out = this.gains.get('cinematic');
-    if (!ctx || !out || this.stung) return;
+    if (this.stung) return;
     this.stung = true;
-    const t = ctx.currentTime;
-    for (const f of [1244.5, 1318.5]) {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.05, t + 0.6);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
-      o.connect(g).connect(out);
-      o.start(t);
-      o.stop(t + 1.9);
-    }
+    music.mark('silhouette');
   }
 
-  /** Planification anticipée de la musique et des voix. */
+  /** Planification anticipée des voix. */
   private schedule() {
-    const ctx = this.ctx!;
+    const ctx = this.ctx;
+    if (!ctx) return;
     const spb = 60 / 112;
     while (this.nextBeat < ctx.currentTime + 0.3) {
-      const t = this.nextBeat;
-      const chord = CHORDS[Math.floor(this.beat / 4) % CHORDS.length];
-      this.kick(t);
-      this.hat(t + spb / 2);
-      this.bass(t, chord[0] / 2, spb * 0.45);
-      if (this.beat % 4 === 0) for (const f of chord) this.pad(t, f, spb * 4);
-      if (this.state === 'INTRO_CAR' || this.state === 'INTRO_START' || this.state === 'INTRO_POINT') this.voices(t, spb);
+      if (this.state === 'INTRO_CAR' || this.state === 'INTRO_START' || this.state === 'INTRO_POINT') this.voices(this.nextBeat, spb);
       this.nextBeat += spb;
-      this.beat++;
     }
   }
 
@@ -160,48 +143,6 @@ export class IntroAudio {
     g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
     g.connect(dest);
     return g;
-  }
-
-  private kick(t: number) {
-    const o = this.ctx!.createOscillator();
-    o.frequency.setValueAtTime(120, t);
-    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
-    o.connect(this.env(t, this.musicFilter!, 0.9, 0.005, 0.25));
-    o.start(t);
-    o.stop(t + 0.3);
-  }
-
-  private hat(t: number) {
-    const ctx = this.ctx!;
-    const n = ctx.createBufferSource();
-    n.buffer = audio.noiseBuffer(0.1);
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 7000;
-    n.connect(hp).connect(this.env(t, this.musicFilter!, 0.18, 0.002, 0.05));
-    n.start(t);
-  }
-
-  private bass(t: number, f: number, dur: number) {
-    const ctx = this.ctx!;
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.value = f;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 380;
-    o.connect(lp).connect(this.env(t, this.musicFilter!, 0.35, 0.01, dur));
-    o.start(t);
-    o.stop(t + dur + 0.05);
-  }
-
-  private pad(t: number, f: number, dur: number) {
-    const o = this.ctx!.createOscillator();
-    o.type = 'triangle';
-    o.frequency.value = f * 2;
-    o.connect(this.env(t, this.musicFilter!, 0.06, 0.3, dur - 0.3));
-    o.start(t);
-    o.stop(t + dur);
   }
 
   /** Brouhaha : syllabes de bruit formantique, et de temps en temps un éclat de rire. */
@@ -244,16 +185,22 @@ export class IntroAudio {
     }
   }
 
+  /** Arrêt des effets de la cinématique ; la musique, elle, est enchaînée par le directeur (voir App). */
   dispose() {
     if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    for (const u of this.unregister) u();
+    this.unregister = [];
     const ctx = this.ctx;
     if (!ctx) return;
     const now = ctx.currentTime;
     for (const g of this.gains.values()) g.gain.setTargetAtTime(0, now, 0.4);
-    setTimeout(() => {
-      for (const s of this.stoppables) s?.stop();
-      for (const g of this.gains.values()) g.disconnect();
-    }, 2500);
+    const gains = [...this.gains.values()];
+    for (const s of this.stoppables) s.stop(now + 2.5);
+    this.stoppables[0]?.addEventListener('ended', () => gains.forEach((g) => g.disconnect()), { once: true });
+    this.stoppables = [];
+    this.engine = [];
+    this.gains.clear();
     this.ctx = null;
   }
 }

@@ -9,7 +9,7 @@ export function SettingsScreen() {
     <MenuScreen title="PARAMÈTRES">
       <div className="panel form-panel">
         <label>
-          Ambiance (pluie, musique) — {Math.round(s.music * 100)}%
+          Musique — {Math.round(s.music * 100)}%
           <input type="range" min={0} max={1} step={0.05} value={s.music} onChange={(e) => { audio.unlock(); update({ music: Number(e.target.value) }); }} />
         </label>
         <label>

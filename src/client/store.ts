@@ -5,7 +5,7 @@ import { create } from 'zustand';
 import type { AppNotification, Character, FriendEntry, GameSelfView, GameSnapshot, LobbyView } from '@shared/types';
 import { api, tokenStore } from './net/api';
 import { call, connectSocket, disconnectSocket } from './net/socket';
-import { audio } from './audio';
+import { audio, music } from './audio';
 import { introStateAt, type GameIntroState, type IntroPlan } from '@shared/content/intro';
 /**
  * Vue de partie « temps réel », hors React : la vue 3D s'y abonne et reçoit chaque mise à jour
@@ -195,7 +195,10 @@ export const useStore = create<AppState>((set, get) => ({
       if (!important && now - lastUiAt < 250) return;
       lastUiAt = now;
       if (prev && next.feed.length && prev.feed[prev.feed.length - 1]?.id !== next.feed[next.feed.length - 1]?.id) {
-        if (next.feed[next.feed.length - 1].style === 'danger') audio.danger();
+        if (next.feed[next.feed.length - 1].style === 'danger') {
+          audio.danger();
+          music.mark('tension'); // inflexion discrète de la musique d'enquête
+        }
       }
       if (hadFull && (st.screen !== 'game' || !st.inGame)) set({ game: next, inGame: true, screen: 'game', intro: st.intro ? { ...st.intro, state: 'GAME_START' } : null });
       else set({ game: next });

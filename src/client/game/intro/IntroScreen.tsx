@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../../store';
 import { getSocket } from '../../net/socket';
+import { music } from '../../audio';
 import { IntroSequence } from './IntroSequence';
 import { IntroText } from './IntroText';
+import { STATE_MARK } from './IntroAudio';
 
 /** Délai de sécurité : au-delà, la partie s'affiche même si le chargement n'est pas fini. */
 const MAX_HOLD_MS = 6000;
@@ -59,8 +61,9 @@ export function IntroScreen() {
       seq.current = s;
       void s.start(signalReady);
     } catch {
-      // sans WebGL : rien à préparer, on est prêt tout de suite
+      // sans WebGL : rien à préparer, on est prêt tout de suite (la musique joue quand même, sans repères)
       setFallback(true);
+      music.play('intro', { fade: 2.5 });
       signalReady();
     }
     return () => {
@@ -68,6 +71,14 @@ export function IntroScreen() {
       seq.current = null;
     };
   }, [planId, elapsed, signalReady]);
+
+  // repli sans WebGL : les repères musicaux suivent directement l'état serveur
+  const introState = intro?.state;
+  useEffect(() => {
+    if (!fallback || !introState || intro?.loading) return;
+    const m = STATE_MARK[introState];
+    if (m) music.mark(m);
+  }, [fallback, introState, intro?.loading]);
 
   // progression du chargement
   const loading = !!intro?.loading;
