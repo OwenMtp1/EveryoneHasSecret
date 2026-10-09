@@ -169,6 +169,7 @@ export class ActionSystem {
     const o = this.owned(p, objectId);
     const f = this.nearFurniture(p, furnitureId);
     if (!f.hiding) throw new UserError('Impossible de cacher quoi que ce soit ici.');
+    if (this.g.caseSystem.furnitureLocked(f.id)) throw new UserError(`${f.name} est verrouillé.`);
     this.removeFromPlayer(o);
     o.location = { kind: 'hidden', roomId: f.roomId, furnitureId: f.id, pos: { x: f.x + f.w / 2, y: f.y + f.h / 2 } };
     o.knownBy = new Set([p.id]);
@@ -212,6 +213,7 @@ export class ActionSystem {
 
   search(p: PlayerState, furnitureId: string) {
     const f = this.nearFurniture(p, furnitureId);
+    if (this.g.caseSystem.furnitureLocked(f.id)) throw new UserError(`${f.name} est verrouillé${f.lock === 'code' ? ' (code à quatre chiffres)' : ' (il faut une clé)'}.`);
     if (!f.hiding) return `${f.name} : rien à fouiller.`;
     const found = [...this.g.objects.values()].filter((o) => o.location.kind === 'hidden' && o.location.furnitureId === f.id);
     this.g.log('FURNITURE_SEARCHED', { actorId: p.id, roomId: p.roomId, data: { furnitureId: f.id, found: found.map((o) => o.id) }, text: `${p.name} fouille : ${f.name}` });

@@ -237,7 +237,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
     ref: 'm_receipt',
     type: 'receipt',
     name: 'Ticket de caisse',
-    placement: { kind: 'hidden', roomId: room(['hall']), furnitureHint: ['coat', 'manteau', 'porte-manteau', 'console'] },
+    placement: { kind: 'hidden', roomId: room(shuffle(['hall', 'mudroom'], rnd)), furnitureHint: ['coat', 'manteau', 'veste', 'console', 'banc'] },
     content: {
       title: 'Ticket — Station-service du col',
       lines: [`${formatClock(stationAt)} — 1 paquet de mouchoirs, 1 bouteille d’eau. Payé par carte — titulaire : ${m.first[0]}. ${m.last.toUpperCase()}.`, 'La station est à trois minutes de la villa, dans la direction opposée au port.'],
@@ -253,7 +253,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
       ref: `alibi_${id}`,
       type: ab.proof === 'photo' ? 'photo' : 'receipt',
       name: ab.proof === 'photo' ? 'Selfie imprimé' : 'Ticket froissé',
-      placement: { kind: 'hidden', roomId: room(['guestroom', 'bedroom1', 'bedroom2', 'hall', 'living']) },
+      placement: { kind: 'hidden', roomId: room(shuffle(['guestroom', 'bedroom1', 'bedroom2', 'mudroom', 'treehouse1', 'treehouse2', 'kidsroom'], rnd)) },
       content: {
         title: ab.proof === 'photo' ? `Selfie de ${p.first}` : `Ticket — ${PLACES[ab.place].name}`,
         lines: ab.proof === 'photo' ? [`${p.first}, seul${a(p)}, ${PLACES[ab.place].name}, horodaté ${formatClock(at)}.`] : [`${formatClock(at)} — achat réglé par carte, titulaire : ${p.first[0]}. ${p.last.toUpperCase()}.`],
@@ -286,7 +286,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
     ref: 'weapon',
     type: weaponType,
     name: '',
-    placement: { kind: 'hidden', roomId: room(shuffle(['garden', 'garage', 'cellar', 'laundry', 'basement', 'kitchen'], rnd)) },
+    placement: { kind: 'hidden', roomId: room(shuffle(['garden', 'garage', 'laundry', 'basement', 'orchard', 'mudroom'], rnd)) },
     traces: [
       { kind: 'blood', playerId: 'victim', cleaned: true },
       { kind: 'print', playerId: m.id, cleaned: true },
@@ -302,7 +302,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
       ref: `secret_${p.id}`,
       type: pr.type,
       name: pr.name,
-      placement: protectors.includes(p) ? { kind: 'player', playerId: m.id } : { kind: 'hidden', roomId: room(shuffle(['office', 'library', 'guestroom', 'bedroom1', 'bedroom2', 'studio', 'attic'], rnd)) },
+      placement: protectors.includes(p) ? { kind: 'player', playerId: m.id } : { kind: 'hidden', roomId: room(shuffle(['office', 'library', 'guestroom', 'bedroom1', 'bedroom2', 'studio', 'attic', 'kidsroom', 'treehouse1', 'treehouse2', 'gamesroom'], rnd)) },
       content: { ...pr.content, facts: [{ kind: 'secret', playerId: p.id }], weight: 'herring' },
     });
   }
@@ -346,7 +346,7 @@ export function murdererBriefing(c: CaseTruth, murdererId: string, nameOf: (id: 
   return [
     `Votre version : vous êtes resté·e à ${PLACES[t.place].name} toute la soirée (sauf une courte sortie « cigarettes »).`,
     'Ce qui peut vous trahir :',
-    '• votre ticket de la station-service du col, oublié dans votre veste (hall) ;',
+    '• votre ticket de la station-service du col, oublié dans une poche de veste, près d’une entrée de la maison ;',
     '• les messages que vous avez échangés avec la victime, dans son téléphone ;',
     '• la photo prise au restaurant/bar pendant votre absence, sur la carte mémoire d’un appareil photo ;',
     '• l’arme, que vous avez essuyée à la hâte et cachée hors de la pièce du crime ;',

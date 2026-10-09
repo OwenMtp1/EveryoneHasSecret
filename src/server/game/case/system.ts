@@ -105,6 +105,8 @@ export class CaseSystem {
   private investigationEndsAt = 0;
   private blackoutAt = 0;
   private victimBodyId = 'b_victim';
+  /** meubles verrouillés (coffre-fort à code, tiroir et malle à clé) : verrou réel côté serveur */
+  furnitureLocks = new Map<string, { kind: 'code'; code: string; fails: number; until: number } | { kind: 'key'; keyId: string }>();
 
   constructor(private g: GameInstance) {}
 
@@ -148,6 +150,7 @@ export class CaseSystem {
     }
     const weapon = this.refs.get(t.weaponRef)!;
     g.bodies[0].weaponId = weapon.id;
+    this.setupFurnitureLocks(bodyPos);
 
     // traces physiques du crime : flaque de sang, empreintes de boue du jardin à la pièce, sang dilué
     const m = g.players.get(t.murdererId)!;
@@ -190,6 +193,81 @@ export class CaseSystem {
     this.investigationEndsAt = g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec) * 1000 * scale;
     this.blackoutAt = g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec * CASE_TIMING.blackoutAtFraction) * 1000 * scale;
     g.log('CASE_OPENED', { text: `Affaire : ${t.scenarioTitle}. Victime : ${t.victim.name}. Meurtrier : ${m.name}.`, data: { scenario: t.scenarioId } });
+  }
+
+  /**
+   * Meubles verrouillés de la villa intégrés à l'enquête (si la villa les contient) :
+   *  - tiroir du bureau (clé sur le corps) : l'ordinateur de la victime ;
+   *  - coffre-fort du bureau (code noté dans le journal) : les documents de l'histoire passée ;
+   *  - malle du grenier (clé cachée ailleurs) : le coffret de la clé USB.
+   */
+  private setupFurnitureLocks(bodyPos: { x: number; y: number }) {
+    const g = this.g;
+    const furn = (id: string) => allFurniture().find((f) => f.id === id && f.lock);
+    const put = (o: GameObject | undefined, f: { id: string; roomId: string; x: number; y: number; w: number; h: number }) => {
+      if (o) o.location = { kind: 'hidden', roomId: f.roomId, furnitureId: f.id, pos: { x: f.x + f.w / 2, y: f.y + f.h / 2 } };
+    };
+    const desk = furn('f_office_desk');
+    if (desk) {
+      const key = this.spawnExtra('key', 'Petite clé de bureau', 'Une petite clé plate, trouvée dans la poche de la victime. « Bureau ».', { kind: 'hidden', roomId: this.truth.victim.roomId, furnitureId: `body:${this.victimBodyId}`, pos: { ...bodyPos } });
+      this.furnitureLocks.set(desk.id, { kind: 'key', keyId: key.id });
+      put(this.refs.get('laptop'), desk);
+    }
+    const safe = furn('f_office_safe');
+    if (safe) {
+      const code = String(1000 + Math.floor(g.rnd() * 9000));
+      this.furnitureLocks.set(safe.id, { kind: 'code', code, fails: 0, until: 0 });
+      for (const [ref, o] of this.refs) if (ref.startsWith('story_')) put(o, safe);
+      const diary = this.content(this.refs.get('diary')!);
+      diary?.lines.splice(2, 0, `« Le coffre-fort du bureau : ${code}. J’y ai mis tout ce que j’ai retrouvé sur cette histoire. »`);
+    }
+    const trunk = furn('f_attic_trunk');
+    if (trunk) {
+      const spots = allFurniture().filter((f) => f.hiding && !f.lock && ['garage', 'basement', 'laundry', 'mudroom', 'kidsroom', 'gamesroom'].includes(f.roomId));
+      const spot = spots.length ? pick(spots, g.rnd) : null;
+      const key = this.spawnExtra('key', 'Clé de la malle du grenier', 'Une grosse clé ancienne avec une étiquette : « Malle — grenier ».', spot ? { kind: 'hidden', roomId: spot.roomId, furnitureId: spot.id, pos: { x: spot.x + spot.w / 2, y: spot.y + spot.h / 2 } } : { kind: 'floor', roomId: 'hall', pos: randomFreeTile(g.grid, 'hall', g.rnd) });
+      this.furnitureLocks.set(trunk.id, { kind: 'key', keyId: key.id });
+      put(this.refs.get('usb_box'), trunk);
+    }
+  }
+
+  private spawnExtra(type: string, name: string, description: string, location: GameObject['location']): GameObject {
+    const def = objectTypeDef(type)!;
+    const o: GameObject = { id: shortId('o_'), type, def, name, location, spawnRoomId: null, history: [], traces: [], lit: false, knownBy: new Set(), props: { description } };
+    this.g.objects.set(o.id, o);
+    return o;
+  }
+
+  /** Un meuble est-il encore verrouillé ? (fouille impossible tant qu'il l'est) */
+  furnitureLocked(furnitureId: string) {
+    return this.furnitureLocks.has(furnitureId);
+  }
+
+  /** Ouvrir un meuble verrouillé : code saisi, ou clé correspondante dans l'inventaire. */
+  unlockFurniture(p: PlayerState, furnitureId: string, code?: string): string {
+    this.requireActive(p);
+    const g = this.g;
+    const lock = this.furnitureLocks.get(furnitureId);
+    const f = allFurniture().find((x) => x.id === furnitureId);
+    if (!f || f.roomId !== p.roomId) throw new UserError('Meuble introuvable ici.');
+    const cx = Math.max(f.x, Math.min(p.pos.x, f.x + f.w));
+    const cy = Math.max(f.y, Math.min(p.pos.y, f.y + f.h));
+    if (Math.hypot(cx - p.pos.x, cy - p.pos.y) > GAME_CONFIG.interactRange) throw new UserError('Approchez-vous du meuble.');
+    if (!lock) throw new UserError(`${f.name} n’est pas verrouillé.`);
+    if (lock.kind === 'code') {
+      const now = g.now();
+      if (lock.until > now) throw new UserError(`Trop d’essais : réessayez dans ${Math.ceil((lock.until - now) / 1000)} s.`);
+      if (String(code ?? '').trim() !== lock.code) {
+        lock.fails++;
+        if (lock.fails % 3 === 0) lock.until = now + 30_000;
+        throw new UserError('Code incorrect.');
+      }
+    } else if (!p.inventory.includes(lock.keyId)) throw new UserError('Il vous faut la bonne clé.');
+    this.furnitureLocks.delete(furnitureId);
+    g.log('FURNITURE_UNLOCKED', { actorId: p.id, roomId: p.roomId, data: { furnitureId }, text: `${p.name} ouvre : ${f.name}` });
+    g.perceive(p.id, `${p.name} ouvre : ${f.name.toLowerCase()}.`);
+    g.markAllDirty();
+    return `${f.name} est ouvert. ${g.actions.search(p, furnitureId)}`;
   }
 
   private spawn(spec: CaseItemSpec, bodyPos: { x: number; y: number }) {
@@ -775,7 +853,7 @@ export class CaseSystem {
           if (ev.kind === 'blood_pool') found.push('une flaque de sang');
         }
         for (const [k, n] of foot) found.push(`${n} empreinte${n > 1 ? 's' : ''} de boue (${k})`);
-        for (const f of allFurniture().filter((x) => x.roomId === p.roomId && x.hiding)) {
+        for (const f of allFurniture().filter((x) => x.roomId === p.roomId && x.hiding && !this.furnitureLocks.has(x.id))) {
           const hidden = [...g.objects.values()].filter((o) => o.location.kind === 'hidden' && o.location.furnitureId === f.id);
           if (hidden.length) {
             hidden.forEach((o) => o.knownBy.add(p.id));

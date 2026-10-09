@@ -38,6 +38,8 @@ export type GameAction =
   | { type: 'unlock'; objectId: string; code: string }
   /** ouvrir un contenant avec une clé détenue / lire un support dans un appareil */
   | { type: 'open'; objectId: string }
+  /** meuble verrouillé : code (coffre-fort) ou clé détenue (tiroir, malle) */
+  | { type: 'unlock_furniture'; furnitureId: string; code?: string }
   | { type: 'insert'; mediaId: string; deviceId: string }
   /** fouiller le corps de la victime */
   | { type: 'search_body'; bodyId: string }

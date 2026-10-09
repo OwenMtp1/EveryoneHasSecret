@@ -58,8 +58,16 @@ function makeGame(n = 4, seed = 42, scenarioId?: string) {
     }
   };
   /** Prend un objet de l'affaire (en le cherchant là où il est). */
-  const fetch = (p: PlayerState, o: GameObject) => {
+  const fetch = (p: PlayerState, o: GameObject): void => {
     if (o.location.kind === 'player' && o.location.playerId === p.id) return;
+    // meuble verrouillé : clé à aller chercher, ou code (connu ici grâce à la vérité serveur)
+    const loc = o.location;
+    if (loc.kind === 'hidden' && g.caseSystem.furnitureLocked(loc.furnitureId)) {
+      const lock = g.caseSystem.furnitureLocks.get(loc.furnitureId)!;
+      if (lock.kind === 'key') fetch(p, g.objects.get(lock.keyId)!);
+      goTo(p, loc.pos, loc.roomId);
+      act(p, { type: 'unlock_furniture', furnitureId: loc.furnitureId, code: lock.kind === 'code' ? lock.code : undefined });
+    }
     goToObject(p, o);
     while (p.inventory.length >= 4) act(p, { type: 'drop', objectId: p.inventory[0] });
     act(p, { type: 'take', objectId: o.id });
@@ -127,6 +135,7 @@ for (const scenarioId of SCENARIOS)
         const view = JSON.stringify(g.buildSelfView(p));
         for (const o of ps) if (o.id !== p.id) assert.ok(!view.includes(o.secretText), 'secret d’un autre joueur dans la vue');
         assert.ok(!view.includes('"murdererId"') && !view.includes('"facts"') && !view.includes('"lock":'), 'vérité dans la vue');
+        for (const l of g.caseSystem.furnitureLocks.values()) if (l.kind === 'code') assert.ok(!new RegExp(`(^|[^0-9a-z])${l.code}([^0-9a-z]|$)`).test(view), 'code du coffre divulgué');
         for (const it of t.items) if (it.lock?.kind === 'code') assert.ok(!new RegExp(`(^|[^0-9a-z])${it.lock.code}([^0-9a-z]|$)`, 'i').test(view), 'code divulgué');
         if (t.players.get(p.id)!.camp === 'innocent') assert.ok(!view.includes(t.motive));
       }
@@ -456,4 +465,30 @@ test('mouvement bloqué par les murs ; un joueur arrêté ne bouge plus', () => 
   g.setInput(b.id, 1, 0);
   advance(500);
   assert.deepEqual(b.pos, pos);
+});
+
+test('meubles verrouillés : fouille impossible sans la clé ou le bon code ; le code est dans le journal', () => {
+  const { g, act, ref, fetch, innocents, startInvestigation, goTo } = makeGame(4, 31, 'pacte');
+  startInvestigation();
+  const p = innocents()[0];
+  const desk = allFurniture().find((f) => f.id === 'f_office_desk')!;
+  const safe = allFurniture().find((f) => f.id === 'f_office_safe')!;
+  goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
+  assert.throws(() => act(p, { type: 'search', furnitureId: desk.id }), /verrouillé/);
+  assert.throws(() => act(p, { type: 'unlock_furniture', furnitureId: desk.id }), /clé/);
+  goTo(p, { x: safe.x + 0.5, y: safe.y + 0.5 }, safe.roomId);
+  assert.throws(() => act(p, { type: 'unlock_furniture', furnitureId: safe.id, code: '0000' }), /incorrect/);
+  // le journal (boîte cadenassée, clé sur le corps) donne le code du coffre
+  fetch(p, ref('box_key'));
+  fetch(p, ref('diary_box'));
+  act(p, { type: 'open', objectId: ref('diary_box').id });
+  const diary = g.caseSystem.dossierView(p).evidence.find((e) => e.objectId === ref('diary').id)!.lines.join(' ');
+  const code = diary.match(/coffre-fort du bureau : (\d{4})/)![1];
+  goTo(p, { x: safe.x + 0.5, y: safe.y + 0.5 }, safe.roomId);
+  const res = act(p, { type: 'unlock_furniture', furnitureId: safe.id, code })!;
+  assert.match(res, /ouvert/);
+  assert.ok(!g.caseSystem.furnitureLocked(safe.id));
+  // le tiroir du bureau s'ouvre avec la petite clé trouvée sur le corps, et contient l'ordinateur
+  fetch(p, ref('laptop'));
+  assert.ok(p.inventory.includes(ref('laptop').id));
 });

@@ -136,6 +136,10 @@ export function targetActions(g: GameSelfView, key: string | null): { title: str
   if (kind === 'f') {
     const f = furnitureById(id);
     if (!f) return null;
+    const lock = g.lockedFurniture.find((l) => l.id === f.id);
+    if (lock?.kind === 'code') out.push({ label: 'Saisir le code', run: () => picker.askText(f.name, 'Code à quatre chiffres', (code) => act({ type: 'unlock_furniture', furnitureId: f.id, code })) });
+    if (lock?.kind === 'key') out.push({ label: 'Ouvrir avec une clé', run: () => act({ type: 'unlock_furniture', furnitureId: f.id }) });
+    if (lock) return { title: `🔒 ${f.name}`, actions: out };
     if (f.hiding) out.push({ label: 'Fouiller', run: () => act({ type: 'search', furnitureId: f.id }) });
     if (f.kind === 'sink') out.push({ label: 'Se laver les mains', run: () => act({ type: 'wash' }) });
     if (f.kind === 'fireplace' && destructibles(inv).length)

@@ -620,6 +620,9 @@ export class GameInstance {
         msg = o.def.tags.includes('container') ? this.caseSystem.open(p, o) : (this.caseSystem.eject(p, o) ?? 'Rien à retirer.');
         break;
       }
+      case 'unlock_furniture':
+        msg = this.caseSystem.unlockFurniture(p, String(a.furnitureId), a.code === undefined ? undefined : String(a.code));
+        break;
       case 'insert':
         msg = this.caseSystem.insert(p, String(a.mediaId), String(a.deviceId));
         break;
@@ -859,6 +862,7 @@ export class GameInstance {
         ? { requestId: p.pendingTestimony.requestId, question: p.pendingTestimony.question, fromName: p.pendingTestimony.fromName }
         : null,
       arrested: [...this.players.values()].filter((x) => x.arrested).map((x) => x.id),
+      lockedFurniture: [...cs.furnitureLocks.entries()].map(([id, l]) => ({ id, kind: l.kind })),
     };
   }
 

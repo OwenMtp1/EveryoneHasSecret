@@ -434,6 +434,8 @@ export interface GameSelfView {
   testimonyRequest: { requestId: string; question: string; fromName: string } | null;
   /** joueurs arrêtés (hors jeu, spectateurs) */
   arrested: string[];
+  /** meubles encore verrouillés */
+  lockedFurniture: { id: string; kind: 'code' | 'key' }[];
 }
 
 /** Snapshot léger envoyé à haute fréquence. */
