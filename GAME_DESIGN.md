@@ -97,7 +97,13 @@ Le système ne force jamais un joueur à agir contre son ennemi.
 
 ## 9. Contenu V1
 
-- **Villa Beaumont** : jardin, cuisine, salon, bureau, salle de bain, cave & garage (verrouillée), hall, couloir, chambre bleue, chambre de maître, allée extérieure ; 24 meubles (dont 18 cachettes).
+- **Villa Beaumont** (4 niveaux) :
+  - *Sous-sol* : chaufferie (escalier depuis la buanderie), cave à vin (verrouillée, clé de la cave).
+  - *Rez-de-chaussée* : hall (escalier), salon (cheminée), salle à manger, cuisine, salle de jeux, couloir, bureau (coffre-fort à code, tiroir à clé), toilettes, buanderie, garage (porte basculante verrouillée), vestiaire de jardin.
+  - *Étage* : palier, bibliothèque, chambre de maître, suite parentale + salle de bain, chambre d'enfant, chambre d'amis, salle de bain, chambre bleue, atelier, salon de musique.
+  - *Grenier* (échelle escamotable depuis le palier) : malles (dont une cadenassée), cartons, mannequin, cheval à bascule.
+  - *Extérieurs* : jardin, allée, verger avec deux cabanes perchées (échelle de bois, échelle de corde).
+  - Au moins deux cachettes par pièce ; aucun objet interdit (horloge, enregistreur, disque dur, tableau blanc, plateau de boissons, badge, disjoncteur, sonnette connectée, caméra) dans le décor.
 - **17 types d’objets** : couteau, chandelier, corde, coupe-papier, bouteille, clé de la cave, tournevis, lampe torche, torchon, briquet, téléphone, somnifères, montre, badge, collier, lettre, photo.
 - **12 secrets**, **6 rôles**, **15 règles d’événements**, **3 familles de scénarios** actives (meurtre, vol, conspiration) + 2 prévues.
 - **Personnages** : 2 apparences, 8 teintes de peau, 10 coiffures, 8 couleurs de cheveux, 20 tenues.

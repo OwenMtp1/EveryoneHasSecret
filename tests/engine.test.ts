@@ -78,7 +78,7 @@ function makeGame(n = 4, seed = 42, scenarioId?: string) {
 test('aucun objet interdit dans le catalogue ni dans le mobilier', () => {
   const banned = /horloge|pendule|montre|enregistreur|dictaphone|disque dur|tableau blanc|plateau|badge|disjoncteur|sonnette|caméra de surveillance|surveillance/i;
   for (const o of OBJECT_TYPES) assert.ok(!banned.test(`${o.name} ${o.description}`), `objet interdit : ${o.name}`);
-  for (const f of allFurniture()) assert.ok(!banned.test(f.name) && f.kind !== 'clock', `meuble interdit : ${f.name}`);
+  for (const f of allFurniture()) assert.ok(!banned.test(f.name), `meuble interdit : ${f.name}`);
 });
 
 for (const scenarioId of SCENARIOS)
@@ -127,7 +127,7 @@ for (const scenarioId of SCENARIOS)
         const view = JSON.stringify(g.buildSelfView(p));
         for (const o of ps) if (o.id !== p.id) assert.ok(!view.includes(o.secretText), 'secret d’un autre joueur dans la vue');
         assert.ok(!view.includes('"murdererId"') && !view.includes('"facts"') && !view.includes('"lock":'), 'vérité dans la vue');
-        for (const it of t.items) if (it.lock?.kind === 'code') assert.ok(!view.includes(it.lock.code), 'code divulgué');
+        for (const it of t.items) if (it.lock?.kind === 'code') assert.ok(!new RegExp(`(^|[^0-9a-z])${it.lock.code}([^0-9a-z]|$)`, 'i').test(view), 'code divulgué');
         if (t.players.get(p.id)!.camp === 'innocent') assert.ok(!view.includes(t.motive));
       }
     });

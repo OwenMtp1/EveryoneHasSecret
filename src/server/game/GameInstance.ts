@@ -31,8 +31,7 @@ import { GAME_CONFIG, META_CONFIG, formatClock } from '@shared/config';
 import {
   PLAYER_SPAWNS,
   adjacentRooms,
-  applyPortal,
-  stepAllowed,
+  stepMove,
   buildWorldGrid,
   doorAt,
   roomAt,
@@ -492,12 +491,11 @@ export class GameInstance {
       const speed = p.running ? GAME_CONFIG.runSpeed : GAME_CONFIG.walkSpeed;
       const vx = (p.input.x / len) * speed * dt;
       const vy = (p.input.y / len) * speed * dt;
-      if (this.fits(p.pos.x + vx, p.pos.y) && stepAllowed(p.pos.x, p.pos.y, p.pos.x + vx, p.pos.y)) p.pos.x += vx;
-      if (this.fits(p.pos.x, p.pos.y + vy) && stepAllowed(p.pos.x, p.pos.y, p.pos.x, p.pos.y + vy)) p.pos.y += vy;
+      // murs, meubles, garde-corps des rampes ; en haut d'un escalier ou d'une échelle : changement de niveau
+      const pos = { x: p.pos.x, y: p.pos.y };
+      stepMove(pos, vx, vy, (x, y) => this.fits(x, y));
+      p.pos = pos;
       p.facing = Math.atan2(vy, vx);
-      // haut de l'escalier : passage au palier de l'étage (et retour)
-      const portal = applyPortal(p.pos.x, p.pos.y);
-      if (portal && this.fits(portal.x, portal.y)) p.pos = portal;
     }
     p.roomTime[p.roomId] = (p.roomTime[p.roomId] ?? 0) + dt;
     const room = roomAt(this.grid, p.pos.x, p.pos.y);

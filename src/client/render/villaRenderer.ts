@@ -3,7 +3,7 @@
  * les pièces où le joueur n'est pas restent dans l'ombre.
  */
 import type { GameSelfView } from '@shared/types';
-import { DOORS, GRID_W, ROOMS, WORLD_H, WORLD_W, allFurniture, buildWorldGrid, roomAt, type FurnitureDef } from '@shared/content/villa';
+import { DOORS, GRID_W, LEVELS, ROOMS, WORLD_H, WORLD_W, allFurniture, buildWorldGrid, levelOffset, roomAt, type FurnitureDef } from '@shared/content/villa';
 import { avatarImage } from './avatar';
 
 export const TILE = 32;
@@ -23,7 +23,6 @@ const FURNITURE_STYLE: Partial<Record<FurnitureDef['kind'], { color: string; ico
   bath: { color: '#c9d3d8', icon: '🛁' },
   bed: { color: '#7d6a58', icon: '🛏️' },
   wardrobe: { color: '#4b3322', icon: '🚪' },
-  clock: { color: '#3d2a1a', icon: '🕰️' },
   fountain: { color: '#596670', icon: '⛲' },
   hedge: { color: '#163019', icon: '🌿' },
   tree: { color: '#13261a', icon: '🌳' },
@@ -53,7 +52,44 @@ const FURNITURE_STYLE: Partial<Record<FurnitureDef['kind'], { color: string; ico
   globe: { color: '#2d4f6e', icon: '🌍' },
   harp: { color: '#9a7a3a', icon: '🎼' },
   chest: { color: '#5a3a22', icon: '🧰' },
+  ladder: { color: '#7a5a36', icon: '🪜' },
+  rope_ladder: { color: '#8a6a3c', icon: '🪜' },
+  big_tree: { color: '#13261a', icon: '🌳' },
+  washing_machine: { color: '#d8d8d4', icon: '🫧' },
+  dryer: { color: '#d8d8d4', icon: '🌀' },
+  ironing_board: { color: '#9aa8b0', icon: '' },
+  laundry_basket: { color: '#a08050', icon: '🧺' },
+  drying_rack: { color: '#9aa8b0', icon: '' },
+  billiard: { color: '#1f5a3a', icon: '🎱' },
+  cue_rack: { color: '#4a3524', icon: '' },
+  games_shelf: { color: '#4a3524', icon: '🎲' },
+  darts: { color: '#2a2a2a', icon: '🎯' },
+  jukebox: { color: '#8a3a2a', icon: '🎵' },
+  arcade: { color: '#2a2a5a', icon: '🕹️' },
+  safe: { color: '#3a3c40', icon: '🔐' },
+  filing_cabinet: { color: '#5a5c60', icon: '🗄️' },
+  boiler: { color: '#7a3a2a', icon: '🔥' },
+  water_heater: { color: '#d8d8d4', icon: '' },
+  wine_rack: { color: '#4a2a1a', icon: '🍷' },
+  boxes: { color: '#8a6a40', icon: '📦' },
+  mannequin: { color: '#c9b48a', icon: '' },
+  rocking_horse: { color: '#8a5a3a', icon: '🐴' },
+  toolbox: { color: '#a8312a', icon: '🧰' },
+  freezer: { color: '#e8e8e4', icon: '🧊' },
+  bicycle: { color: '#3a3a3c', icon: '🚲' },
+  umbrella_stand: { color: '#3a2a1e', icon: '☂️' },
+  cushions: { color: '#8a3a4a', icon: '' },
+  lantern: { color: '#3a2a1e', icon: '🏮' },
+  post: { color: '#5a3a22', icon: '' },
+  shed: { color: '#5a4a32', icon: '🛖' },
+  swing: { color: '#6a4a2a', icon: '' },
+  planter: { color: '#4a3a22', icon: '🥬' },
+  barbecue: { color: '#2a2a2a', icon: '' },
+  bins: { color: '#2a4a2a', icon: '🗑️' },
+  mailbox: { color: '#8a2a2a', icon: '📮' },
+  dollhouse: { color: '#c9a07a', icon: '🏠' },
 };
+const LEVEL_LABELS: Record<number, string> = { [-1]: 'SOUS-SOL', 0: 'REZ-DE-CHAUSSÉE · JARDIN · VERGER', 1: 'ÉTAGE · CABANES', 2: 'GRENIER' };
 
 function hash(x: number, y: number) {
   const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -143,9 +179,15 @@ export function renderStatic(unlocked: Set<string>): HTMLCanvasElement {
 
   // Tapis de salon
   ctx.fillStyle = 'rgba(120,30,40,.35)';
-  ctx.fillRect(13.5 * TILE, 8.5 * TILE, 5 * TILE, 3 * TILE);
+  ctx.fillRect(21.5 * TILE, 7.5 * TILE, 5 * TILE, 3 * TILE);
   ctx.strokeStyle = 'rgba(201,164,92,.35)';
-  ctx.strokeRect(13.7 * TILE, 8.7 * TILE, 4.6 * TILE, 2.6 * TILE);
+  ctx.strokeRect(21.7 * TILE, 7.7 * TILE, 4.6 * TILE, 2.6 * TILE);
+  // Nom de chaque niveau (une bande de la grille par niveau)
+  ctx.font = `700 14px Inter, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(232,220,196,.5)';
+  for (const l of LEVELS) ctx.fillText(LEVEL_LABELS[l], (levelOffset(l) + 1) * TILE, 4);
 
   // Portes
   for (const d of DOORS) {
