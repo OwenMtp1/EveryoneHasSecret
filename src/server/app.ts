@@ -298,7 +298,7 @@ export function createApp(opts: { dbPath?: string; store?: MetaStore; auth?: Aut
       lobbies.start(userId);
       return null;
     }));
-    socket.on('lobby:intro-ready', (p) => lobbies.introReady(userId, String(p?.planId ?? '')));
+    socket.on('lobby:intro-ready', (p) => streamOk() && lobbies.introReady(userId, String(p?.planId ?? '')));
     socket.on('lobby:invite', handle(async (t: string) => {
       await lobbies.invite(userId, String(t));
       return null;
@@ -309,7 +309,14 @@ export function createApp(opts: { dbPath?: string; store?: MetaStore; auth?: Aut
       return null;
     }));
 
+    // flux sans accusé (déplacements, signalisation vocale) : au plus ~60 messages/s, le reste est ignoré
+    let streamBudget = 60;
+    const streamRefill = setInterval(() => (streamBudget = 60), 1000);
+    socket.on('disconnect', () => clearInterval(streamRefill));
+    const streamOk = () => --streamBudget >= 0;
+
     socket.on('game:input', (p) => {
+      if (!streamOk()) return;
       lobbies.gameOf(userId)?.setInput(userId, Number(p?.dx), Number(p?.dy), !!p?.run);
     });
     socket.on('game:action', handle((a) => {
@@ -356,7 +363,7 @@ export function createApp(opts: { dbPath?: string; store?: MetaStore; auth?: Aut
     }));
     socket.on('voice:leave', leaveVoice);
     socket.on('voice:signal', (p) => {
-      if (!voiceGame || typeof p?.to !== 'string' || !voiceMembers.get(voiceGame)?.has(p.to)) return;
+      if (!streamOk() || !voiceGame || typeof p?.to !== 'string' || !voiceMembers.get(voiceGame)?.has(p.to)) return;
       const size = JSON.stringify(p.data ?? '').length;
       if (size > 20_000) return;
       toUser(p.to, 'voice:signal', { from: userId, data: p.data });

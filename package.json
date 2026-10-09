@@ -45,6 +45,6 @@
     "vite": "^6.3.5"
   },
   "overrides": {
-    "rollup": "4.40.2"
+    "rollup": "4.59.1"
   }
 }

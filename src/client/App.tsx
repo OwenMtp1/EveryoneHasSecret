@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { GAME_NAME } from '@shared/config';
 import { useStore } from './store';
 import { audio } from './audio';
-import { preloadRealistic } from './three/realistic';
 import { MenuBackground3D } from './ui/common/MenuBackground3D';
 import { Toasts, ActionFlash } from './ui/common/Toasts';
 import { AuthScreen, ResetPasswordScreen, UsernameScreen } from './ui/auth/AuthScreen';
@@ -30,7 +29,6 @@ export function App() {
     const s = useStore.getState().settings;
     audio.setVolumes(s.music, s.sfx);
     boot();
-    preloadRealistic();
     // déblocage audio au premier geste : audio.ts · musique selon l'écran : musicRouter.ts
   }, [boot]);
 

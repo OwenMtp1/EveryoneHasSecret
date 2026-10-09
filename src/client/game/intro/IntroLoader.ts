@@ -6,7 +6,6 @@
  *   4. compilation des shaders de la scène de la cinématique
  */
 import * as THREE from 'three';
-import { preloadRealistic } from '../../three/realistic';
 import { preloadCast } from '../../three/cast3d';
 import { prebuildGameVilla } from '../../three/prebuilt';
 
@@ -60,7 +59,7 @@ export class IntroLoader {
   /** Priorité 1 : les personnages (délai max avant repli procédural). */
   async characters(maxMs = 20000, castIds: (string | undefined)[] = []) {
     // modèles réalistes génériques + personnages du catalogue présents dans le véhicule
-    await Promise.race([Promise.all([preloadRealistic(), preloadCast(castIds)]), wait(maxMs)]);
+    await Promise.race([preloadCast(castIds), wait(maxMs)]);
     this.mark('characters');
   }
 

@@ -6,7 +6,6 @@
 import * as THREE from 'three';
 import type { Character, GestureKind } from '@shared/types';
 import { findHairColor, findHairStyle, findOutfit, findSkinTone, type HairPart3D, type Outfit } from '@shared/content/character';
-import { buildRealistic } from './realistic';
 import type { PoseFn } from './gestures';
 import { buildCastCharacter } from './cast3d';
 import { castById } from '@shared/content/cast';
@@ -69,7 +68,7 @@ export interface Character3D {
 
 /**
  * Personnage du catalogue (castId) : son modèle 3D, chargé à la demande (repli affiché en attendant).
- * Sinon : personnage réaliste si les modèles sont chargés, ou modèle procédural (repli).
+ * Sinon (personnage inconnu du catalogue) : figurine procédurale.
  */
 export function buildCharacter(c: Character): Character3D {
   if (c.castId && castById(c.castId)) return buildCastCharacter(c, buildGeneric);
@@ -77,18 +76,7 @@ export function buildCharacter(c: Character): Character3D {
 }
 
 function buildGeneric(c: Character): Character3D {
-  const r = buildRealistic(c);
-  if (!r) return buildProcedural(c);
-  return {
-    root: r.root,
-    head: r.head,
-    update: r.update,
-    setVisibleBody: r.setVisible,
-    setDead: (d, animated) => d && r.setDead(!!animated),
-    gesture: r.gesture,
-    setPose: r.setPose,
-    dispose: r.dispose,
-  };
+  return buildProcedural(c);
 }
 
 /**

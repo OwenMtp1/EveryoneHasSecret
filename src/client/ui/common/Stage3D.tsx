@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import type { Character } from '@shared/types';
 import { buildCharacter, type Character3D } from '../../three/character3d';
 import { labelSprite } from '../../three/sprites';
-import { preloadRealistic, realisticReady } from '../../three/realistic';
 
 export interface StageActor {
   key: string;
@@ -74,7 +73,6 @@ export function Stage3D({
     const pivot = new THREE.Group();
     scene.add(pivot);
     let items: { a: StageActor; k: string; c3d: Character3D; tag?: THREE.Sprite }[] = [];
-    let current: StageActor[] = [];
     let rot = 0;
     let targetRot = 0;
 
@@ -102,7 +100,7 @@ export function Stage3D({
     };
 
     const set = (actors: StageActor[]) => {
-      const keyOf = (a: StageActor) => `${a.key}|${JSON.stringify(a.character)}|${a.label}|${a.highlight}|${realisticReady()}`;
+      const keyOf = (a: StageActor) => `${a.key}|${JSON.stringify(a.character)}|${a.label}|${a.highlight}`;
       if (items.length === actors.length && items.every((it, i) => it.k === keyOf(actors[i]))) return;
       for (const it of items) {
         pivot.remove(it.c3d.root);
@@ -119,7 +117,7 @@ export function Stage3D({
         }
         return { a, k: keyOf(a), c3d, tag };
       });
-      current = actors;
+
       layout();
     };
     api.current = {
@@ -130,8 +128,6 @@ export function Stage3D({
     };
     set(actors);
     targetRot = angle;
-    // Dès que les modèles réalistes sont chargés, on reconstruit la scène
-    preloadRealistic().then(() => api.current && set(current));
 
     let drag: number | null = null;
     const down = (e: PointerEvent) => {

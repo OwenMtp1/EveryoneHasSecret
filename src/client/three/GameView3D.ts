@@ -12,7 +12,6 @@ import { buildCharacter, type Character3D } from './character3d';
 import type { Villa3D } from './villa3d';
 import { takeGameVilla } from './prebuilt';
 import { labelSprite, emojiSprite } from './sprites';
-import { realisticReady } from './realistic';
 import { objectModel } from './objects3d';
 import { voice } from '../voice';
 import { loadEnvironment } from './materials';
@@ -98,6 +97,7 @@ export class GameView3D {
   private dist = 3.4;
   private pressed = new Set<string>();
   private lastSent = { x: 0, y: 0 };
+  private lastSentAt = 0;
   private dragging = false;
   private running = false;
   /** positions reçues du serveur (horodatées à la réception) : les autres joueurs sont affichés
@@ -258,7 +258,11 @@ export class GameView3D {
     }
     dx = Math.round(dx * 100) / 100;
     dz = Math.round(dz * 100) / 100;
-    if (force || Math.abs(dx - this.lastSent.x) > 0.06 || Math.abs(dz - this.lastSent.y) > 0.06) {
+    const changed = Math.abs(dx - this.lastSent.x) > 0.06 || Math.abs(dz - this.lastSent.y) > 0.06;
+    // au plus ~30 envois/s en tournant la caméra ; l'arrêt (0,0) part toujours immédiatement
+    const stop = dx === 0 && dz === 0;
+    if (force || (changed && (stop || performance.now() - this.lastSentAt > 33))) {
+      this.lastSentAt = performance.now();
       this.lastSent = { x: dx, y: dz };
       this.onInput(dx, dz, this.running);
     }
@@ -353,7 +357,7 @@ export class GameView3D {
       let a = this.actors.get(p.id);
       if (a && a.charRef !== p.character) {
         // nouvelle vue : on ne reconstruit que si l'apparence a vraiment changé
-        const key = `${JSON.stringify(p.character)}|${realisticReady()}`;
+        const key = JSON.stringify(p.character);
         if (a.key !== key) {
           this.removeActor(p.id);
           a = undefined;
@@ -364,7 +368,7 @@ export class GameView3D {
         const tag = labelSprite(p.name.split(' ')[0]);
         this.scene.add(c3d.root);
         this.scene.add(tag);
-        a = { c3d, pos: toRender(p.pos.x, p.pos.y, new THREE.Vector3()), rotY: p.id === this.view!.you ? this.yaw : 0, tag, key: `${JSON.stringify(p.character)}|${realisticReady()}`, charRef: p.character, speed: 0 };
+        a = { c3d, pos: toRender(p.pos.x, p.pos.y, new THREE.Vector3()), rotY: p.id === this.view!.you ? this.yaw : 0, tag, key: JSON.stringify(p.character), charRef: p.character, speed: 0 };
         this.actors.set(p.id, a);
       }
       const isMe = p.id === this.view!.you;
