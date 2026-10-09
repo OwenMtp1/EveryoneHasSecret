@@ -31,8 +31,11 @@ src/
     protocol.ts               événements Socket.IO + GameAction (union typée)
     content/                  ★ CONTENU DATA-DRIVEN ★
       character.ts            teintes, coiffures, couleurs, tenues, validation
-      villa.ts                pièces (rez-de-chaussée + étage décalé de LEVEL_OFFSET_X dans la grille), portes,
-                              mobilier, escalier (élévation, passage d’étage), spawns → grille
+      levels.ts               niveaux (−1 sous-sol, 0 rez-de-chaussée, 1 étage + cabanes, 2 grenier) : une bande
+                              de la grille par niveau (gridX / levelOf / localX / levelBase)
+      villa.ts                pièces, portes, PORTALS (escaliers/échelles : rampe dans le niveau du bas, trémie
+                              au-dessus), stepMove() partagé serveur/client (collisions, garde-corps, changement de
+                              niveau), mobilier principal (cachettes, `lock` clé/code), spawns → grille
       furnishing.ts           ameublement et décoration des pièces
       objects.ts              types d’objets (tags + useEffect)
       secrets.ts              secrets (cibles, objets confiés, mobiles, graines)
@@ -66,8 +69,11 @@ src/
     net/                      api REST, socket + call() typé
     three/                    ★ RENDU 3D ★
       character3d.ts          personnage procédural animé (marche, attente, mort)
-      villa3d.ts              villa générée depuis le plan : sols, murs instanciés, plafonds, portes,
-                              fenêtres, mobilier, lampes par pièce, toit (vue du menu)
+      villa3d.ts              villa générée depuis le plan, niveau par niveau : sols, murs instanciés, plafonds
+                              percés (trémies, chants de dalle, cages d'escalier), portes, fenêtres, mobilier,
+                              toit en tuiles + grenier sous les rampants, cabanes perchées ; décor statique fusionné
+                              par niveau ; niveaux éloignés masqués ; lampes : réservoir de 4 lumières attribuées
+                              aux sources DU NIVEAU du joueur (pas de fuite entre étages) + 1 projecteur à ombres
       GameView3D.ts           scène de jeu : caméra 3e/1re personne avec collision murs, souris,
                               déplacements relatifs à la caméra, interpolation, pluie, éclairs, coupure + lampes torches
       sprites.ts              icônes d'objets et étiquettes de nom
@@ -81,7 +87,8 @@ src/
                               lobby, settings, game, investigation, common
 tests/
   engine.test.ts              règles du monde, boucle complète, relations, traces
-  villa.test.ts               ameublement : emprises, portes dégagées, toutes les pièces accessibles (deux étages)
+  villa.test.ts               plan : emprises, portes/rampes dégagées, accessibilité à pied (stepMove) sur tous les
+                              niveaux, escaliers/échelles dans les deux sens, cachettes, contenants fermés, interdits
   intro.test.ts               cinématique : véhicules, places, chronologie, synchro 2/4/5/8 joueurs, composition figée
   multiplayer.test.ts         4 clients réels : lobby, sync, chat privé, reconnexion, amis
 ```

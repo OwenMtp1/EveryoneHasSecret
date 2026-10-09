@@ -764,17 +764,16 @@ export const DRIVEWAY_X = 21;
 const PAINTINGS: [Level, number, number, number][] = [
   [0, 19, 14.02, 0],
   [0, 29.5, 12.98, Math.PI],
-  [0, 13.5, 6.02, 0],
-  [0, 34, 21.98, Math.PI],
+  [0, 15, 6.02, 0],
+  [0, 33, 21.98, Math.PI],
   [0, 32, 14.02, 0],
   [0, 36, 14.02, 0],
-  [0, 36.5, 6.02, 0],
   [1, 8, 14.02, 0],
   [1, 30, 14.02, 0],
   [1, 13, 14.02, 0],
   [1, 30, 12.98, Math.PI],
-  [1, 8, 21.98, Math.PI],
-  [1, 41.5, 6.02, 0],
+  [1, 6, 21.98, Math.PI],
+  [1, 42, 6.02, 0],
   [1, 3, 21.98, Math.PI],
 ];
 
@@ -883,7 +882,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       if (!indoor) h = 1.1;
       else if (lvl === 2) h = Math.max(0.3, Math.min(atticH(y), atticH(y + 1)));
       else if (lvl === 0 && outdoor && upstairsAbove(x, y)) h = facadeH;
-      else h = LEVEL_HEIGHT;
+      else h = LEVEL_HEIGHT - 0.02; // sous le plancher du dessus (pas de z-fighting)
       wallTiles.push({ x, y, h });
       heightAt.set(`${x},${y}`, indoor ? (lvl === 0 && outdoor && upstairsAbove(x, y) ? facadeH : lvl === 2 ? 99 : WALL_H) : 1.1);
     }
@@ -921,6 +920,19 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       for (const [dx, dy, ry] of DIRS) {
         const wx = x + dx;
         const wy = y + dy;
+        if (room.outdoor && lvl === 0 && isDoor(wx, wy) && upstairsAbove(wx, wy)) {
+          // façade au-dessus d'une porte extérieure : brique du linteau jusqu'au toit
+          const top = facadeH - 2.32;
+          const plane = new THREE.PlaneGeometry(1, top);
+          const uvs = plane.getAttribute('uv') as THREE.BufferAttribute;
+          for (let i = 0; i < uvs.count; i++) uvs.setY(i, (uvs.getY(i) * top) / 1.1);
+          plane.rotateY(ry);
+          plane.translate(x + 0.5 + dx * 0.499, 2.32 + top / 2, y + 0.5 + dy * 0.499);
+          const m = styleOf(room).wall();
+          const key = `${lvl}|${m.uuid}`;
+          if (!faces.has(key)) faces.set(key, { m, lvl, geos: [] });
+          faces.get(key)!.geos.push(plane);
+        }
         if (occupied(wx, wy) || isOpening(wx, wy) || openTiles.has(`${wx},${wy}`)) continue;
         // côté trémie : pas de mur, la rambarde suffit
         if (isVoid(wx, wy)) continue;
@@ -1074,7 +1086,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   const casing = MAT.paint('#ece6da', 0.45);
   for (const d of DOORS) {
     // le linteau comble aussi l'épaisseur du plancher du dessus
-    const lintelH = LEVEL_HEIGHT - 2.3;
+    const lintelH = LEVEL_HEIGHT - 2.32;
     const lintel = new THREE.Mesh(new THREE.BoxGeometry(1, lintelH, 1), MAT.paint('#2a2622', 0.9));
     lintel.position.set(d.x + 0.5, 2.3 + lintelH / 2, d.y + 0.5);
     group.add(lintel);

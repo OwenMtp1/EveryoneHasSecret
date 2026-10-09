@@ -222,7 +222,7 @@ const UPSTAIRS: Row[] = [
   ['kidsroom', 'Coffre à jouets', 'chest', 39, 12, 2, 1, 's', true],
   ['kidsroom', 'Petit bureau', 'desk', 39, 6, 2, 1, 'n'],
   ['kidsroom', 'Chaise', 'chair', 40, 7, 1, 1, 's'],
-  ['kidsroom', 'Étagère à jouets', 'bookcase', 43, 6, 1, 1, 'n'],
+  ['kidsroom', 'Étagère à jouets', 'bookcase', 44, 6, 1, 1, 'n'],
   ['kidsroom', 'Maison de poupée', 'dollhouse', 46, 12, 1, 1, 'e'],
   ['kidsroom', 'Pouf', 'armchair', 44, 12, 1, 1, 's'],
   // ── Chambre d'amis (x1..9, y17..21) ──
