@@ -115,6 +115,15 @@ export class GameView3D {
   /** plan de découverte du corps (début de partie) : la caméra tourne autour de la victime */
   private reveal: { t0: number; target: THREE.Vector3 } | null = null;
   private revealDone = false;
+  private revealTarget: THREE.Vector3 | null = null;
+
+  /** Lance le plan de découverte du corps (appelé quand la cinématique d'arrivée se referme). */
+  beginReveal() {
+    if (!this.revealTarget) return;
+    this.reveal = { t0: performance.now(), target: this.revealTarget };
+    this.revealTarget = null;
+    this.onReveal(true);
+  }
   onReveal: (active: boolean) => void = () => {};
 
   constructor(private container: HTMLElement, opts: { reducedMotion?: boolean } = {}) {
@@ -282,10 +291,7 @@ export class GameView3D {
       } catch {
         /* stockage indisponible */
       }
-      if (body && (v.phase === 'ARRIVAL' || v.phase === 'INVESTIGATION') && v.alive && !seen) {
-        this.reveal = { t0: performance.now(), target: toRender(body.pos.x, body.pos.y, new THREE.Vector3()) };
-        this.onReveal(true);
-      }
+      if (body && (v.phase === 'ARRIVAL' || v.phase === 'INVESTIGATION') && v.alive && !seen) this.revealTarget = toRender(body.pos.x, body.pos.y, new THREE.Vector3());
     }
     const t = performance.now();
     for (const p of v.players) {

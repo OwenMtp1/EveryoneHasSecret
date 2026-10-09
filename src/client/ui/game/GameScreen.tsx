@@ -75,6 +75,15 @@ export function GameScreen() {
     };
   }, [hasGame]);
 
+  // plan de découverte du corps : dès que la cinématique d'arrivée s'est refermée
+  const introOpen = useStore((s) => !!s.intro);
+  useEffect(() => {
+    if (!introOpen && hasGame) {
+      const t = setTimeout(() => viewRef.current?.beginReveal(), 300);
+      return () => clearTimeout(t);
+    }
+  }, [introOpen, hasGame]);
+
   const showMapRef = useRef(false);
   showMapRef.current = showMap;
 

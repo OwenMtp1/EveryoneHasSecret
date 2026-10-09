@@ -1,31 +1,30 @@
-[06:11:47] 3 comptes créés
-[06:12:04] hôte au menu (session restaurée)
-[06:12:17] réservation refusée comme prévu : Ce personnage vient d’être choisi par bea_i9ff.
-[06:12:34] capture 01-salon-galerie
-[06:12:37] partie lancée — scénario Le Dernier Testament — 180 000 euros disparus
-[06:13:16] capture 02-decouverte-du-corps
-[06:13:38] capture 03-en-jeu
-[06:13:38] meurtrier : bea_i9ff · enquêteur·rice : hote_i9ff
-[06:13:47] hote_i9ff arrivé·e : corps de la victime (72.5, 11.5) — library
-[06:14:03] capture 04-invite-interaction
-[06:14:07] Vous prenez : Téléphone de Chloé.
-[06:14:07] Vous prenez : Petite clé dorée.
-[06:14:07] Vous prenez : Petite clé de bureau.
-[06:14:07] téléphone : Téléphone de Chloé est verrouillé : code à quatre chiffres requis.
-[06:14:16] hote_i9ff arrivé·e : Sous le matelas du grand lit (96.5, 10.6) — suite
-[06:14:16] fouille Sous le matelas du grand lit → Vous fouillez sous le matelas du grand lit… rien.
-[06:14:18] hote_i9ff arrivé·e : Armoire de la suite (99.5, 8.6) — suite
-[06:14:18] fouille Armoire de la suite → Vous trouvez : Boîte cadenassée de Chloé.
-[06:14:19] Boîte cadenassée de Chloé s’ouvre. À l’intérieur : Journal de Chloé (posé à vos pieds, inventaire plein). Journal intime de Chloé Tremblay : « J’oublie toujours le code de mon téléphone, alors je l’écris ici : 7051. » « L’ordinateur, toujours le même mot de passe : luciole25. » « Le coffre-fort du bureau : 4273. J’y ai mis tout ce que j’ai retrouvé sur cette histoire. » « Ce week-end, je leur dis tout. Ils ont tous menti à un moment, moi aussi. Mais l’un d’eux a fait bien pire. » « Hugo me cache quelque chose. Je l’ai vu pâlir quand j’en ai parlé. » « Camille me cache quelque chose. Je l’ai vue pâlir quand j’en ai parlé. »
-[06:14:19] code du téléphone trouvé dans le journal : 7051
-[06:14:19] Téléphone de Chloé s’ouvre. Téléphone de Chloé Tremblay — messages : 19:10 — « Coco » : Je t’ai dit que je n’avais jamais vu ce rapport. Arrête. 21:01 — « Ninja » : Tu ne sais pas tout. Laisse-moi t’expliquer avant lundi. 21:03 — Moi : J’ai l’ordre de virement et les connexions. Il n’y a rien à expliquer. 21:04 — « Ninja » : Je rembourserai. Je passe à la villa. Ne fais rien. 21:30 — Appel entrant de « Ninja » (non décroché).
-[06:14:37] capture 05-dossier-personnel
-[06:14:41] Pièce versée au dossier commun.
-[06:14:42] Vous accusez Inès Moreau. Le vote est ouvert.
-[06:14:55] capture 06-vote
-[06:14:55] épilogue : Inès Moreau est arrêtée. C’était bien la meurtrière. — gagnants : innocents
-[06:15:14] capture 07-epilogue
-[06:15:14] retour au salon : sélections réinitialisées
-[06:15:37] capture 08-retour-salon
+[06:17:09] 3 comptes créés
+[06:17:27] hôte au menu (session restaurée)
+[06:17:40] réservation refusée comme prévu : Ce personnage vient d’être choisi par bea_p6gk.
+[06:17:58] capture 01-salon-galerie
+[06:18:00] partie lancée — scénario La Nuit des mensonges — Les Dernières Confidences
+[06:18:37] plan de découverte du corps affiché
+[06:18:54] capture 02-decouverte-du-corps
+[06:19:16] capture 03-en-jeu
+[06:19:16] meurtrier : hote_p6gk · enquêteur·rice : bea_p6gk
+[06:19:25] bea_p6gk arrivé·e : corps de la victime (113.5, 20.4) — musicroom
+[06:19:25] Vous prenez : Téléphone de Ibrahima.
+[06:19:25] Vous prenez : Petite clé dorée.
+[06:19:25] Vous prenez : Petite clé de bureau.
+[06:19:25] téléphone : Téléphone de Ibrahima est verrouillé : code à quatre chiffres requis.
+[06:19:34] bea_p6gk arrivé·e : Sous le matelas du grand lit (96.5, 10.6) — suite
+[06:19:34] fouille Sous le matelas du grand lit → Vous fouillez sous le matelas du grand lit… rien.
+[06:19:36] bea_p6gk arrivé·e : Armoire de la suite (99.5, 8.6) — suite
+[06:19:36] fouille Armoire de la suite → Vous trouvez : Boîte cadenassée de Ibrahima.
+[06:19:36] Boîte cadenassée de Ibrahima s’ouvre. À l’intérieur : Journal de Ibrahima (posé à vos pieds, inventaire plein). Journal intime de Ibrahima Sow : « J’oublie toujours le code de mon téléphone, alors je l’écris ici : 2638. » « L’ordinateur, toujours le même mot de passe : luciole51. » « Le coffre-fort du bureau : 8230. J’y ai mis tout ce que j’ai retrouvé sur cette histoire. » « Ce week-end, je leur dis tout. Ils ont tous menti à un moment, moi aussi. Mais l’un d’eux a fait bien pire. » « Inès me cache quelque chose. Je l’ai vue pâlir quand j’en ai parlé. » « Hugo me cache quelque chose. Je l’ai vu pâlir quand j’en ai parlé. »
+[06:19:36] code du téléphone trouvé dans le journal : 2638
+[06:19:36] Téléphone de Ibrahima s’ouvre. Téléphone de Ibrahima Sow — messages : 19:10 — « Moustique » : Pourquoi tu ne veux pas me dire qui c’est ? J’ai le droit de savoir ! 19:27 — « Picasso » : Tu m’as promis de ne jamais le dire. Promis. 21:02 — « Le Phare » : Supprime ce que tu as trouvé. Je t’en supplie. Tu ne sais pas pourquoi je l’ai fait. 21:04 — Moi : Je le dirai demain. Tout le monde mérite de savoir. 21:05 — « Le Phare » : J’arrive. Dix minutes. Attends-moi. 21:06 — Moi : Je suis seul. La porte du jardin est ouverte. 21:32 — Appel entrant de « Le Phare » (non décroché).
+[06:19:36] Pièce versée au dossier commun.
+[06:19:37] Vous accusez Camille Durand. Le vote est ouvert.
+[06:19:54] capture 06-vote
+[06:19:54] épilogue : Camille Durand est arrêtée. C’était bien la meurtrière. — gagnants : innocents
+[06:20:09] capture 07-epilogue
+[06:20:09] retour au salon : sélections réinitialisées
+[06:20:31] capture 08-retour-salon
 
 Erreurs navigateur : aucune
