@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { preloadRealistic } from '../../three/realistic';
+import { preloadCast } from '../../three/cast3d';
 import { prebuildGameVilla } from '../../three/prebuilt';
 
 export interface LoadStep {
@@ -57,8 +58,9 @@ export class IntroLoader {
   }
 
   /** Priorité 1 : les personnages (délai max avant repli procédural). */
-  async characters(maxMs = 20000) {
-    await Promise.race([preloadRealistic(), wait(maxMs)]);
+  async characters(maxMs = 20000, castIds: (string | undefined)[] = []) {
+    // modèles réalistes génériques + personnages du catalogue présents dans le véhicule
+    await Promise.race([Promise.all([preloadRealistic(), preloadCast(castIds)]), wait(maxMs)]);
     this.mark('characters');
   }
 

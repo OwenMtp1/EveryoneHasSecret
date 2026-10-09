@@ -17,6 +17,8 @@ export interface Character {
   hairStyleId: string;
   hairColor: string;
   outfitId: string;
+  /** personnage prédéfini du catalogue (src/shared/content/cast.ts) : rendu avec son modèle 3D */
+  castId?: string;
 }
 
 export interface PublicUser {

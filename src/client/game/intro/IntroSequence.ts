@@ -112,7 +112,7 @@ export class IntroSequence {
   /** Charge (priorité 1 : personnages), construit la scène et lance la boucle. */
   async start(onLoaded?: () => void) {
     this.onFade(1);
-    await this.loader.characters();
+    await this.loader.characters(undefined, this.plan.occupants.map((o) => o.character.castId));
     if (this.disposed) return;
     this.build();
     await this.loader.game();

@@ -77,6 +77,7 @@ const _b = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _rootQ = new THREE.Quaternion();
 const _id = new THREE.Quaternion();
+const _qa = new THREE.Quaternion();
 
 /** Oriente l'os pour que le segment os → enfant pointe vers `dirWorld` (poids w). */
 function aimWorld(bone: THREE.Bone, child: THREE.Bone, dirWorld: THREE.Vector3, w: number) {
@@ -87,7 +88,8 @@ function aimWorld(bone: THREE.Bone, child: THREE.Bone, dirWorld: THREE.Vector3, 
   const cur = _b.sub(_a);
   if (cur.lengthSq() < 1e-8) return;
   _q.setFromUnitVectors(cur.normalize(), dirWorld);
-  if (w < 1) _q.slerpQuaternions(_id, _q, w);
+  // (slerpQuaternions(_id, _q, w) écraserait _q avant de l'utiliser : on interpole depuis l'identité)
+  if (w < 1) _q.copy(_qa.copy(_id).slerp(_q, w));
   bone.getWorldQuaternion(_qw);
   bone.parent.getWorldQuaternion(_qp);
   _q.multiply(_qw);

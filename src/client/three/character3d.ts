@@ -8,6 +8,8 @@ import type { Character, GestureKind } from '@shared/types';
 import { findHairColor, findHairStyle, findOutfit, findSkinTone, type HairPart3D, type Outfit } from '@shared/content/character';
 import { buildRealistic } from './realistic';
 import type { PoseFn } from './gestures';
+import { buildCastCharacter } from './cast3d';
+import { castById } from '@shared/content/cast';
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
 function geo(key: string, make: () => THREE.BufferGeometry) {
@@ -65,8 +67,16 @@ export interface Character3D {
   dispose(): void;
 }
 
-/** Personnage réaliste si les modèles sont chargés, sinon modèle procédural (repli). */
+/**
+ * Personnage du catalogue (castId) : son modèle 3D, chargé à la demande (repli affiché en attendant).
+ * Sinon : personnage réaliste si les modèles sont chargés, ou modèle procédural (repli).
+ */
 export function buildCharacter(c: Character): Character3D {
+  if (c.castId && castById(c.castId)) return buildCastCharacter(c, buildGeneric);
+  return buildGeneric(c);
+}
+
+function buildGeneric(c: Character): Character3D {
   const r = buildRealistic(c);
   if (!r) return buildProcedural(c);
   return {
