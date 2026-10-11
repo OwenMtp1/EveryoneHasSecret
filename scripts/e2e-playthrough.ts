@@ -175,6 +175,11 @@ log('partie lancée — scénario', host.view!.caseInfo?.scenarioTitle);
 await page.waitForFunction(() => document.querySelector('.hud-top'), undefined, { timeout: 240000 });
 await page.waitForFunction(() => document.querySelector('.reveal-caption'), undefined, { timeout: 90000 }).then(() => log('plan de découverte du corps affiché'), () => errors.push('BUG : plan de découverte du corps absent'));
 await shot(page, '02-decouverte-du-corps');
+// annonce de la soirée (22h15 « Visite de la villa »), vérifiée en arrière-plan
+const banner = page.waitForFunction(() => document.querySelector('.evening-banner')?.textContent, undefined, { timeout: 200000 }).then(
+  async (h) => (log('annonce de la soirée :', await h.jsonValue()), shot(page, '02b-annonce-soiree')),
+  () => errors.push('BUG : aucune annonce de la soirée affichée'),
+);
 await sleep(7000);
 await shot(page, '03-en-jeu');
 
@@ -255,6 +260,7 @@ const accuse = await act(sleuth, { type: 'accuse', targetId: murderer.id, eviden
 log(accuse);
 await act(murderer, { type: 'defend', text: 'Je voulais juste lui parler !' });
 await sleep(1500);
+await banner;
 await shot(page, '06-vote');
 await act(third, { type: 'ballot', choice: 'guilty' });
 await waitFor('épilogue', () => host.view!.epilogue, 30000);

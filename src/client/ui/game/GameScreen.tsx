@@ -10,6 +10,7 @@ import { PHASE_LABEL, useChatFocus, usePicker, useTarget } from './helpers';
 import { ActionBar, triggerTarget } from './ActionBar';
 import { ChatPanel } from './ChatPanel';
 import { Announcement } from './FeedPanel';
+import { EveningBanner } from './EveningBanner';
 import { Notifications } from './Notifications';
 import { VoiceControls } from './VoiceControls';
 import { InventoryTab } from './InventoryTab';
@@ -182,6 +183,7 @@ export function GameScreen() {
       </div>
 
       {revealing && game.caseInfo && <RevealCaption caseInfo={game.caseInfo} />}
+      <EveningBanner hold={revealing} />
       <Notifications />
       {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
       {arrested && game.alive && !game.epilogue && <div className="dead-banner">Vous êtes arrêté·e. Vous observez jusqu’à la fin de la nuit.</div>}
