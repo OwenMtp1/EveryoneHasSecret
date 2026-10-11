@@ -492,3 +492,31 @@ test('meubles verrouillés : fouille impossible sans la clé ou le bon code ; le
   fetch(p, ref('laptop'));
   assert.ok(p.inventory.includes(ref('laptop').id));
 });
+
+// ───────────────────────── menu Échap : version de l'histoire, premier choix ─────────────────────────
+
+test('premier choix : amitié = main tendue à tous (visible), trahison = discrète ; définitif ; histoire sans fuite', () => {
+  const { g, act, murderer, innocents, startInvestigation } = makeGame(5, 11, 'pacte');
+  startInvestigation();
+  const m = murderer();
+  const [a, b] = innocents();
+  const name = (id: string) => g.players.get(id)!.name;
+  // histoire : le meurtrier connaît sa vraie soirée ; les autres ne voient jamais le nom du meurtrier dans la leur
+  const ms = g.caseSystem.dossierView(m).story.join(' ');
+  assert.match(ms, /Ce qui s’est vraiment passé/);
+  for (const p of innocents()) {
+    const st = g.caseSystem.dossierView(p).story.join(' ');
+    assert.ok(st.length > 40);
+    assert.ok(!st.includes(name(m.id)), 'le nom du meurtrier ne doit pas apparaître');
+  }
+  assert.equal(g.caseSystem.dossierView(a).stance, null);
+  act(a, { type: 'stance', choice: 'friendship' });
+  assert.equal(g.caseSystem.dossierView(a).stance, 'friendship');
+  const offers = g.relations.filter((r) => r.from === a.id && r.type === 'FRIEND' && r.status === 'pending');
+  assert.equal(offers.length, g.players.size - 1);
+  assert.ok(g.social.some((s) => s.public && s.actorId === a.id));
+  assert.throws(() => act(a, { type: 'stance', choice: 'betrayal' }), /déjà/);
+  act(b, { type: 'stance', choice: 'betrayal' });
+  assert.ok(!g.social.some((s) => s.public && s.actorId === b.id), 'la trahison reste discrète');
+  assert.throws(() => act(m, { type: 'stance', choice: 'x' as never }), /invalide/);
+});

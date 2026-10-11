@@ -36,6 +36,9 @@ export function GameScreen() {
   const [revealing, setRevealing] = useState(false);
   const revealingRef = useRef(false);
   revealingRef.current = revealing;
+  const showMapRef = useRef(false);
+  showMapRef.current = showMap;
+  const escOpenedAt = useRef(0);
 
   // Vue 3D (créée quand le conteneur existe)
   useEffect(() => {
@@ -58,7 +61,16 @@ export function GameScreen() {
     const unsub = liveGame.subscribe((g) => v.setView(g));
     const ro = new ResizeObserver(() => v.refreshSize());
     ro.observe(wrap);
-    const onLock = () => setLocked(document.pointerLockElement === v.renderer.domElement);
+    // Échap en souris capturée : le navigateur libère la souris et n'envoie pas la touche → on ouvre directement le menu
+    const onLock = () => {
+      const isLocked = document.pointerLockElement === v.renderer.domElement;
+      setLocked(isLocked);
+      const ui = useChatFocus.getState();
+      if (!isLocked && !ui.chatOpen && ui.tab === null && !ui.paused && !usePicker.getState().open && !showMapRef.current && !revealingRef.current) {
+        ui.setPaused(true);
+        escOpenedAt.current = performance.now();
+      }
+    };
     document.addEventListener('pointerlockchange', onLock);
     // Pièce courante (affichage)
     const t = setInterval(() => {
@@ -78,6 +90,22 @@ export function GameScreen() {
     };
   }, [hasGame]);
 
+  // fermeture du menu Échap : on recapture la souris si elle l'était à l'ouverture (geste utilisateur requis)
+  const paused = useChatFocus((s) => s.paused);
+  const wasPaused = useRef(false);
+  useEffect(() => {
+    if (wasPaused.current && !paused && escOpenedAt.current) {
+      escOpenedAt.current = 0;
+      const el = viewRef.current?.renderer.domElement as (HTMLCanvasElement & { requestPointerLock(): Promise<void> | void }) | undefined;
+      try {
+        (el?.requestPointerLock() as Promise<void> | undefined)?.catch?.(() => {});
+      } catch {
+        /* le navigateur refuse : un clic sur la vue suffit */
+      }
+    }
+    wasPaused.current = paused;
+  }, [paused]);
+
   // plan de découverte du corps : dès que la cinématique d'arrivée s'est refermée
   const introOpen = useStore((s) => !!s.intro);
   useEffect(() => {
@@ -87,8 +115,6 @@ export function GameScreen() {
     }
   }, [introOpen, hasGame]);
 
-  const showMapRef = useRef(false);
-  showMapRef.current = showMap;
 
   // Clavier → intentions (relatives à la caméra) ; le serveur simule
   useEffect(() => {
@@ -124,14 +150,14 @@ export function GameScreen() {
       } else if (e.code === 'KeyM') {
         setShowMap((m) => !m);
       } else if (e.code === 'Escape') {
-        // Échap ferme d'abord ce qui est ouvert ; sinon ouvre/ferme le menu pause
+        // Échap ferme d'abord ce qui est ouvert ; sinon ouvre/ferme le menu (panneau à gauche)
         const ui = useChatFocus.getState();
+        if (performance.now() - escOpenedAt.current < 400) return; // même Échap que celui qui a libéré la souris
         if (usePicker.getState().open) usePicker.getState().close();
         else if (ui.tab !== null || showMapRef.current) {
           setShowMap(false);
           setTab(null);
         } else ui.setPaused(!ui.paused);
-        viewRef.current?.releaseAll();
       }
     };
     const up = (e: KeyboardEvent) => {
@@ -179,7 +205,7 @@ export function GameScreen() {
       </header>
 
       <div className="cam-hint">
-        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'clic : orienter la caméra'} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> plus · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Échap</kbd> menu
+        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? "souris capturée" : "clic : orienter la caméra"} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> plus · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Échap</kbd> menu
       </div>
 
       {revealing && game.caseInfo && <RevealCaption caseInfo={game.caseInfo} />}

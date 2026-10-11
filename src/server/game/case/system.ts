@@ -101,6 +101,8 @@ export class CaseSystem {
   oppositions: OppositionView[] = [];
   private revealedSecrets = new Set<string>();
   private freedProtectors = new Set<string>();
+  /** premier choix de chacun : amitié ou trahison (définitif, privé sauf l'amitié qui se voit) */
+  private stances = new Map<string, 'friendship' | 'betrayal'>();
   private votesHistory: EpilogueView['votes'] = [];
   private arrestedOrder: string[] = [];
   private lastAccusationAt = -Infinity;
@@ -900,10 +902,31 @@ export class CaseSystem {
         const lines = g.social.filter((s) => s.public).slice(-10).map((s) => `${formatClock(s.clock)} ${s.text}`);
         const hidden = g.relations.filter((r) => r.status === 'active' && r.type === 'PACT').length;
         const prot = t.protectorIds.length ? ' Quelqu’un dans le groupe semble avoir une raison de couvrir le coupable.' : '';
-        return `Profil social : ${lines.join(' · ') || 'peu d’échanges publics'}. Pactes discrets en cours : ${hidden}.${prot}`;
+        const loners = [...this.stances.values()].filter((s) => s === 'betrayal').length;
+        return `Profil social : ${lines.join(' · ') || 'peu d’échanges publics'}. Pactes discrets en cours : ${hidden}. Joueurs qui ont choisi de jouer seuls : ${loners}.${prot}`;
       }
     }
     throw new UserError('Outil inconnu.');
+  }
+
+  /** Premier choix de la soirée : amitié (main tendue à tout le groupe, visible) ou trahison (seul·e, discret). */
+  chooseStance(p: PlayerState, choice: 'friendship' | 'betrayal'): string {
+    this.requireActive(p);
+    if (choice !== 'friendship' && choice !== 'betrayal') throw new UserError('Choix invalide.');
+    if (this.stances.has(p.id)) throw new UserError('Votre choix est déjà fait.');
+    const g = this.g;
+    this.stances.set(p.id, choice);
+    g.markDirty(p.id);
+    if (choice === 'friendship') {
+      let n = 0;
+      for (const o of g.players.values()) if (o.id !== p.id && o.alive && !o.arrested && g.relationships.offerFriendship(p.id, o.id)) n++;
+      g.relationships.social('friend', p.id, p.id, `${p.name} a choisi de faire confiance au groupe`, true);
+      g.log('STANCE', { actorId: p.id, data: { choice }, text: `${p.name} choisit l’amitié` });
+      return n ? `Vous tendez la main au groupe : ${n} proposition${n > 1 ? 's' : ''} d’amitié envoyée${n > 1 ? 's' : ''}.` : 'Vous choisissez l’amitié.';
+    }
+    g.relationships.social('betrayed', p.id, p.id, `${p.name} a choisi de jouer seul${ag(p)}`, false);
+    g.log('STANCE', { actorId: p.id, data: { choice }, text: `${p.name} choisit la trahison` });
+    return 'Vous jouez seul·e. Personne ne le sait… pour l’instant. Une alliance peut servir — et se rompre au bon moment.';
   }
 
   // ───────────────────────── fin ─────────────────────────
@@ -970,6 +993,33 @@ export class CaseSystem {
     };
   }
 
+  /** La soirée racontée au joueur : ce qu'il a vécu (ou, pour le meurtrier, ce qu'il dira et ce qu'il a fait). */
+  private storyOf(p: PlayerState, camp: DossierView['camp']): string[] {
+    const t = this.truth;
+    const pt = t.players.get(p.id)!;
+    const v = t.victim;
+    const vf = v.feminine;
+    const place = PLACES[pt.place].name;
+    const open = `À 20h45, le groupe est parti en ville. ${v.name} est resté${vf ? 'e' : ''} seul${vf ? 'e' : ''} à la villa Beaumont.`;
+    if (camp === 'murderer') {
+      const a = pt.absence;
+      return [
+        open,
+        `Ce que vous raconterez : vous avez passé la soirée à ${place}, à part une courte sortie « cigarettes ».`,
+        `Ce qui s’est vraiment passé : ${a ? `de ${formatClock(a.from)} à ${formatClock(a.to)}` : 'vers 21h10'}, vous êtes revenu${ag(p)} à la villa. Vers ${formatClock(t.murderAt)}, vous avez tué ${v.name}. Vous avez caché l’arme, vous vous êtes lavé les mains, puis vous avez rejoint les autres.`,
+        'À 22h, vous êtes rentré·e avec tout le monde et vous avez fait semblant de découvrir le corps. Personne ne doit savoir.',
+      ];
+    }
+    return [
+      open,
+      `Vous avez passé la soirée à ${place}.${pt.absence ? ` Vous vous êtes éclipsé${ag(p)} de ${formatClock(pt.absence.from)} à ${formatClock(pt.absence.to)} (${pt.absence.whereabouts}) — ça pourrait se retourner contre vous.` : ''}`,
+      `À 22h, en rentrant, vous avez trouvé ${v.name} sans vie (${roomName(v.roomId)}). L’un de vous l’a tué${vf ? 'e' : ''}.`,
+      camp === 'protector'
+        ? 'Vous savez qui. Et cette personne sait ce que vous cachez.'
+        : 'Vous avez vous aussi un secret. Si on le découvre, on vous soupçonnera.',
+    ];
+  }
+
   dossierView(p: PlayerState): DossierView {
     const t = this.truth;
     const pt = t.players.get(p.id)!;
@@ -998,6 +1048,8 @@ export class CaseSystem {
             : pt.absence
               ? [`Vous vous êtes absenté${ag(p)} de ${formatClock(pt.absence.from)} à ${formatClock(pt.absence.to)} (${pt.absence.whereabouts}). On risque de vous le reprocher : une preuve de l’endroit où vous étiez existe quelque part dans la villa.`]
               : [],
+      story: this.storyOf(p, camp),
+      stance: this.stances.get(p.id) ?? null,
       evidence: [...(this.read.get(p.id)?.values() ?? [])].sort((a, b) => a.at - b.at),
       arrested: p.arrested,
     };

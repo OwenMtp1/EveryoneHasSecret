@@ -191,44 +191,99 @@ export function Picker() {
 }
 
 /** Menu pause (Échap) : reprendre, dossier, réglages audio, quitter. La partie continue pour les autres. */
+const CAMP_TITLE = { murderer: 'Meurtrier·ère', innocent: 'Innocent·e', protector: 'Protecteur·rice' } as const;
+
+/**
+ * Menu Échap : panneau à gauche, la partie reste visible et continue (ZQSD toujours actifs).
+ * Votre version de l'histoire, votre rôle, votre objectif, le premier choix (amitié / trahison), réglages, quitter.
+ */
 export function PauseMenu() {
   const paused = useChatFocus((s) => s.paused);
   const setPaused = useChatFocus((s) => s.setPaused);
   const settings = useStore((s) => s.settings);
   const update = useStore((s) => s.updateSettings);
   const game = useStore((s) => s.game);
+  const [showSettings, setShowSettings] = useState(false);
   if (!paused || !game) return null;
+  const d = game.dossier;
   const leave = async () => {
     setPaused(false);
     if (game.epilogue) return void attempt(call('game:leave'));
-    if (!confirm('Quitter la partie ? Votre personnage restera immobile dans la villa.')) return;
+    if (!confirm('Quitter la partie ? Vous pourrez revenir avec le code du salon tant que la nuit n’est pas finie.')) return;
     await attempt(call('lobby:leave'));
     useStore.setState({ game: null, inGame: false, lobby: null, screen: 'menu' });
   };
+  const canChoose = !!d && d.stance === null && game.alive && !d.arrested && !game.epilogue && game.phase !== 'RESOLUTION';
   return (
-    <div className="modal-backdrop" onClick={() => setPaused(false)}>
-      <div className="modal pause-menu" onClick={(e) => e.stopPropagation()}>
-        <h3>Pause</h3>
-        <p className="small muted">La nuit continue pour les autres joueurs.</p>
-        <button className="btn btn-primary" onClick={() => setPaused(false)}>Reprendre</button>
-        <button className="btn" onClick={() => (setPaused(false), useChatFocus.getState().setTab(0))}>Mon dossier</button>
-        <label>
-          Musique — {Math.round(settings.music * 100)} %
-          <input type="range" min={0} max={1} step={0.05} value={settings.music} onChange={(e) => update({ music: Number(e.target.value) })} />
-        </label>
-        <label>
-          Effets sonores — {Math.round(settings.sfx * 100)} %
-          <input type="range" min={0} max={1} step={0.05} value={settings.sfx} onChange={(e) => update({ sfx: Number(e.target.value) })} />
-        </label>
-        <label className="check-line">
-          <input type="checkbox" checked={settings.reducedMotion} onChange={(e) => update({ reducedMotion: e.target.checked })} /> Réduire les animations
-        </label>
-        <div className="small muted">
-          <kbd>ZQSD</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> autres actions · <kbd>V</kbd> vue · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Entrée</kbd> chat · <kbd>M</kbd> plan
-        </div>
-        <button className="btn btn-ghost danger" onClick={leave}>{game.epilogue ? 'Retour au salon' : 'Quitter la partie'}</button>
+    <aside className="story-panel" aria-label="Menu">
+      <div className="story-head">
+        <div className="story-kicker">Votre version de l’histoire</div>
+        <button className="btn btn-ghost btn-xs" onClick={() => setPaused(false)} title="Fermer (Échap)">✕</button>
       </div>
-    </div>
+      {d ? (
+        <>
+          <div className="story-role">
+            <span className={`chip camp-${d.camp}`}>{CAMP_TITLE[d.camp]}</span>
+            {game.role && <span className="chip">{game.role.name}</span>}
+          </div>
+          <div className="story-text">
+            {d.story.map((l, i) => (
+              <p key={i}>{l}</p>
+            ))}
+          </div>
+          <h4>Votre objectif</h4>
+          <p className="small">{d.objective}</p>
+          {d.secret && (
+            <>
+              <h4>Votre secret</h4>
+              <p className="small">{d.secret}</p>
+            </>
+          )}
+          <h4>Premier choix</h4>
+          {canChoose ? (
+            <div className="stance-choice">
+              <button className="stance stance-friend" onClick={() => act({ type: 'stance', choice: 'friendship' })}>
+                <strong>🤝 Amitié</strong>
+                <span>Vous tendez la main à tout le groupe : chacun reçoit votre proposition d’amitié. Tout le monde le saura.</span>
+              </button>
+              <button className="stance stance-betray" onClick={() => act({ type: 'stance', choice: 'betrayal' })}>
+                <strong>🗡 Trahison</strong>
+                <span>Vous jouez seul·e, en secret. Vos alliances ne seront que des moyens.</span>
+              </button>
+              <p className="small muted">Ce choix est définitif.</p>
+            </div>
+          ) : (
+            <p className="small">{d.stance === 'friendship' ? '🤝 Vous avez choisi l’amitié.' : d.stance === 'betrayal' ? '🗡 Vous avez choisi la trahison — en secret.' : '—'}</p>
+          )}
+        </>
+      ) : (
+        <p className="small muted">Vous observez la soirée.</p>
+      )}
+      <div className="story-actions">
+        <button className="btn btn-primary btn-sm" onClick={() => setPaused(false)}>Reprendre</button>
+        <button className="btn btn-sm" onClick={() => (setPaused(false), useChatFocus.getState().setTab(0))}>Mon dossier complet</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings((x) => !x)}>Réglages {showSettings ? '▴' : '▾'}</button>
+      </div>
+      {showSettings && (
+        <div className="story-settings">
+          <label>
+            Musique — {Math.round(settings.music * 100)} %
+            <input type="range" min={0} max={1} step={0.05} value={settings.music} onChange={(e) => update({ music: Number(e.target.value) })} />
+          </label>
+          <label>
+            Effets sonores — {Math.round(settings.sfx * 100)} %
+            <input type="range" min={0} max={1} step={0.05} value={settings.sfx} onChange={(e) => update({ sfx: Number(e.target.value) })} />
+          </label>
+          <label className="check-line">
+            <input type="checkbox" checked={settings.reducedMotion} onChange={(e) => update({ reducedMotion: e.target.checked })} /> Réduire les animations
+          </label>
+          <div className="small muted">
+            <kbd>ZQSD</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> autres actions · <kbd>V</kbd> vue · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Entrée</kbd> chat · <kbd>M</kbd> plan
+          </div>
+        </div>
+      )}
+      <button className="btn btn-ghost danger btn-sm story-quit" onClick={leave}>{game.epilogue ? 'Retour au salon' : 'Quitter la partie'}</button>
+    </aside>
   );
 }
 

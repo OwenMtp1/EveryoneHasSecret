@@ -182,6 +182,20 @@ const banner = page.waitForFunction(() => document.querySelector('.evening-banne
 );
 await sleep(7000);
 await shot(page, '03-en-jeu');
+// menu Échap : panneau à gauche, version de l'histoire, premier choix
+await page.keyboard.press('Escape');
+await page.waitForFunction(() => document.querySelector('.story-panel')?.textContent?.includes('Votre version'), undefined, { timeout: 15000 }).then(
+  () => log('menu Échap : panneau de l’histoire affiché'),
+  () => errors.push('BUG : Échap n’ouvre pas le panneau de l’histoire'),
+);
+await page.evaluate(() => (document.querySelector('.stance-friend') as HTMLButtonElement | null)?.click());
+await page.waitForFunction(() => document.querySelector('.story-panel')?.textContent?.includes('Vous avez choisi l’amitié'), undefined, { timeout: 15000 }).then(
+  () => log('premier choix enregistré : amitié'),
+  () => errors.push('BUG : premier choix non enregistré'),
+);
+await shot(page, '03b-menu-echap');
+await page.keyboard.press('Escape');
+await page.waitForFunction(() => !document.querySelector('.story-panel'), undefined, { timeout: 15000 }).catch(() => errors.push('BUG : Échap ne referme pas le panneau'));
 
 const all = [host, b, c];
 const murderer = all.find((p) => p.view!.dossier!.camp === 'murderer')!;

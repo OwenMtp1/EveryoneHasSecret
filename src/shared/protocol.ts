@@ -52,6 +52,8 @@ export type GameAction =
   /** défense de l'accusé pendant le vote */
   | { type: 'defend'; text: string }
   | { type: 'ballot'; choice: string }
+  /** premier choix de la soirée (menu Échap) : jouer l'amitié ou la trahison — définitif */
+  | { type: 'stance'; choice: 'friendship' | 'betrayal' }
   | {
       type: 'relation';
       op: 'propose' | 'accept' | 'decline' | 'break';

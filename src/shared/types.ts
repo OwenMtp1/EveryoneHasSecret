@@ -304,6 +304,10 @@ export interface DossierView {
   secret: string;
   memories: string[];
   briefing: string[];
+  /** « Votre version de l'histoire » : la soirée racontée de votre point de vue */
+  story: string[];
+  /** premier choix : amitié (le groupe) ou trahison (seul·e) ; null tant qu'il n'est pas fait */
+  stance: 'friendship' | 'betrayal' | null;
   /** pièces que vous avez lues (contenu exact, horodaté) */
   evidence: EvidenceView[];
   arrested: boolean;

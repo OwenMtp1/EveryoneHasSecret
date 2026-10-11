@@ -638,6 +638,9 @@ export class GameInstance {
       case 'present':
         msg = this.caseSystem.present(p, String(a.objectId), a.againstId ? String(a.againstId) : undefined);
         break;
+      case 'stance':
+        msg = this.caseSystem.chooseStance(p, a.choice);
+        break;
       case 'alibi':
         msg = this.caseSystem.declareAlibi(p, String(a.place), String(a.text ?? ''));
         break;

@@ -57,5 +57,6 @@ export const TRUTH_EVENT_TYPES = [
   'ACCUSATION',
   'PLAYER_ARRESTED',
   'FURNITURE_UNLOCKED',
+  'STANCE',
 ] as const;
 export type TruthEventType = (typeof TRUTH_EVENT_TYPES)[number];

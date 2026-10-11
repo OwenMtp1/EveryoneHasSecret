@@ -73,6 +73,15 @@ export class RelationshipSystem {
     return r;
   }
 
+  /** Main tendue à distance (premier choix « amitié ») : proposition d'amitié en attente, sans face-à-face. */
+  offerFriendship(fromId: string, targetId: string): boolean {
+    if (this.between(fromId, targetId, 'FRIEND') || this.between(fromId, targetId, 'FRIEND', 'pending') || this.between(targetId, fromId, 'FRIEND', 'pending')) return false;
+    this.add('FRIEND', fromId, targetId, 'pending', `Main tendue par ${this.g.nameOf(fromId)}`);
+    this.g.feed(targetId, 'whisper', `${this.g.nameOf(fromId)} vous tend la main : proposition d’amitié (onglet Relations).`);
+    this.g.markDirty(targetId, fromId);
+    return true;
+  }
+
   propose(fromId: string, relType: RelationType, targetId: string): string {
     const g = this.g;
     const from = g.players.get(fromId)!;
