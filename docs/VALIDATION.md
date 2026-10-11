@@ -62,10 +62,26 @@ Conditions : tests automatisés (`npm test`), partie de bout en bout dans Chromi
 | Musique et effets **à l'écoute** (casque et haut-parleurs) : légèreté, crédibilité du piano, synchronisation avec l'image, équilibre avec le chat vocal | Aucune sortie audio dans le conteneur ; seules des mesures ont été faites | Lancer une partie, écouter la cinématique et 2 minutes d'enquête (liste dans `docs/AUDIO.md`) |
 | Fluidité réelle (FPS) sur un PC ordinaire et un portable | Pas de GPU : rendu logiciel ≈ 1 image / 5 s | Ouvrir une partie, vérifier la qualité adaptative (halo, ombres) |
 | Partie à **plusieurs vraies personnes** (4 à 8) : lisibilité, équilibre des scénarios, durée | Une seule personne pilotée en navigateur | Une session de test par scénario |
-| Plan sur le corps et cinématique sur un vrai GPU | Les captures en rendu logiciel arrivent après la fin du plan (6 s) | Observer la fin de la cinématique |
+| Plan sur le corps (16 s) et cinématique (34 s) sur un vrai GPU | En rendu logiciel une capture prend ~15 s : les plans ont été vérifiés en étirant la cinématique (EHAS_TRANSITION_MS=240000) | Observer le doigt du conducteur, le plan sur le corps, les annonces |
+| Fantôme après une vraie mort | Vérifié en forçant la vue locale « mort » (?debug) ; aucune élimination réelle dans la partie automatisée | Se faire éliminer, voler à travers la villa, F pour suivre un joueur |
 | Petits écrans et mobile | Testé seulement en 1280×720 | Ouvrir en 1366×768, 1920×1080 et sur une tablette |
 | Firefox et Safari | Testé seulement sous Chromium | Parcours complet dans chaque navigateur |
 | Chat vocal entre deux appareils | Nécessite deux micros réels | Deux joueurs, bouton 🎙 |
+
+## Lot de 10 demandes (dernière série)
+
+| # | Demande | Fait | Vérifié par |
+|---|---|---|---|
+| 1 | Cinématique de meurtre plus longue | 16 s en 3 plans (approche, gros plan tournant, recul), légendes, Espace pour passer après 4 s, caméra arrêtée par les murs | partie automatisée (légende affichée) |
+| 2 | Cinématique de la voiture plus longue, doigt du conducteur | 34 s (au lieu de 20) dont ≈ 8 s sur le conducteur ; bras tendu vers la villa, poing fermé, index tendu (os des doigts) | captures de la cinématique étirée |
+| 3 | Aucun bug de texture intérieur/extérieur | linteaux au revêtement de chaque pièce (plus de bandes noires), façade continue sous tout le toit et au-dessus de l'entrée, mèches de cheveux sans MSAA | captures (façade, hall, cinématique) |
+| 4 | Échap : encadré à gauche, version de l'histoire, rôle, objectif, premier choix | panneau gauche : histoire racontée, camp + spécialité, objectif, secret, choix définitif Amitié (main tendue à tous, visible) / Trahison (discrète, comptée par le profileur) | test serveur + partie automatisée |
+| 5 | Objets jamais superposés, ← → | objets au même endroit disposés en cercle, une seule étiquette, ← → parcourent le groupe (« 2/3 »), E prend l'objet choisi | partie automatisée (aucune régression) ; parcours ← → non automatisé |
+| 6 | Plus d'objets cachés, moins par terre | photo de groupe, ordinateur, appareil photo rangés dans des meubles ; 3/4 des objets utilitaires dans armoires, tiroirs, placards | tests (81) |
+| 7 | Annonces de la soirée très visibles | 22h15 visite de la villa, 22h30 chambres, 23h00 réseau coupé, 23h30 alibis, minuit, 00h30, coupure / retour du courant, 2 dernières minutes, police | partie automatisée (annonce lue) + capture |
+| 8 | Échap ouvre directement le menu | même souris capturée : la libération par le navigateur ouvre le menu ; la souris est recapturée à la fermeture ; la partie continue derrière | partie automatisée |
+| 9 | Revenir avec le code après un départ par erreur | même personnage, rôle, dossier et position ; écran de jeu rouvert | test multijoueur réel |
+| 10 | Morts en fantômes | vol libre sans collision (ZQSD, Espace/C, Maj), invisibles des vivants (rien côté serveur), suivi d'un joueur (F / Maj+F) | partie automatisée (vue forcée « mort ») + captures |
 
 ## D. Bloqué par une autorisation ou une ressource
 
@@ -166,7 +182,7 @@ de fonction : ils ont été retirés du catalogue plutôt que laissés décorati
 
 ```
 npm run typecheck                         → aucune erreur
-npm test                                  → 80 tests, 80 réussis, 0 échec
+npm test                                  → 81 tests, 81 réussis, 0 échec
 npm audit                                 → found 0 vulnerabilities
 npm run build                             → OK (JS 1 481 Ko, 425 Ko gzip ; CSS 37 Ko)
 node --import tsx scripts/bench-server.ts → 0,031 ms/tick, 0,23 ms/diffusion (8 joueurs)
