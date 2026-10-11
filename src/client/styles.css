@@ -680,3 +680,13 @@ kbd {
 /* plusieurs objets au même endroit : ← → pour parcourir */
 .interact-title .stack-arrow { margin: 0 8px; font-size: 12px; }
 .interact-title .stack-count { margin-left: 4px; font-size: 12px; color: var(--muted); }
+/* fantôme (mort ou arrêté) : vol libre ou suivi d'un joueur */
+.ghost-bar {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(720px, calc(100% - 32px)); z-index: 9;
+  text-align: center; padding: 10px 16px; border-radius: 12px; pointer-events: none;
+  background: rgba(14, 18, 28, 0.82); border: 1px solid rgba(160, 190, 255, 0.35); box-shadow: 0 0 40px rgba(120, 160, 255, 0.18);
+}
+.ghost-title { font-family: var(--serif); font-size: 18px; color: #cfe0ff; }
+.ghost-follow { font-size: 14px; margin-top: 2px; }
+.ghost-keys { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.game.is-dead .view3d canvas { filter: saturate(0.35) brightness(0.95) contrast(1.05); }

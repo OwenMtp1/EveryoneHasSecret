@@ -17,7 +17,8 @@ Compte (Supabase ou local) → Menu → Créer / rejoindre une partie (code priv
 ```
 
 Un joueur admis qui quitte la partie par erreur peut revenir avec le code du salon tant que la nuit n’est pas finie :
-il retrouve son personnage, son rôle, son dossier et sa position. Échap ouvre un panneau à gauche (sa version de
+il retrouve son personnage, son rôle, son dossier et sa position. Les morts et les arrêtés deviennent des **fantômes** : vol libre à travers murs et planchers, invisibles des vivants,
+ou suivi d’un joueur au choix (F). Échap ouvre un panneau à gauche (sa version de
 l’histoire, rôle, objectif, secret, premier choix amitié/trahison, réglages, quitter) sans interrompre la partie.
 
 ## 3. Rôles secrets (distribués par le serveur, indépendamment de l’apparence)

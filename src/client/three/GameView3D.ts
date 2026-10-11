@@ -19,7 +19,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { allFurniture, buildWorldGrid, doorAt, elevationAt, localX, stepMove } from '@shared/content/villa';
+import { LEVEL_HEIGHT, allFurniture, buildWorldGrid, doorAt, elevationAt, gridX, localX, roomAt, stepMove, type Level } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
 
 type CamMode = 'third' | 'first';
@@ -67,7 +67,7 @@ export class GameView3D {
   private villa: Villa3D;
   private actors = new Map<string, Actor>();
   private bodies = new Map<string, Character3D>();
-  private objects = new Map<string, { visual: THREE.Object3D; label: THREE.Sprite; ring: THREE.Mesh; base: THREE.Vector3; modeled: boolean }>();
+  private objects = new Map<string, { visual: THREE.Object3D; label: THREE.Sprite; ring: THREE.Mesh; base: THREE.Vector3; modeled: boolean; stackShow?: boolean }>();
   private traces = new Map<string, THREE.Mesh>();
   private allyMarkers = new Map<string, THREE.Sprite>();
   private rain: THREE.LineSegments;
@@ -116,6 +116,12 @@ export class GameView3D {
   onTarget: (key: string | null, stack?: { index: number; total: number }) => void = () => {};
   /** positions d'affichage des objets (écartées quand plusieurs sont au même endroit) et groupes */
   private displayPos = new Map<string, { x: number; y: number }>();
+  /**
+   * Fantôme (mort ou arrêté) : caméra libre côté client, sans collision, invisible des vivants (le serveur
+   * n'en sait rien) ; ou suivi d'un joueur. `follow` = identifiant du joueur suivi.
+   */
+  private ghost: { pos: THREE.Vector3; follow: string | null } | null = null;
+  onGhost: (g: { follow: string | null; followName: string | null } | null) => void = () => {};
   private stackOf = new Map<string, string[]>();
   private target: string | null = null;
   private lastPick = 0;
@@ -237,11 +243,95 @@ export class GameView3D {
     }
     // plusieurs objets au même endroit : ← → parcourent les objets au lieu de déplacer
     if ((code === 'ArrowLeft' || code === 'ArrowRight') && down && this.cycleTarget(code === 'ArrowLeft' ? -1 : 1)) return true;
+    if (this.ghost) {
+      // fantôme : Espace monte, C descend ; F suit le joueur suivant (Maj+F : précédent) ; bouger reprend le vol libre
+      if (code === 'Space' || code === 'KeyC') {
+        if (down) this.pressed.add(code);
+        else this.pressed.delete(code);
+        return true;
+      }
+      if (!MOVE_KEYS[code]) return false;
+      if (down) {
+        this.pressed.add(code);
+        if (this.ghost.follow) this.ghostFree();
+      } else this.pressed.delete(code);
+      return true;
+    }
     if (!MOVE_KEYS[code]) return false;
     if (down) this.pressed.add(code);
     else this.pressed.delete(code);
     this.sendInput(true);
     return true;
+  }
+
+  get isGhost() {
+    return !!this.ghost;
+  }
+
+  /** Fantôme : suit le joueur vivant suivant / précédent (ordre stable). */
+  ghostFollow(dir: number) {
+    const g = this.ghost;
+    const v = this.view;
+    if (!g || !v) return;
+    const living = v.players.filter((p) => p.id !== v.you && p.alive && p.pos && !v.arrested.includes(p.id) && this.actors.has(p.id));
+    if (!living.length) return;
+    const i = g.follow ? living.findIndex((p) => p.id === g.follow) : -1;
+    const next = living[(i + dir + living.length) % living.length];
+    g.follow = next.id;
+    this.onGhost({ follow: next.id, followName: next.name });
+  }
+
+  /** Fantôme : reprend le vol libre depuis le point de vue courant. */
+  ghostFree() {
+    const g = this.ghost;
+    if (!g) return;
+    if (g.follow) g.pos.copy(this.camera.position);
+    g.follow = null;
+    this.onGhost({ follow: null, followName: null });
+  }
+
+  private updateGhost(dt: number) {
+    const v = this.view;
+    const want = !!v && !v.epilogue && (!v.alive || v.arrested.includes(v.you)) && !this.reveal;
+    if (!want) {
+      if (this.ghost) {
+        this.ghost = null;
+        this.onGhost(null);
+      }
+      return;
+    }
+    if (!this.ghost) {
+      // apparaît au-dessus de son corps (ou de sa dernière position), en vue subjective
+      const start = new THREE.Vector3(WORLD_W / 2, 1.7, WORLD_H / 2);
+      const meV = v!.players.find((p) => p.id === v!.you);
+      const body = v!.bodies.find((b) => b.playerId === v!.you);
+      const at = body?.pos ?? meV?.pos;
+      if (at) toRender(at.x, at.y, start).add(new THREE.Vector3(0, 1.8, 0));
+      this.ghost = { pos: start, follow: null };
+      this.mode = 'first';
+      this.onModeChange('first');
+      this.pressed.clear();
+      this.onGhost({ follow: null, followName: null });
+    }
+    const g = this.ghost;
+    if (g.follow && !this.actors.has(g.follow)) this.ghostFree();
+    if (g.follow) return;
+    let f = 0;
+    let r = 0;
+    for (const k of this.pressed) if (MOVE_KEYS[k]) {
+      f += MOVE_KEYS[k][1];
+      r += MOVE_KEYS[k][0];
+    }
+    const up = (this.pressed.has('Space') ? 1 : 0) - (this.pressed.has('KeyC') ? 1 : 0);
+    const speed = (this.running ? 10 : 4.5) * dt;
+    const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.fpPitch), Math.sin(this.fpPitch), Math.cos(this.yaw) * Math.cos(this.fpPitch));
+    const right = new THREE.Vector3(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
+    g.pos.addScaledVector(dir, f * speed).addScaledVector(right, r * speed);
+    g.pos.y += up * speed;
+    // reste dans la propriété (traverse murs et planchers, sans s'égarer dans le vide)
+    g.pos.x = THREE.MathUtils.clamp(g.pos.x, -6, WORLD_W + 6);
+    g.pos.z = THREE.MathUtils.clamp(g.pos.z, -6, WORLD_H + 6);
+    g.pos.y = THREE.MathUtils.clamp(g.pos.y, -LEVEL_HEIGHT + 0.4, LEVEL_HEIGHT * 3 + 4);
   }
 
   /** Passe à l'objet suivant / précédent du groupe visé. */
@@ -267,7 +357,7 @@ export class GameView3D {
     const tid = this.target?.startsWith('o:') ? this.target.slice(2) : null;
     for (const [id, e] of this.objects) {
       const st = this.stackOf.get(id);
-      e.label.visible = !st || st.length < 2 || (tid && st.includes(tid) ? tid === id : st[0] === id);
+      e.stackShow = !st || st.length < 2 || (tid && st.includes(tid) ? tid === id : st[0] === id);
     }
   }
 
@@ -691,6 +781,27 @@ export class GameView3D {
         return;
       }
     }
+    if (this.ghost) {
+      const g = this.ghost;
+      const followed = g.follow ? this.actors.get(g.follow) : undefined;
+      if (followed) {
+        // spectateur : derrière le joueur suivi, la souris tourne autour
+        const target = followed.pos.clone().add(new THREE.Vector3(0, 1.45, 0));
+        const pitch = THREE.MathUtils.clamp(this.fpPitch * -1 + 0.35, -0.15, 1.2);
+        const offset = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(this.yaw) * Math.cos(pitch));
+        this.raycaster.set(target, offset);
+        this.raycaster.far = 3.6;
+        const hit = this.raycaster.intersectObjects(this.villa.colliders, false)[0];
+        this.camera.position.copy(target).addScaledVector(offset, hit ? Math.max(0.35, hit.distance - 0.25) : 3.6);
+        this.camera.lookAt(target);
+      } else {
+        const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.fpPitch), Math.sin(this.fpPitch), Math.cos(this.yaw) * Math.cos(this.fpPitch));
+        this.camera.position.copy(g.pos);
+        this.camera.lookAt(g.pos.clone().add(dir));
+      }
+      this.selfLight.position.copy(this.camera.position);
+      return;
+    }
     const spectator = !v || !v.alive || !!v.epilogue || !me;
     if (spectator) {
       // Vue plongeante lente autour de la villa
@@ -760,14 +871,15 @@ export class GameView3D {
     this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(0.1, this.clock.getDelta());
     const t = this.clock.elapsedTime;
-    if (this.pressed.size) this.sendInput();
+    if (this.pressed.size && !this.ghost) this.sendInput();
     this.sync(dt);
-    const mePos = this.view ? this.actors.get(this.view.you)?.pos : undefined;
+    this.updateGhost(dt);
+    const mePos = this.ghost ? this.camera.position : this.view ? this.actors.get(this.view.you)?.pos : undefined;
     for (const [, o] of this.objects) {
       o.visual.position.copy(o.base);
       if (!o.modeled) o.visual.position.y += Math.sin(t * 2 + o.base.x) * 0.05;
       (o.ring.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + o.base.x) * 0.2;
-      o.label.visible = !!mePos && Math.hypot(mePos.x - o.base.x, mePos.z - o.base.z) < 2.6 && Math.abs(mePos.y - o.base.y) < 2;
+      o.label.visible = o.stackShow !== false && !!mePos && Math.hypot(mePos.x - o.base.x, mePos.z - o.base.z) < 2.6 && Math.abs(mePos.y - o.base.y) < 2;
     }
     // Étiquettes proches : empilées pour rester lisibles
     const shown = [...this.objects.values()].filter((o) => o.label.visible).sort((a, b) => a.base.x - b.base.x || a.base.z - b.base.z);
@@ -800,7 +912,12 @@ export class GameView3D {
     // Ombres de la lampe de la pièce où l'on se trouve
     const me = this.view ? this.actors.get(this.view.you) : undefined;
     const meView = this.view?.players.find((p) => p.id === this.view!.you);
-    if (me) this.villa.focus(me.pos.x, me.pos.z, meView?.roomId, me.pos.y);
+    if (this.ghost) {
+      const c = this.camera.position;
+      const lvl = Math.max(-1, Math.min(2, Math.floor((c.y - 0.2) / LEVEL_HEIGHT))) as Level;
+      const room = roomAt(this.grid, gridX(lvl, c.x), c.z);
+      this.villa.focus(c.x, c.z, room?.id, lvl * LEVEL_HEIGHT);
+    } else if (me) this.villa.focus(me.pos.x, me.pos.z, meView?.roomId, me.pos.y);
     else this.villa.focus(this.camera.position.x, this.camera.position.z);
     if (QUALITY[this.quality].bloom) this.composer.render();
     else this.renderer.render(this.scene, this.camera);

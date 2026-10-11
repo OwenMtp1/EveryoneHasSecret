@@ -196,6 +196,35 @@ await page.waitForFunction(() => document.querySelector('.story-panel')?.textCon
 await shot(page, '03b-menu-echap');
 await page.keyboard.press('Escape');
 await page.waitForFunction(() => !document.querySelector('.story-panel'), undefined, { timeout: 15000 }).catch(() => errors.push('BUG : Échap ne referme pas le panneau'));
+// fantôme : contrôle visuel de la caméra libre et du suivi (vue 3D locale seulement, via ?debug ; le serveur ne change pas)
+if (process.env.E2E_GHOST) {
+  await page.evaluate(() => {
+    const v = (window as unknown as { __ehas: { view3d: { setView: (g: unknown) => void; __orig?: unknown } } }).__ehas.view3d;
+    const orig = v.setView.bind(v);
+    v.__orig = orig;
+    v.setView = (g: unknown) => orig({ ...(g as object), alive: false });
+  });
+  await page.waitForFunction(() => document.querySelector('.ghost-bar'), undefined, { timeout: 15000 }).then(
+    () => log('fantôme : barre affichée'),
+    () => errors.push('BUG : mode fantôme absent'),
+  );
+  await page.keyboard.down('KeyZ');
+  await sleep(1500);
+  await page.keyboard.up('KeyZ');
+  await shot(page, '03c-fantome-vol');
+  await page.keyboard.press('KeyF');
+  await page.waitForFunction(() => document.querySelector('.ghost-follow strong'), undefined, { timeout: 15000 }).then(
+    async () => log('fantôme : suit', await page.evaluate(() => document.querySelector('.ghost-follow strong')!.textContent)),
+    () => errors.push('BUG : le fantôme ne suit personne'),
+  );
+  await sleep(1500);
+  await shot(page, '03d-fantome-suivi');
+  await page.evaluate(() => {
+    const v = (window as unknown as { __ehas: { view3d: { setView: (g: unknown) => void; __orig: (g: unknown) => void } } }).__ehas.view3d;
+    v.setView = v.__orig;
+  });
+  await page.waitForFunction(() => !document.querySelector('.ghost-bar'), undefined, { timeout: 15000 }).catch(() => errors.push('BUG : le mode fantôme ne se referme pas'));
+}
 
 const all = [host, b, c];
 const murderer = all.find((p) => p.view!.dossier!.camp === 'murderer')!;

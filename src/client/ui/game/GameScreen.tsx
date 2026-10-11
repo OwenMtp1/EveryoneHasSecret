@@ -34,6 +34,7 @@ export function GameScreen() {
   const toggleTab = useChatFocus((s) => s.toggleTab);
   const hasGame = !!game;
   const [revealing, setRevealing] = useState(false);
+  const [ghost, setGhost] = useState<{ follow: string | null; followName: string | null } | null>(null);
   const revealingRef = useRef(false);
   revealingRef.current = revealing;
   const showMapRef = useRef(false);
@@ -52,6 +53,7 @@ export function GameScreen() {
     v.onModeChange = setCamMode;
     v.onFirstFrame = () => useStore.setState({ gameViewReady: true });
     v.onTarget = (k, stack) => useTarget.getState().set(k, stack);
+    v.onGhost = setGhost;
     v.onReveal = (on) => {
       setRevealing(on);
       if (on) music.mark('bodyDiscovered');
@@ -136,6 +138,8 @@ export function GameScreen() {
       }
       if (viewRef.current?.key(e.code, true)) {
         e.preventDefault();
+      } else if (viewRef.current?.isGhost && e.code === 'KeyF') {
+        if (!usePicker.getState().open && !useChatFocus.getState().paused) viewRef.current.ghostFollow(e.shiftKey ? -1 : 1);
       } else if (e.code === 'KeyE' || e.code === 'KeyF') {
         if (usePicker.getState().open || useChatFocus.getState().paused) return;
         triggerTarget(e.code === 'KeyF');
@@ -185,7 +189,6 @@ export function GameScreen() {
     { icon: '🔎', label: 'Enquête', badge: game.publicEvidence.length || null, alert: investigation && !!game.vote },
     { icon: '👥', label: 'Relations', badge: pendingRelations || null, alert: pendingRelations > 0 },
   ];
-  const arrested = game.arrested.includes(game.you);
 
   return (
     <div className={`game game-full ${game.alive ? '' : 'is-dead'} ${game.blackout ? 'is-blackout' : ''} ${reduced ? 'reduced' : ''}`}>
@@ -204,15 +207,22 @@ export function GameScreen() {
         <button className="btn btn-ghost btn-sm" onClick={() => useChatFocus.getState().setPaused(true)} title="Menu (Échap)">☰ Menu</button>
       </header>
 
-      <div className="cam-hint">
+      <div className="cam-hint" hidden={!!ghost}>
         {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? "souris capturée" : "clic : orienter la caméra"} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> plus · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Échap</kbd> menu
       </div>
 
       {revealing && game.caseInfo && <RevealCaption caseInfo={game.caseInfo} />}
       <EveningBanner hold={revealing} />
       <Notifications />
-      {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
-      {arrested && game.alive && !game.epilogue && <div className="dead-banner">Vous êtes arrêté·e. Vous observez jusqu’à la fin de la nuit.</div>}
+      {ghost && !game.epilogue && (
+        <div className="ghost-bar">
+          <div className="ghost-title">👻 {game.alive ? 'Arrêté·e' : 'Mort·e'} — vous êtes un fantôme, invisible des vivants</div>
+          <div className="ghost-follow">{ghost.followName ? <>Vous suivez <strong>{ghost.followName}</strong></> : 'Vol libre à travers les murs'}</div>
+          <div className="ghost-keys">
+            <kbd>ZQSD</kbd> voler · <kbd>Espace</kbd>/<kbd>C</kbd> monter/descendre · <kbd>Maj</kbd> vite · <kbd>F</kbd> suivre un joueur (<kbd>Maj</kbd>+<kbd>F</kbd> précédent) · bouger = vol libre
+          </div>
+        </div>
+      )}
       <Announcement />
       <OpportunityPrompt />
       <ActionBar />
