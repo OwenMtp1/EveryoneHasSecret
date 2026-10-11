@@ -33,6 +33,8 @@ export function GameScreen() {
   const toggleTab = useChatFocus((s) => s.toggleTab);
   const hasGame = !!game;
   const [revealing, setRevealing] = useState(false);
+  const revealingRef = useRef(false);
+  revealingRef.current = revealing;
 
   // Vue 3D (créée quand le conteneur existe)
   useEffect(() => {
@@ -99,6 +101,12 @@ export function GameScreen() {
         return;
       }
       audio.unlock();
+      if (revealingRef.current) {
+        // pendant le plan sur le corps : seul Espace permet de passer (après quelques secondes)
+        if (e.code === 'Space' && viewRef.current) viewRef.current.revealSkip = true;
+        e.preventDefault();
+        return;
+      }
       if (viewRef.current?.key(e.code, true)) {
         e.preventDefault();
       } else if (e.code === 'KeyE' || e.code === 'KeyF') {
@@ -173,13 +181,7 @@ export function GameScreen() {
         {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? <><kbd>Échap</kbd> libérer la souris</> : 'clic : orienter la caméra'} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> plus · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Échap</kbd> menu
       </div>
 
-      {revealing && game.caseInfo && (
-        <div className="reveal-caption fade-in">
-          <div className="reveal-kicker">{game.caseInfo.scenarioTitle}</div>
-          <div className="reveal-title">{game.caseInfo.victimName}</div>
-          <div className="reveal-sub">retrouvé·e sans vie — {game.caseInfo.roomName}</div>
-        </div>
-      )}
+      {revealing && game.caseInfo && <RevealCaption caseInfo={game.caseInfo} />}
       <Notifications />
       {!game.alive && !game.epilogue && <div className="dead-banner">Vous êtes mort·e. Vous observez la villa en silence.</div>}
       {arrested && game.alive && !game.epilogue && <div className="dead-banner">Vous êtes arrêté·e. Vous observez jusqu’à la fin de la nuit.</div>}
@@ -263,6 +265,39 @@ function MapOverlay({ onClose }: { onClose: () => void }) {
     <div className="map-overlay" onClick={onClose}>
       <canvas ref={ref} />
       <div className="map-caption">PLAN DE LA VILLA — <kbd>M</kbd> pour fermer</div>
+    </div>
+  );
+}
+
+/** Légendes successives du plan sur le corps. */
+function RevealCaption({ caseInfo }: { caseInfo: NonNullable<ReturnType<typeof useStore.getState>['game']>['caseInfo'] & object }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const ts = [5000, 11000].map((ms, i) => setTimeout(() => setStep(i + 1), ms));
+    return () => ts.forEach(clearTimeout);
+  }, []);
+  return (
+    <div className="reveal-caption fade-in" key={step}>
+      {step === 0 && (
+        <>
+          <div className="reveal-kicker">22h05 — Villa Beaumont</div>
+          <div className="reveal-title">Quelqu’un ne répond plus</div>
+        </>
+      )}
+      {step === 1 && (
+        <>
+          <div className="reveal-kicker">{caseInfo.scenarioTitle}</div>
+          <div className="reveal-title">{caseInfo.victimName}</div>
+          <div className="reveal-sub">retrouvé·e sans vie — {caseInfo.roomName}</div>
+        </>
+      )}
+      {step === 2 && (
+        <>
+          <div className="reveal-title">L’un de vous l’a tué·e.</div>
+          <div className="reveal-sub">La route est coupée. Personne ne quittera la villa avant l’aube.</div>
+        </>
+      )}
+      <div className="reveal-skip">Espace : passer</div>
     </div>
   );
 }

@@ -24,6 +24,9 @@ import { GAME_CONFIG } from '@shared/config';
 
 type CamMode = 'third' | 'first';
 
+/** Durée du plan de découverte du corps (s). */
+export const REVEAL_SECONDS = 16;
+
 interface Actor {
   c3d: Character3D;
   speak?: THREE.Sprite;
@@ -115,6 +118,8 @@ export class GameView3D {
   /** plan de découverte du corps (début de partie) : la caméra tourne autour de la victime */
   private reveal: { t0: number; target: THREE.Vector3 } | null = null;
   private revealDone = false;
+  /** Espace : passer le plan (après 4 s) */
+  revealSkip = false;
   private revealTarget: THREE.Vector3 | null = null;
 
   /** Lance le plan de découverte du corps (appelé quand la cinématique d'arrivée se referme). */
@@ -595,14 +600,33 @@ export class GameView3D {
     const me = v ? this.actors.get(v.you) : undefined;
     if (this.reveal) {
       const k = (performance.now() - this.reveal.t0) / 1000;
-      if (k > 6 || this.pressed.size) {
+      if (k > REVEAL_SECONDS || (this.revealSkip && k > 4)) {
         this.reveal = null;
+        this.revealSkip = false;
         this.onReveal(false);
       } else {
-        const a = 0.6 + k * 0.32;
-        const r = 3.4 - k * 0.25;
-        this.camera.position.set(this.reveal.target.x + Math.cos(a) * r, this.reveal.target.y + 2.1 - k * 0.12, this.reveal.target.z + Math.sin(a) * r);
-        this.camera.lookAt(this.reveal.target.x, this.reveal.target.y + 0.2, this.reveal.target.z);
+        // trois mouvements : approche lente en plongée, gros plan tournant au ras du sol, recul vers le haut
+        const T = this.reveal.target;
+        const ease = (x: number) => x * x * (3 - 2 * x);
+        let a: number, r: number, h: number;
+        if (k < 5) {
+          const e = ease(k / 5);
+          a = 0.4 + e * 0.5;
+          r = 6.5 - e * 3.3;
+          h = 3.4 - e * 1.4;
+        } else if (k < 11) {
+          const e = ease((k - 5) / 6);
+          a = 0.9 + e * 1.6;
+          r = 3.2 - e * 1.4;
+          h = 2.0 - e * 1.1;
+        } else {
+          const e = ease(Math.min(1, (k - 11) / (REVEAL_SECONDS - 11)));
+          a = 2.5 + e * 0.6;
+          r = 1.8 + e * 2.6;
+          h = 0.9 + e * 2.6;
+        }
+        this.camera.position.set(T.x + Math.cos(a) * r, T.y + h, T.z + Math.sin(a) * r);
+        this.camera.lookAt(T.x, T.y + 0.15, T.z);
         return;
       }
     }
