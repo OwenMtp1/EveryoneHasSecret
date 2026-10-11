@@ -28,11 +28,11 @@ import { OBJECT_TYPES, objectTypeDef } from '@shared/content/objects';
 import { SHOE_PATTERNS, SHOE_SIZES } from '@shared/content/scenarios';
 import type { GameAction } from '@shared/protocol';
 import { GAME_CONFIG, META_CONFIG, formatClock } from '@shared/config';
+import { advance, steer } from '@shared/content/locomotion';
 import {
   PLAYER_SPAWNS,
   allFurniture,
   adjacentRooms,
-  stepMove,
   buildWorldGrid,
   doorAt,
   roomAt,
@@ -156,6 +156,7 @@ export class GameInstance {
         connected: true,
         pos: { ...spawn },
         input: { x: 0, y: 0 },
+        vel: { x: 0, y: 0 },
         running: false,
         facing: 0,
         roomId: roomAt(this.grid, spawn.x, spawn.y)?.id ?? 'hall',
@@ -491,17 +492,18 @@ export class GameInstance {
   }
 
   private simulatePlayer(p: PlayerState, dt: number) {
-    if (!p.alive || !p.connected || p.arrested) return;
+    if (!p.alive || !p.connected || p.arrested) {
+      p.vel = { x: 0, y: 0 };
+      return;
+    }
     const len = Math.hypot(p.input.x, p.input.y);
-    if (len > 0.01) {
-      const speed = p.running ? GAME_CONFIG.runSpeed : GAME_CONFIG.walkSpeed;
-      const vx = (p.input.x / len) * speed * dt;
-      const vy = (p.input.y / len) * speed * dt;
-      // murs, meubles, garde-corps des rampes ; en haut d'un escalier ou d'une échelle : changement de niveau
+    // système de marche : accélération / freinage / virages, puis murs, meubles, escaliers (partagé avec le client)
+    steer(p.vel, p.input, p.running, dt);
+    if (p.vel.x || p.vel.y) {
       const pos = { x: p.pos.x, y: p.pos.y };
-      stepMove(pos, vx, vy, (x, y) => this.fits(x, y));
+      advance(pos, p.vel, dt, (x, y) => this.fits(x, y));
       p.pos = pos;
-      p.facing = Math.atan2(vy, vx);
+      if (Math.hypot(p.vel.x, p.vel.y) > 0.05) p.facing = Math.atan2(p.vel.y, p.vel.x);
     }
     p.roomTime[p.roomId] = (p.roomTime[p.roomId] ?? 0) + dt;
     const room = roomAt(this.grid, p.pos.x, p.pos.y);
@@ -753,6 +755,7 @@ export class GameInstance {
           ...base,
           pos: { x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2) },
           facing: +p.facing.toFixed(2),
+          vel: p.vel.x || p.vel.y ? { x: +p.vel.x.toFixed(2), y: +p.vel.y.toFixed(2) } : undefined,
           roomId: p.roomId,
           hasLight: this.hasLight(p),
           stained: p.stained,

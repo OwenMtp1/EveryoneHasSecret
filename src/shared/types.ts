@@ -148,6 +148,8 @@ export interface GamePlayerView {
   /** Position seulement si le joueur est visible par l'observateur. */
   pos?: Vec2;
   facing?: number;
+  /** vitesse (m/s, repère de la grille) : interpolation et animation de marche fluides */
+  vel?: Vec2;
   roomId?: string;
   hasLight?: boolean;
   /** Indice visuel : vêtements tachés (perçu). */

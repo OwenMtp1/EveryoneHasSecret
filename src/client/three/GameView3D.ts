@@ -19,8 +19,9 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { LEVEL_HEIGHT, allFurniture, buildWorldGrid, doorAt, elevationAt, gridX, localX, roomAt, stepMove, type Level } from '@shared/content/villa';
+import { LEVEL_HEIGHT, allFurniture, buildWorldGrid, doorAt, elevationAt, gridX, localX, roomAt, type Level } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
+import { advance, steer } from '@shared/content/locomotion';
 
 type CamMode = 'third' | 'first';
 
@@ -105,7 +106,9 @@ export class GameView3D {
   private running = false;
   /** positions reçues du serveur (horodatées à la réception) : les autres joueurs sont affichés
    *  avec un léger différé et interpolés entre deux positions → mouvement continu, sans à-coups */
-  private samples = new Map<string, { t: number; x: number; y: number; z: number }[]>();
+  private samples = new Map<string, { t: number; x: number; y: number; z: number; vx: number; vz: number }[]>();
+  /** vitesse prédite de notre personnage (système de marche partagé avec le serveur) */
+  private predVel = { x: 0, y: 0 };
   onInput: (dx: number, dy: number, run: boolean) => void = () => {};
   /** appelé après la première image (shaders compilés, scène affichée) */
   onFirstFrame: () => void = () => {};
@@ -428,26 +431,56 @@ export class GameView3D {
       if (!buf) this.samples.set(p.id, (buf = []));
       const last = buf[buf.length - 1];
       toRender(p.pos.x, p.pos.y, _tmpR);
-      if (last && last.x === _tmpR.x && last.z === _tmpR.z && last.y === _tmpR.y && t - last.t < 400) continue;
-      buf.push({ t, x: _tmpR.x, y: _tmpR.y, z: _tmpR.z });
-      if (buf.length > 12) buf.shift();
+      // vue complète + instantané quasi simultanés : un seul échantillon
+      if (last && t - last.t < 30) continue;
+      // à l'arrêt aussi on échantillonne : le redémarrage n'est pas étiré sur toute la pause
+      buf.push({ t, x: _tmpR.x, y: _tmpR.y, z: _tmpR.z, vx: p.vel?.x ?? 0, vz: p.vel?.y ?? 0 });
+      if (buf.length > 16) buf.shift();
     }
   }
 
-  /** Position interpolée d'un autre joueur, affichée ~150 ms dans le passé. */
+  /**
+   * Position d'un autre joueur, affichée ~150 ms dans le passé : courbe d'Hermite entre deux échantillons
+   * (positions ET vitesses du serveur) → trajectoire sans à-coups, virages arrondis. Vitesse dans `_interpVel`.
+   * Paquet en retard : courte extrapolation au lieu d'un arrêt net.
+   */
   private interpolated(id: string, fallback: THREE.Vector3): THREE.Vector3 {
     const buf = this.samples.get(id);
+    _interpVel.set(0, 0, 0);
     if (!buf || !buf.length) return fallback;
     const rt = performance.now() - 150;
-    if (rt <= buf[0].t) return _interp.set(buf[0].x, buf[0].y, buf[0].z);
+    const first = buf[0];
+    if (rt <= first.t) return _interp.set(first.x, first.y, first.z);
     for (let i = buf.length - 1; i >= 0; i--) {
       const a = buf[i];
-      if (a.t <= rt) {
-        const b = buf[i + 1];
-        if (!b) return _interp.set(a.x, a.y, a.z);
-        const k = (rt - a.t) / Math.max(1, b.t - a.t);
-        return _interp.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+      if (a.t > rt) continue;
+      const b = buf[i + 1];
+      if (!b) {
+        // extrapolation bornée (100 ms) selon la dernière vitesse connue
+        const e = Math.min(0.1, (rt - a.t) / 1000);
+        _interpVel.set(a.vx, 0, a.vz);
+        return _interp.set(a.x + a.vx * e, a.y, a.z + a.vz * e);
       }
+      const h = Math.max(0.001, (b.t - a.t) / 1000);
+      const k = Math.min(1, (rt - a.t) / (b.t - a.t || 1));
+      // changement de niveau (escalier, échelle) : pas de courbe à travers le plancher
+      if (Math.abs(b.x - a.x) > 4 || Math.abs(b.y - a.y) > 1.5) {
+        const c = k < 0.5 ? a : b;
+        _interpVel.set(c.vx, 0, c.vz);
+        return _interp.set(c.x, c.y, c.z);
+      }
+      const k2 = k * k;
+      const k3 = k2 * k;
+      const h00 = 2 * k3 - 3 * k2 + 1;
+      const h10 = k3 - 2 * k2 + k;
+      const h01 = -2 * k3 + 3 * k2;
+      const h11 = k3 - k2;
+      _interpVel.set(a.vx + (b.vx - a.vx) * k, 0, a.vz + (b.vz - a.vz) * k);
+      return _interp.set(
+        h00 * a.x + h10 * h * a.vx + h01 * b.x + h11 * h * b.vx,
+        a.y + (b.y - a.y) * k,
+        h00 * a.z + h10 * h * a.vz + h01 * b.z + h11 * h * b.vz,
+      );
     }
     return fallback;
   }
@@ -507,18 +540,25 @@ export class GameView3D {
       }
       const isMe = p.id === this.view!.you;
       toRender(p.pos.x, p.pos.y, _target);
-      _before.copy(a.pos);
+      // Système de marche : la vitesse (prédite pour nous, transmise par le serveur pour les autres) pilote
+      // l'animation et l'orientation — jamais la différence de position d'une image à l'autre (bruitée).
       if (isMe) {
         const g = this.predict(p.pos.x, p.pos.y, dt);
         toRender(g.x, g.z, a.pos);
+        _interpVel.set(this.predVel.x, 0, this.predVel.y);
       } else a.pos.copy(this.interpolated(p.id, _target));
-      const delta = _delta.copy(a.pos).sub(_before).setY(0);
-      const instant = delta.length() / Math.max(dt, 1e-3);
-      // téléportation (escalier, reconnexion) : pas d'animation de course
-      a.speed += ((instant > 8 ? a.speed : instant) - a.speed) * Math.min(1, dt * 10);
+      const vel = _interpVel;
+      const target = Math.hypot(vel.x, vel.z);
+      a.speed += (target - a.speed) * Math.min(1, dt * (isMe ? 20 : 12));
       const speed = a.speed;
       if (isMe && this.mode === 'first') a.rotY = this.yaw;
-      else if (instant > 0.3 && instant < 8) a.rotY = lerpAngle(a.rotY, Math.atan2(delta.x, delta.z), Math.min(1, dt * 10));
+      else if (target > 0.15) {
+        // virage progressif : vitesse de rotation bornée, plus vive en course
+        const want = Math.atan2(vel.x, vel.z);
+        const diff = Math.atan2(Math.sin(want - a.rotY), Math.cos(want - a.rotY));
+        const maxTurn = (target > GAME_CONFIG.walkSpeed * 1.2 ? 10 : 7) * dt;
+        a.rotY += Math.max(-maxTurn, Math.min(maxTurn, diff * Math.min(1, dt * 12)));
+      }
       a.c3d.root.position.copy(a.pos);
       a.c3d.root.rotation.y = a.rotY;
       if (p.gesture && p.gesture.seq !== a.gestureSeq) {
@@ -596,19 +636,18 @@ export class GameView3D {
   private predict(sx: number, sy: number, dt: number): THREE.Vector3 {
     // repère de la grille : x = colonne (étage décalé), z = ligne
     _server.set(sx, 0, sy);
-    if (!this.pred || !this.view?.alive) return (this.pred = _server.clone());
+    if (!this.pred || !this.view?.alive) {
+      this.predVel.x = this.predVel.y = 0;
+      return (this.pred = _server.clone());
+    }
     const p = this.pred;
-    const { x: dx, y: dz } = this.lastSent;
-    const moving = Math.hypot(dx, dz) > 0.01;
+    const moving = Math.hypot(this.lastSent.x, this.lastSent.y) > 0.01 || Math.hypot(this.predVel.x, this.predVel.y) > 0.01;
+    // mêmes règles que le serveur (système de marche partagé) : accélération, freinage, murs, escaliers
+    steer(this.predVel, this.lastSent, this.running, dt);
     if (moving) {
-      const len = Math.hypot(dx, dz);
-      const sp = this.running ? GAME_CONFIG.runSpeed : GAME_CONFIG.walkSpeed;
-      const vx = (dx / len) * sp * dt;
-      const vz = (dz / len) * sp * dt;
-      // mêmes règles que le serveur (stepMove partagé) : murs, garde-corps, changements de niveau
       _step.x = p.x;
       _step.y = p.z;
-      stepMove(_step, vx, vz, this.fitsFn);
+      advance(_step, this.predVel, dt, this.fitsFn);
       p.set(_step.x, 0, _step.y);
     }
     const err = _server.distanceTo(p);
@@ -1093,11 +1132,4 @@ function toRender(x: number, y: number, out: THREE.Vector3): THREE.Vector3 {
   return out.set(localX(x), elevationAt(x, y), y);
 }
 const _interp = new THREE.Vector3();
-const _before = new THREE.Vector3();
-const _delta = new THREE.Vector3();
-
-function lerpAngle(a: number, b: number, t: number) {
-  let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
-  if (d < -Math.PI) d += Math.PI * 2;
-  return a + d * t;
-}
+const _interpVel = new THREE.Vector3();

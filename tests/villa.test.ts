@@ -289,3 +289,43 @@ test('pièces requises et apparitions d’objets valides', () => {
   assert.equal(roomById('attic')?.level, 2);
   for (const o of OBJECT_TYPES) for (const r of o.spawnRooms) assert.ok(roomById(r), `${o.type} : pièce d'apparition inconnue ${r}`);
 });
+
+// ───────────────────────── système de marche ─────────────────────────
+
+test('système de marche : accélération, freinage, glissement contre un mur, même trajectoire serveur et client', async () => {
+  const { steer, advance, LOCOMOTION } = await import('../src/shared/content/locomotion');
+  const dt = 1 / 20;
+  const vel = { x: 0, y: 0 };
+  // démarrage progressif : pas de pleine vitesse au premier pas, pleine vitesse en moins de 0,3 s
+  steer(vel, { x: 1, y: 0 }, false, dt);
+  assert.ok(vel.x > 0 && vel.x < GAME_CONFIG.walkSpeed, 'pas de saut instantané à la vitesse de marche');
+  for (let i = 0; i < 6; i++) steer(vel, { x: 1, y: 0 }, false, dt);
+  assert.ok(Math.abs(vel.x - GAME_CONFIG.walkSpeed) < 1e-9);
+  // course puis relâchement : arrêt en douceur mais rapide
+  for (let i = 0; i < 10; i++) steer(vel, { x: 1, y: 0 }, true, dt);
+  assert.ok(Math.abs(vel.x - GAME_CONFIG.runSpeed) < 1e-9);
+  let n = 0;
+  while (vel.x > 0 && n < 50) (steer(vel, { x: 0, y: 0 }, false, dt), n++);
+  assert.ok(n > 1 && n * dt <= GAME_CONFIG.runSpeed / LOCOMOTION.decel + dt, `arrêt en ${n} pas`);
+  // demi-tour : la vitesse passe par un minimum, sans s'inverser d'un coup
+  const v2 = { x: GAME_CONFIG.walkSpeed, y: 0 };
+  steer(v2, { x: -1, y: 0 }, false, dt);
+  assert.ok(v2.x > 0, 'le demi-tour freine d’abord');
+  // mur : la composante bloquée disparaît, l'autre est conservée (on glisse)
+  const wall = (x: number) => x < 5;
+  const pos = { x: 4.97, y: 2 };
+  const v3 = { x: 1.5, y: 1 };
+  advance(pos, v3, dt, (x) => wall(x));
+  assert.ok(pos.x < 5 && v3.x < 1.5 && v3.y === 1, 'glisse le long du mur');
+  // déterminisme : deux simulations identiques (serveur / prédiction) donnent la même position
+  const sim = () => {
+    const p = { x: 10, y: 10 };
+    const v = { x: 0, y: 0 };
+    for (let i = 0; i < 40; i++) {
+      steer(v, i < 25 ? { x: Math.cos(i / 8), y: Math.sin(i / 8) } : { x: 0, y: 0 }, i > 10, dt);
+      advance(p, v, dt, () => true);
+    }
+    return p;
+  };
+  assert.deepEqual(sim(), sim());
+});

@@ -27,6 +27,7 @@ src/
       objects.ts                catalogue visuel et générique des objets (tags, capacités, modèles)
       roles.ts                  spécialités d'enquête
       villa.ts / levels.ts      pièces sur 4 niveaux, portes, mobilier, escaliers/échelles, stepMove partagé
+      locomotion.ts             système de marche partagé serveur/prédiction : accélération, freinage, virages, glissement le long des murs
       furnishing.ts             ameublement et décoration
       intro.ts / vehicles.ts    cinématique d'arrivée
       events.ts                 types de faits du journal de vérité
@@ -96,6 +97,9 @@ ou fait dans les vues, pour les 3 scénarios et 3 à 8 joueurs) et par inspectio
 
 - Simulation 8 joueurs : ~0,03 ms par tick, ~0,2 ms pour construire toutes les vues (`scripts/bench-server.ts`).
 - Instantanés sans description des personnages + compression WebSocket au-delà de 1 Ko.
+- Marche fluide : même physique de marche côté serveur et prédiction client (aucun recalage), vitesse transmise
+  dans les vues, trajectoire des autres joueurs en courbe d'Hermite (positions + vitesses), animation et orientation
+  pilotées par la vitesse, virages à vitesse de rotation bornée.
 - Client : qualité adaptative (halo, ombres, résolution), niveaux éloignés masqués, lumières du seul niveau du joueur,
   géométries/matériaux partagés entre personnages, chargement des modèles à la demande, envoi des entrées ≤ 30/s.
 - Le bundle principal fait ~1,5 Mo (≈ 425 Ko gzip), Three.js compris.

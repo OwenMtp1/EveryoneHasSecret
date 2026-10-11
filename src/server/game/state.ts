@@ -40,6 +40,8 @@ export interface PlayerState {
   connected: boolean;
   pos: Vec2;
   input: Vec2;
+  /** vitesse réelle (m/s) : accélération, freinage et virages progressifs (système de marche partagé) */
+  vel: Vec2;
   /** court (Maj) plutôt que marcher */
   running: boolean;
   facing: number;
