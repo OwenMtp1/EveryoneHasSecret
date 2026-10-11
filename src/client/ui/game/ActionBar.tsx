@@ -8,12 +8,24 @@ import { targetActions, useTarget, usePicker } from './helpers';
 export function ActionBar() {
   const game = useStore((s) => s.game);
   const key = useTarget((s) => s.key);
+  const stack = useTarget((s) => s.stack);
   if (!game) return null;
   const t = targetActions(game, key);
   if (!t || !t.actions.length) return null;
   return (
     <div className="interact-prompt" aria-live="polite">
-      <div className="interact-title">{t.title}</div>
+      <div className="interact-title">
+        {stack && <kbd className="stack-arrow">←</kbd>}
+        {t.title}
+        {stack && (
+          <>
+            <kbd className="stack-arrow">→</kbd>
+            <span className="stack-count">
+              {stack.index + 1}/{stack.total}
+            </span>
+          </>
+        )}
+      </div>
       <div className="interact-keys">
         <span>
           <kbd>E</kbd> {t.actions[0].label}

@@ -51,7 +51,7 @@ export function GameScreen() {
     v.onInput = (dx, dy, run) => getSocket()?.emit('game:input', { dx, dy, run });
     v.onModeChange = setCamMode;
     v.onFirstFrame = () => useStore.setState({ gameViewReady: true });
-    v.onTarget = (k) => useTarget.getState().set(k);
+    v.onTarget = (k, stack) => useTarget.getState().set(k, stack);
     v.onReveal = (on) => {
       setRevealing(on);
       if (on) music.mark('bodyDiscovered');

@@ -112,7 +112,11 @@ export class GameView3D {
   private framesDrawn = 0;
   onModeChange: (m: CamMode) => void = () => {};
   /** cible d'interaction visée (raycast), notifiée seulement quand elle change */
-  onTarget: (key: string | null) => void = () => {};
+  /** cible visée ; `stack` = position dans un groupe d'objets au même endroit (← → pour parcourir) */
+  onTarget: (key: string | null, stack?: { index: number; total: number }) => void = () => {};
+  /** positions d'affichage des objets (écartées quand plusieurs sont au même endroit) et groupes */
+  private displayPos = new Map<string, { x: number; y: number }>();
+  private stackOf = new Map<string, string[]>();
   private target: string | null = null;
   private lastPick = 0;
   /** plan de découverte du corps (début de partie) : la caméra tourne autour de la victime */
@@ -231,11 +235,40 @@ export class GameView3D {
       this.sendInput(true);
       return true;
     }
+    // plusieurs objets au même endroit : ← → parcourent les objets au lieu de déplacer
+    if ((code === 'ArrowLeft' || code === 'ArrowRight') && down && this.cycleTarget(code === 'ArrowLeft' ? -1 : 1)) return true;
     if (!MOVE_KEYS[code]) return false;
     if (down) this.pressed.add(code);
     else this.pressed.delete(code);
     this.sendInput(true);
     return true;
+  }
+
+  /** Passe à l'objet suivant / précédent du groupe visé. */
+  cycleTarget(dir: number): boolean {
+    const id = this.target?.startsWith('o:') ? this.target.slice(2) : null;
+    const st = id ? this.stackOf.get(id) : undefined;
+    if (!id || !st || st.length < 2) return false;
+    const i = (st.indexOf(id) + dir + st.length) % st.length;
+    this.setTarget(`o:${st[i]}`);
+    return true;
+  }
+
+  private setTarget(k: string | null) {
+    this.target = k;
+    const id = k?.startsWith('o:') ? k.slice(2) : null;
+    const st = id ? this.stackOf.get(id) : undefined;
+    this.refreshLabels();
+    this.onTarget(k, st && st.length > 1 ? { index: st.indexOf(id!), total: st.length } : undefined);
+  }
+
+  /** Dans un groupe, seule l'étiquette de l'objet visé (ou du premier) s'affiche : rien ne se superpose. */
+  private refreshLabels() {
+    const tid = this.target?.startsWith('o:') ? this.target.slice(2) : null;
+    for (const [id, e] of this.objects) {
+      const st = this.stackOf.get(id);
+      e.label.visible = !st || st.length < 2 || (tid && st.includes(tid) ? tid === id : st[0] === id);
+    }
   }
 
   releaseAll() {
@@ -528,8 +561,34 @@ export class GameView3D {
       }
   }
 
+  /**
+   * Objets au même endroit (même meuble, même dalle) : regroupés puis disposés en cercle autour de leur centre,
+   * pour qu'aucun ne se superpose ; l'ordre est stable (identifiant).
+   */
+  private layoutObjects(objects: ObjectView[]) {
+    this.displayPos.clear();
+    this.stackOf.clear();
+    const list = objects.filter((o) => o.pos).sort((a, b) => (a.id < b.id ? -1 : 1));
+    const groups: { roomId?: string; x: number; y: number; ids: string[] }[] = [];
+    for (const o of list) {
+      const g = groups.find((g) => g.roomId === o.roomId && Math.hypot(g.x - o.pos!.x, g.y - o.pos!.y) < 0.35);
+      if (g) g.ids.push(o.id);
+      else groups.push({ roomId: o.roomId, x: o.pos!.x, y: o.pos!.y, ids: [o.id] });
+    }
+    for (const g of groups) {
+      const n = g.ids.length;
+      const r = n > 1 ? 0.2 + 0.05 * n : 0;
+      g.ids.forEach((id, i) => {
+        const a = (i / n) * Math.PI * 2;
+        this.displayPos.set(id, { x: g.x + Math.cos(a) * r, y: g.y + Math.sin(a) * r });
+        this.stackOf.set(id, g.ids);
+      });
+    }
+  }
+
   private syncObjects(objects: ObjectView[]) {
     const seen = new Set<string>();
+    this.layoutObjects(objects);
     for (const o of objects) {
       if (!o.pos) continue;
       seen.add(o.id);
@@ -548,7 +607,8 @@ export class GameView3D {
         this.objects.set(o.id, e);
       }
       // Objet caché (connu) : posé dans le meuble, à mi-hauteur
-      toRender(o.pos.x, o.pos.y, e.base);
+      const dp = this.displayPos.get(o.id) ?? o.pos;
+      toRender(dp.x, dp.y, e.base);
       const fy = e.base.y;
       e.base.y += hidden ? 0.5 : e.modeled ? 0.012 : 0.75;
       e.ring.position.set(e.base.x, fy + 0.015, e.base.z);
@@ -560,6 +620,7 @@ export class GameView3D {
         this.scene.remove(e.visual, e.ring, e.label);
         this.objects.delete(id);
       }
+    this.refreshLabels();
   }
 
   private syncTraces(traces: TraceView[]) {
@@ -730,11 +791,11 @@ export class GameView3D {
     this.updateCamera();
     if (t - this.lastPick > 0.1) {
       this.lastPick = t;
-      const k = this.pickTarget();
-      if (k !== this.target) {
-        this.target = k;
-        this.onTarget(k);
-      }
+      let k = this.pickTarget();
+      // on reste sur l'objet choisi aux flèches tant que le regard reste sur le même groupe
+      const cur = this.target?.startsWith('o:') ? this.target.slice(2) : null;
+      if (k?.startsWith('o:') && cur && this.stackOf.get(cur)?.includes(k.slice(2))) k = this.target;
+      if (k !== this.target) this.setTarget(k);
     }
     // Ombres de la lampe de la pièce où l'on se trouve
     const me = this.view ? this.actors.get(this.view.you) : undefined;
@@ -763,7 +824,11 @@ export class GameView3D {
     const near = (x: number, y: number, extra = 0) => Math.hypot(x - meV.pos!.x, y - meV.pos!.y) <= R + extra;
     const cands: { key: string; c: THREE.Vector3; r: number }[] = [];
     const at = (x: number, y: number, h: number) => toRender(x, y, new THREE.Vector3()).add(new THREE.Vector3(0, h, 0));
-    for (const o of v.objects) if (o.pos && o.roomId === meV.roomId && near(o.pos.x, o.pos.y, o.name.endsWith(')') ? 1.6 : 0.6)) cands.push({ key: `o:${o.id}`, c: at(o.pos.x, o.pos.y, 0.15), r: 0.32 });
+    for (const o of v.objects) {
+      if (!o.pos || o.roomId !== meV.roomId || !near(o.pos.x, o.pos.y, o.name.endsWith(')') ? 1.6 : 0.6)) continue;
+      const dp = this.displayPos.get(o.id) ?? o.pos;
+      cands.push({ key: `o:${o.id}`, c: at(dp.x, dp.y, o.name.endsWith('(caché)') ? 0.5 : 0.15), r: 0.26 });
+    }
     for (const b of v.bodies) if (b.roomId === meV.roomId && near(b.pos.x, b.pos.y, 0.6)) cands.push({ key: `b:${b.id}`, c: at(b.pos.x, b.pos.y, 0.2), r: 0.75 });
     for (const p of v.players)
       if (p.id !== v.you && p.alive && p.pos && !p.viaAlliance && p.roomId === meV.roomId && near(p.pos.x, p.pos.y, 0.4)) cands.push({ key: `p:${p.id}`, c: at(p.pos.x, p.pos.y, 1.0), r: 0.45 });

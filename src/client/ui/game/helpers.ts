@@ -73,9 +73,9 @@ export const useChatFocus = create<{
 }));
 
 /** Cible visée (raycast de la vue 3D) : « o:id », « b:id », « p:id », « f:id », « t:id ». */
-export const useTarget = create<{ key: string | null; set: (k: string | null) => void }>((set) => ({
+export const useTarget = create<{ key: string | null; stack?: { index: number; total: number }; set: (k: string | null, stack?: { index: number; total: number }) => void }>((set) => ({
   key: null,
-  set: (key) => set({ key }),
+  set: (key, stack) => set({ key, stack }),
 }));
 
 export interface TargetAction {
