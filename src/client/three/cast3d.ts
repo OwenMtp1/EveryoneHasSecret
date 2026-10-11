@@ -138,6 +138,9 @@ export function loadCast(id: string): Promise<boolean> {
         const mat = m.material as THREE.MeshStandardMaterial;
         if (mat.name === 'hair') {
           mat.alphaToCoverage = true; // bords des mèches adoucis avec le MSAA
+          // seuil : sans MSAA (cinématique, rendu en post-traitement), les mèches restent découpées au lieu
+          // d'afficher leurs cartes opaques
+          mat.alphaTest = 0.35;
           mat.side = THREE.DoubleSide;
         }
         // sphère englobante généreuse (le maillage animé sort de sa pose de repos : accroupi, bras levés…)

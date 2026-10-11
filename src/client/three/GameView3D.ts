@@ -776,7 +776,14 @@ export class GameView3D {
           r = 1.8 + e * 2.6;
           h = 0.9 + e * 2.6;
         }
-        this.camera.position.set(T.x + Math.cos(a) * r, T.y + h, T.z + Math.sin(a) * r);
+        // les murs arrêtent la caméra (jamais de plan à travers une cloison)
+        const from = new THREE.Vector3(T.x, T.y + 0.6, T.z);
+        const off = new THREE.Vector3(Math.cos(a) * r, h - 0.6, Math.sin(a) * r);
+        const len = off.length();
+        this.raycaster.set(from, off.normalize());
+        this.raycaster.far = len;
+        const hit = this.raycaster.intersectObjects(this.villa.colliders, false)[0];
+        this.camera.position.copy(from).addScaledVector(off, hit ? Math.max(0.6, hit.distance - 0.3) : len);
         this.camera.lookAt(T.x, T.y + 0.15, T.z);
         return;
       }

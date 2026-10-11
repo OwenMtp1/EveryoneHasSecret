@@ -864,6 +864,25 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (occupied(gridX(1, x + dx), y + dy) && !roomAtTile(gridX(1, x + dx), y + dy)?.treehouse) return true;
     return false;
   };
+  /** Mur extérieur sous l'emprise du toit : il monte jusqu'à l'égout même sans pièce à l'étage (pas de trou sous le toit). */
+  const underRoof = (x: number, y: number) => {
+    const lx = localX(x);
+    return lx >= HOUSE.x0 - 0.5 && lx <= HOUSE.x1 + 0.5 && y >= HOUSE.z0 - 0.5 && y <= HOUSE.z1 + 0.5;
+  };
+  /** Hauteur de façade au-dessus d'une porte extérieure : celle des murs voisins le long de la façade. */
+  const facadeAboveDoor = (x: number, y: number, vertical: boolean) => {
+    if (upstairsAbove(x, y) || underRoof(x, y)) return facadeH;
+    let h = 0;
+    for (const s of [-1, 1])
+      for (let k = 1; k <= 4; k++) {
+        const tx = vertical ? x : x + s * k;
+        const ty = vertical ? y + s * k : y;
+        if (isDoor(tx, ty)) continue;
+        h = Math.max(h, heightAt.get(`${tx},${ty}`) ?? 0);
+        break;
+      }
+    return h;
+  };
   for (let y = -1; y <= WORLD_H; y++)
     for (let x = -1; x <= GRID_W; x++) {
       if (occupied(x, y) || isOpening(x, y) || openTiles.has(`${x},${y}`)) continue;
@@ -884,7 +903,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       else if (lvl === 0 && outdoor && upstairsAbove(x, y)) h = facadeH;
       else h = LEVEL_HEIGHT - 0.02; // sous le plancher du dessus (pas de z-fighting)
       wallTiles.push({ x, y, h });
-      heightAt.set(`${x},${y}`, indoor ? (lvl === 0 && outdoor && upstairsAbove(x, y) ? facadeH : lvl === 2 ? 99 : WALL_H) : 1.1);
+      heightAt.set(`${x},${y}`, indoor ? (lvl === 0 && outdoor && (upstairsAbove(x, y) || underRoof(x, y)) ? facadeH : lvl === 2 ? 99 : WALL_H) : 1.1);
     }
   const tmp = new THREE.Object3D();
   for (const lvl of LEVELS) {
@@ -920,9 +939,11 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       for (const [dx, dy, ry] of DIRS) {
         const wx = x + dx;
         const wy = y + dy;
-        if (room.outdoor && lvl === 0 && isDoor(wx, wy) && upstairsAbove(wx, wy)) {
-          // façade au-dessus d'une porte extérieure : brique du linteau jusqu'au toit
-          const top = facadeH - 2.32;
+        const aboveDoor = room.outdoor && lvl === 0 && isDoor(wx, wy) ? facadeAboveDoor(wx, wy, dx !== 0) : 0;
+        if (aboveDoor > 2.6) {
+          // façade au-dessus d'une porte extérieure : brique du linteau jusqu'à la hauteur des murs voisins
+          // (sinon un trou laisse voir l'intérieur sombre au-dessus de l'entrée)
+          const top = aboveDoor - 2.32;
           const plane = new THREE.PlaneGeometry(1, top);
           const uvs = plane.getAttribute('uv') as THREE.BufferAttribute;
           for (let i = 0; i < uvs.count; i++) uvs.setY(i, (uvs.getY(i) * top) / 1.1);
@@ -1087,12 +1108,25 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   for (const d of DOORS) {
     // le linteau comble aussi l'épaisseur du plancher du dessus
     const lintelH = LEVEL_HEIGHT - 2.32;
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(1, lintelH, 1), MAT.paint('#2a2622', 0.9));
+    // passage nord-sud si les tuiles au nord et au sud sont des pièces
+    const northSouth = !!roomIdx(d.x, d.y - 1) && !!roomIdx(d.x, d.y + 1);
+    // chaque face du linteau prend le revêtement du mur de la pièce qu'elle regarde (papier peint, brique…)
+    const wallOf = (x: number, y: number) => {
+      const r = styleRoomAt(x, y);
+      return r ? styleOf(r).wall() : casing;
+    };
+    // ordre des faces d'un BoxGeometry : +x, −x, +y, −y, +z, −z
+    const lintelMats = northSouth
+      ? [casing, casing, casing, casing, wallOf(d.x, d.y + 1), wallOf(d.x, d.y - 1)]
+      : [wallOf(d.x + 1, d.y), wallOf(d.x - 1, d.y), casing, casing, casing, casing];
+    const lintelGeo = new THREE.BoxGeometry(1, lintelH, 1);
+    // motif à l'échelle (brique, papier peint) : v ∝ hauteur réelle
+    const luv = lintelGeo.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < luv.count; i++) luv.setY(i, luv.getY(i) * (lintelH / 1.1));
+    const lintel = new THREE.Mesh(lintelGeo, lintelMats);
     lintel.position.set(d.x + 0.5, 2.3 + lintelH / 2, d.y + 0.5);
     group.add(lintel);
     colliders.push(lintel);
-    // passage nord-sud si les tuiles au nord et au sud sont des pièces
-    const northSouth = !!roomIdx(d.x, d.y - 1) && !!roomIdx(d.x, d.y + 1);
     const g = new THREE.Group();
     g.position.set(d.x + 0.5, 0, d.y + 0.5);
     if (!northSouth) g.rotation.y = Math.PI / 2;

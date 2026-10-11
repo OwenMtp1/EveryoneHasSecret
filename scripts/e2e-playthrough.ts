@@ -219,6 +219,19 @@ if (process.env.E2E_GHOST) {
   );
   await sleep(1500);
   await shot(page, '03d-fantome-suivi');
+  // inspection visuelle de la villa (E2E_INSPECT=x,y,z,lacet,tangage;… en mètres / radians)
+  for (const [i, pose] of (process.env.E2E_INSPECT ?? '').split(';').filter(Boolean).entries()) {
+    const [x, y, z, yaw, pitch] = pose.split(',').map(Number);
+    await page.keyboard.press('KeyZ'); // revient au vol libre
+    await page.evaluate(([x, y, z, yaw, pitch]) => {
+      const v = (window as unknown as { __ehas: { view3d: { ghost: { pos: { set: (...a: number[]) => void } }; yaw: number; fpPitch: number } } }).__ehas.view3d;
+      v.ghost.pos.set(x, y, z);
+      v.yaw = yaw;
+      v.fpPitch = pitch;
+    }, [x, y, z, yaw, pitch]);
+    await sleep(1500);
+    await shot(page, `09-inspection-${i}`);
+  }
   await page.evaluate(() => {
     const v = (window as unknown as { __ehas: { view3d: { setView: (g: unknown) => void; __orig: (g: unknown) => void } } }).__ehas.view3d;
     v.setView = v.__orig;
