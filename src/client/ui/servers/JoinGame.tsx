@@ -9,7 +9,8 @@ export function JoinGame() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const lobby = await attempt(call('lobby:join', { code }));
-    if (lobby) useStore.setState({ lobby, screen: 'lobby' });
+    // retour dans une partie en cours : l'écran de jeu a déjà été ouvert par session:state
+    if (lobby) useStore.setState(useStore.getState().inGame ? { lobby } : { lobby, screen: 'lobby' });
   };
   return (
     <MenuScreen title="JOIN GAME" back="play">

@@ -26,7 +26,8 @@ export function ServersScreen() {
 
   const join = async (lobbyId: string) => {
     const lobby = await attempt(call('lobby:join', { lobbyId }));
-    if (lobby) useStore.setState({ lobby, screen: 'lobby' });
+    // retour dans une partie en cours : l'écran de jeu a déjà été ouvert par session:state
+    if (lobby) useStore.setState(useStore.getState().inGame ? { lobby } : { lobby, screen: 'lobby' });
   };
 
   return (

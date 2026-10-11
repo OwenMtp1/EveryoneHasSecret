@@ -101,7 +101,7 @@ export function FriendsScreen() {
                   className="btn btn-ghost btn-sm"
                   onClick={async () => {
                     const l = await attempt(call('lobby:join', { lobbyId: f.lobbyId! }));
-                    if (l) useStore.setState({ lobby: l, screen: 'lobby' });
+                    if (l) useStore.setState(useStore.getState().inGame ? { lobby: l } : { lobby: l, screen: 'lobby' });
                   }}
                 >
                   Rejoindre

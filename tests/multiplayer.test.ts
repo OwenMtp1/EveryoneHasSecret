@@ -215,6 +215,25 @@ test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchr
   assert.equal(full!.you, d.id);
   await waitFor(() => host.lastFull!.players.find((x) => x.id === d.id)?.connected === true);
 
+  // Départ par erreur (« Quitter la partie ») puis retour avec le code : même personnage, même dossier
+  const dossierBefore = full!.dossier!.secret;
+  const posBefore = host.lastFull!.players.find((x) => x.id === d.id)!.pos;
+  await call(s2, 'lobby:leave');
+  await waitFor(() => host.lastFull!.players.find((x) => x.id === d.id)?.connected === false);
+  let back: GameSelfView | undefined;
+  let backSession: { inGame: boolean } | undefined;
+  s2.once('game:full', (v: GameSelfView) => (back = v));
+  s2.once('session:state', (v: { inGame: boolean }) => (backSession = v));
+  const rejoined = await call<LobbyView>(s2, 'lobby:join', { code: lobby.code });
+  assert.equal(rejoined.id, lobby.id);
+  await waitFor(() => back && backSession);
+  assert.equal(backSession!.inGame, true, 'retour direct dans la partie');
+  assert.equal(back!.you, d.id);
+  assert.equal(back!.dossier!.secret, dossierBefore, 'même rôle et même secret');
+  assert.deepEqual(back!.players.find((x) => x.id === d.id)!.pos, posBefore, 'personnage là où il était');
+  await waitFor(() => host.lastFull!.players.find((x) => x.id === d.id)?.connected === true);
+  await waitFor(() => host.lobby?.players.some((p) => p.userId === d.id));
+
   // Joueur d'une AUTRE partie / sans partie : aucun accès à celle-ci
   const outsider = await makeClient('outsider');
   await assert.rejects(call(outsider.socket, 'game:action', { type: 'examine', objectId: 'x' }), /Aucune partie/);

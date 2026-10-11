@@ -245,6 +245,8 @@ export class LobbyManager {
     } else throw new UserError('Partie introuvable.');
 
     if (l.players.some((x) => x.userId === userId)) return this.view(l, userId);
+    // Retour d'un participant déjà admis (parti par erreur) : il retrouve son personnage là où il l'a laissé
+    if (l.game && !l.game.ended && l.game.players.has(userId) && (p.code || l.visibility === 'PUBLIC')) return this.rejoin(l, userId, username);
     if (l.status !== 'WAITING' || l.game) throw new UserError('La partie a déjà commencé.');
     if (l.players.length >= l.maxPlayers) throw new UserError('La partie est complète.');
     this.leaveCurrent(userId);
@@ -264,6 +266,22 @@ export class LobbyManager {
         }
       })
       .catch(() => {});
+    return this.view(l, userId);
+  }
+
+  /** Réintègre un joueur de la partie en cours (même personnage, même état, rien n'est réinitialisé). */
+  private rejoin(l: Lobby, userId: string, username: string): LobbyView {
+    const g = l.game!;
+    this.leaveCurrent(userId);
+    const castId = g.players.get(userId)!.character.castId ?? null;
+    l.players.push({ userId, username, castId, ready: false, joinedAt: Date.now(), connected: true });
+    this.userLobby.set(userId, l.id);
+    l.inGame.add(userId);
+    g.setConnected(userId, true);
+    this.system(l, `${username} revient dans la partie.`);
+    this.emitter.toUser(userId, 'session:state', this.sessionState(userId));
+    this.notifyFriendsOfPresence(userId);
+    this.broadcast(l);
     return this.view(l, userId);
   }
 
