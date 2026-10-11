@@ -183,7 +183,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
     ref: 'group_photo',
     type: 'photo',
     name: 'Photo de groupe encadrée',
-    placement: { kind: 'room', roomId: room(['living', 'hall']) },
+    placement: { kind: 'hidden', roomId: room(['living', 'hall']), furnitureHint: ['buffet', 'commode', 'console', 'tiroir', 'meuble', 'étagère'] },
     content: {
       title: 'Photo de groupe — l’été d’avant',
       lines: ['Tout le groupe, bras dessus bras dessous, devant la villa.', `Au dos, de l’écriture de ${v.first} : ${all.map((p) => `« ${nick.get(p.id)} » = ${p.first}`).join(', ')}.`],
@@ -199,7 +199,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
     ref: 'laptop',
     type: 'laptop',
     name: `Ordinateur de ${v.first}`,
-    placement: { kind: 'room', roomId: room(['office', 'library']) },
+    placement: { kind: 'hidden', roomId: room(['office', 'library']), furnitureHint: ['bureau', 'tiroir', 'secrétaire', 'commode', 'placard'] },
     lock: { kind: 'code', code: password, hint: 'Mot de passe' },
     content: {
       title: `Ordinateur de ${v.full}`,
@@ -223,7 +223,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
   const cardLines = [`${formatClock(photoAt)} — ${PLACES[mPlace].name} : ${presentAtM.map((p) => p.first).join(', ')} trinquent. La chaise de ${m.first} est vide.`];
   const cardPhotos = [{ castIds: presentAtM.map((p) => p.castId), scene: PLACES[mPlace].photoScene, caption: `${formatClock(photoAt)}`, seed: ctx.seed() }];
   const cardFacts: Fact[] = [...presentAtM.map((p) => ({ kind: 'place' as const, playerId: p.id, place: mPlace, at: photoAt })), { kind: 'absent', playerId: m.id, place: mPlace, at: photoAt }];
-  add({ ref: 'camera', type: 'camera', name: `Appareil photo de ${shooter.first}`, placement: { kind: 'room', roomId: room(['living', 'guestroom', 'hall']) }, insertedRef: 'card' });
+  add({ ref: 'camera', type: 'camera', name: `Appareil photo de ${shooter.first}`, placement: { kind: 'hidden', roomId: room(['living', 'guestroom', 'hall']), furnitureHint: ['armoire', 'placard', 'commode', 'penderie', 'manteau'] }, insertedRef: 'card' });
   add({
     ref: 'card',
     type: 'memory_card',

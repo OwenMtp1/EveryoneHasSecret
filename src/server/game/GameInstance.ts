@@ -30,6 +30,7 @@ import type { GameAction } from '@shared/protocol';
 import { GAME_CONFIG, META_CONFIG, formatClock } from '@shared/config';
 import {
   PLAYER_SPAWNS,
+  allFurniture,
   adjacentRooms,
   stepMove,
   buildWorldGrid,
@@ -217,13 +218,18 @@ export class GameInstance {
       if (def.eventOnly || !def.spawnRooms.length || this.rnd() > def.spawnChance) continue;
       const roomId = pick(def.spawnRooms.filter((r) => roomById(r)), this.rnd);
       if (!roomId) continue;
+      // la plupart sont rangés (armoires, tiroirs, placards…) : il faut fouiller, peu traînent par terre
+      const spots = allFurniture().filter((f) => f.roomId === roomId && f.hiding);
+      const f = spots.length && this.rnd() < 0.75 ? pick(spots, this.rnd) : null;
       const t = randomFreeTile(this.grid, roomId, this.rnd);
       const o: GameObject = {
         id: shortId('o_'),
         type: def.type,
         def: objectTypeDef(def.type)!,
         name: def.name,
-        location: { kind: 'floor', roomId, pos: { x: t.x + (this.rnd() - 0.5) * 0.3, y: t.y + (this.rnd() - 0.5) * 0.3 } },
+        location: f
+          ? { kind: 'hidden', roomId, furnitureId: f.id, pos: { x: f.x + f.w / 2, y: f.y + f.h / 2 } }
+          : { kind: 'floor', roomId, pos: { x: t.x + (this.rnd() - 0.5) * 0.3, y: t.y + (this.rnd() - 0.5) * 0.3 } },
         spawnRoomId: roomId,
         history: [{ clock: this.clock(), text: `Présent — ${roomName(roomId)}` }],
         traces: [],
