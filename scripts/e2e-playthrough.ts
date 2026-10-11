@@ -161,6 +161,15 @@ await shot(page, '01-salon-galerie');
 
 // ── lancement : chargement, cinématique, découverte du corps ──
 await call(host, 'lobby:start');
+// captures de la cinématique d'arrivée (E2E_INTRO_AT=ms,ms… depuis la fin du chargement)
+if (process.env.E2E_INTRO_AT) {
+  await page.waitForFunction(() => document.querySelector('.intro') && !document.querySelector('.intro-preload'), undefined, { timeout: 240000 });
+  const t0 = Date.now();
+  for (const at of process.env.E2E_INTRO_AT.split(',').map(Number)) {
+    await sleep(Math.max(0, at - (Date.now() - t0)));
+    await shot(page, `00-intro-${at}`);
+  }
+}
 await waitFor('vue de partie', () => host.view && b.view && c.view, 180000);
 log('partie lancée — scénario', host.view!.caseInfo?.scenarioTitle);
 await page.waitForFunction(() => document.querySelector('.hud-top'), undefined, { timeout: 240000 });

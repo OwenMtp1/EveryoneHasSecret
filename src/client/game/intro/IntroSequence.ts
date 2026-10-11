@@ -304,7 +304,7 @@ export class IntroSequence {
       // occupants : attention vers la villa, bras du conducteur
       const target = state === 'INTRO_POINT' ? 1 : ORDER.indexOf(state) > ORDER.indexOf('INTRO_POINT') ? 1 : 0;
       ctl.attention += (target - ctl.attention) * Math.min(1, dt * 2.5);
-      const pointTarget = state === 'INTRO_POINT' ? (u > 0.12 && u < 0.85 ? 1 : 0) : 0;
+      const pointTarget = state === 'INTRO_POINT' ? (u > 0.08 && u < 0.92 ? 1 : 0) : 0;
       ctl.point += (pointTarget - ctl.point) * Math.min(1, dt * 4);
       cast.update(dt);
       // caméra

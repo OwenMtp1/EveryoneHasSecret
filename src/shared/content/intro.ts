@@ -25,11 +25,11 @@ export type GameIntroState = 'INTRO_START' | 'INTRO_CAR' | 'INTRO_POINT' | 'INTR
 
 /** Chronologie : part de la durée totale consacrée à chaque état (somme = 1). GAME_START = fin. */
 export const INTRO_TIMELINE: { state: Exclude<GameIntroState, 'GAME_START'>; share: number }[] = [
-  { state: 'INTRO_START', share: 0.07 },
-  { state: 'INTRO_CAR', share: 0.33 },
-  { state: 'INTRO_POINT', share: 0.12 },
-  { state: 'INTRO_REVEAL', share: 0.22 },
-  { state: 'INTRO_VILLA', share: 0.26 },
+  { state: 'INTRO_START', share: 0.05 },
+  { state: 'INTRO_CAR', share: 0.3 },
+  { state: 'INTRO_POINT', share: 0.24 },
+  { state: 'INTRO_REVEAL', share: 0.19 },
+  { state: 'INTRO_VILLA', share: 0.22 },
 ];
 
 /** Animations de passagers (procédurales, superposées à l'animation d'attente). */

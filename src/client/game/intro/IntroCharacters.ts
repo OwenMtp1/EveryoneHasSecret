@@ -102,9 +102,37 @@ function animationPose(anim: IntroAnimation, t: number, inward: number, roomy: b
 const ATTENTION: Pose = mix([LAP, 1], [{ Spine: { bend: 0.12 }, Neck: { bend: -0.05 }, Head: { bend: -0.04 } }, 1]);
 /** Le conducteur garde la main gauche sur le volant et tend le bras droit vers la villa */
 const POINTING: Pose = mix(
-  [arms([0.1, 1.0, 1], [0.05, 1.0, 1], [-0.15, -0.55, 0.8], [-0.25, 0.12, 1]), 1],
-  [{ Head: { bend: -0.08 } }, 1],
+  // bras quasi tendu à hauteur d'épaule, vers le pare-brise : bien lisible depuis l'arrière
+  [arms([-0.22, 0.14, 1], [-0.24, 0.2, 1], [-0.15, -0.55, 0.8], [-0.25, 0.12, 1]), 1],
+  [{ Head: { bend: -0.1, turn: 0.08 }, Spine: { bend: 0.1 } }, 1],
 );
+
+/**
+ * Main droite du conducteur (squelette Rocketbox, doigts repliés autour de +Z local) : poignet dans l'axe,
+ * index tendu, autres doigts en poing. Cibles absolues mêlées à l'animation du frame (pas d'accumulation).
+ */
+const q = (x: number, y: number, z: number) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z));
+const HAND_TARGETS: [RegExp, THREE.Quaternion][] = [
+  [/^R_Hand$/, new THREE.Quaternion(0.715, -0.012, 0.036, 0.698).normalize()], // poignet droit (pose de liaison)
+  [/^R_Finger1$/, q(0, 0, -0.05)],
+  [/^R_Finger1[12]$/, q(0, 0, 0)],
+  [/^R_Finger[234]$/, q(0.1, 0, 1.45)],
+  [/^R_Finger[234][12]$/, q(0, 0, 1.5)],
+  [/^R_Finger0[12]$/, q(0, 0, 0.7)],
+];
+const handCache = new WeakMap<THREE.Object3D, [THREE.Object3D, THREE.Quaternion][]>();
+function pointHand(root: THREE.Object3D, w: number) {
+  let list = handCache.get(root);
+  if (!list) {
+    list = [];
+    root.traverse((o) => {
+      const t = HAND_TARGETS.find(([re]) => re.test(o.name));
+      if (t) list!.push([o, t[1]]);
+    });
+    handCache.set(root, list);
+  }
+  for (const [b, t] of list) b.quaternion.slerp(t, w);
+}
 
 export interface IntroCast {
   group: THREE.Group;
@@ -154,6 +182,9 @@ export function buildIntroCast(plan: IntroPlan, vehicle: VehicleDefinition, ctl:
     members,
     update(dt) {
       for (const m of members) m.ch.update(dt, 0);
+      // index pointé (le modèle du catalogue peut avoir remplacé le repli : racine relue à chaque image)
+      const driver = members.find((m) => m.userId === plan.driverId);
+      if (driver && ctl.point > 0.01) driver.ch.root.traverse((o) => o.name.startsWith('cast:') && pointHand(o, ctl.point));
     },
     dispose() {
       for (const m of members) m.ch.dispose();

@@ -56,7 +56,7 @@ export class LobbyManager {
   private disconnectTimers = new Map<string, NodeJS.Timeout>();
   /** Accélération (tests) : durée de la nuit et de la cinématique d'arrivée (15–25 s en jeu réel). */
   timeScale = Number(process.env.EHAS_TIME_SCALE ?? 1);
-  transitionMs = Number(process.env.EHAS_TRANSITION_MS ?? 20000);
+  transitionMs = Number(process.env.EHAS_TRANSITION_MS ?? 34000);
   /** Attente maximale du chargement de tous les joueurs avant de lancer la cinématique quand même. */
   loadTimeoutMs = Number(process.env.EHAS_LOAD_TIMEOUT_MS ?? 30000);
 

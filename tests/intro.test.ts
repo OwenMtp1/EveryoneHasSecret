@@ -36,7 +36,7 @@ test('véhicule selon le nombre de joueurs : voiture 2–4, minibus 5–8', () =
 for (const n of [2, 4, 5, 8]) {
   test(`plan de cinématique pour ${n} joueurs : places uniques, un conducteur, déterministe`, () => {
     const players = fakePlayers(n);
-    const plan = buildIntroPlan(players, { id: 'p', seed: 1234 + n, startedAt: 0, durationMs: 20000 });
+    const plan = buildIntroPlan(players, { id: 'p', seed: 1234 + n, startedAt: 0, durationMs: 34000 });
     const vehicle = VEHICLES.find((v) => v.id === plan.vehicleId)!;
     assert.equal(vehicle.id, n <= 4 ? 'car' : 'minibus');
     assert.equal(plan.occupants.length, n, 'tout le monde est dans le véhicule');
@@ -49,7 +49,7 @@ for (const n of [2, 4, 5, 8]) {
     assert.ok(plan.occupants.filter((o) => o.userId !== plan.driverId).every((o) => o.animation !== 'drive'));
     if (n >= 4) assert.ok(new Set(plan.occupants.map((o) => o.animation)).size >= 3, 'animations variées');
     // même graine → même plan (tous les clients voient la même chose)
-    assert.deepEqual(buildIntroPlan(players, { id: 'p', seed: 1234 + n, startedAt: 0, durationMs: 20000 }), plan);
+    assert.deepEqual(buildIntroPlan(players, { id: 'p', seed: 1234 + n, startedAt: 0, durationMs: 34000 }), plan);
   });
 }
 
@@ -60,14 +60,14 @@ test('le conducteur varie selon la graine', () => {
 });
 
 test('chronologie : états dans l’ordre, de 0 à la durée totale', () => {
-  const sched = introSchedule(20000);
+  const sched = introSchedule(34000);
   assert.deepEqual(sched.map((s) => s.state), ['INTRO_START', 'INTRO_CAR', 'INTRO_POINT', 'INTRO_REVEAL', 'INTRO_VILLA', 'GAME_START']);
   assert.equal(sched[0].at, 0);
-  assert.equal(sched[sched.length - 1].at, 20000);
+  assert.equal(sched[sched.length - 1].at, 34000);
   for (let i = 1; i < sched.length; i++) assert.ok(sched[i].at > sched[i - 1].at);
-  assert.equal(introStateAt(20000, 0), 'INTRO_START');
-  assert.equal(introStateAt(20000, 19999), 'INTRO_VILLA');
-  assert.equal(introStateAt(20000, 20000), 'GAME_START');
+  assert.equal(introStateAt(34000, 0), 'INTRO_START');
+  assert.equal(introStateAt(34000, 33999), 'INTRO_VILLA');
+  assert.equal(introStateAt(34000, 34000), 'GAME_START');
 });
 
 // ───────────── synchronisation réelle ─────────────

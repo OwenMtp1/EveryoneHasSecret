@@ -1,6 +1,6 @@
 # Cinématique d'arrivée — Villa Beaumont
 
-Vraie scène 3D temps réel (pas une vidéo), 15–25 s (`EHAS_TRANSITION_MS`, 20 s par défaut), qui sert à la fois
+Vraie scène 3D temps réel (pas une vidéo), ≈34 s (`EHAS_TRANSITION_MS`, 34 s par défaut ; ≈8 s de plan sur le conducteur qui montre la villa), qui sert à la fois
 d'introduction narrative et d'écran de chargement. Ton : 90 % soirée, 10 % malaise.
 
 ## Autorité serveur

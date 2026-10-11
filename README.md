@@ -36,7 +36,7 @@ pour des comptes qui ne disparaissent jamais : [docs/SUPABASE.md](docs/SUPABASE.
 | `EHAS_DB` | `data/ehas.sqlite` | Fichier SQLite du mode local |
 | `EHAS_ALLOWED_ORIGINS` | — | Origines supplémentaires autorisées pour le temps réel |
 | `EHAS_TIME_SCALE` | `1` | < 1 accélère toute la nuit (tests) |
-| `EHAS_TRANSITION_MS` | `20000` | Durée de la cinématique d’arrivée |
+| `EHAS_TRANSITION_MS` | `34000` | Durée de la cinématique d’arrivée |
 | `EHAS_LOAD_TIMEOUT_MS` | `30000` | Attente maximale du chargement de tous les joueurs |
 | `EHAS_AUTH_RATE_PER_MIN` | `20` | Tentatives d’authentification par minute et par IP |
 
