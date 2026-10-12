@@ -131,6 +131,20 @@ La qualité adaptative baisse d'un niveau si l'image dépasse ~28 ms. **Non mesu
 | U15 | épilogue : « Revoir la nuit », trajets de chacun sur le plan des quatre niveaux (une position toutes les 3 s), meurtrier entouré, morts marquées, lecture / pause / vitesse | partie automatisée (rejeu affiché) |
 | — | français : « au restaurant », « au bar » (contractions des lieux) | relecture |
 
+## Phase 3 de l’audit — « Faire grandir »
+
+| Code | Changement | Vérifié par |
+|---|---|---|
+| A1 | **compte invité** : « Jouer en invité » sur l’écran d’accueil (prénom facultatif → pseudo `Prénom-1234`, secret aléatoire haché, session liée au navigateur). En mode Supabase : connexion anonyme Supabase, **à activer dans le projet** (Authentication → Providers → Anonymous) | test serveur (mode local) ; Supabase : non testé (aucun projet distant configuré) |
+| A1 | **lien d’invitation** `?join=CODE` : le code survit à l’écran de connexion, le joueur arrive directement dans le salon | vérification manuelle |
+| A7/A8 | salon : « 🔗 Inviter » (partage natif sur téléphone, sinon copie du lien) et « Discord » (message prêt à coller avec lien et code). Pas de bot Discord | vérification manuelle |
+| A2 | **joueurs IA** ajoutés par l’hôte dans les places libres : se déplacent avec les mêmes règles, fouillent, déclarent un alibi (le meurtrier tait son absence), répondent ou se taisent à un interrogatoire, votent d’après les alibis publics (innocents) ou selon leur camp, parlent un peu dans le chat ; le meurtrier IA saisit parfois une occasion. Ils ne comptent pas dans les statistiques ni l’historique | test serveur (nuit complète à 3 IA) |
+| A4 | **tactile** (détecté automatiquement) : joystick (à fond = courir), glisser à droite pour regarder, boutons E / roue / téléphone / chat | vérification manuelle (pas d’écran tactile ici) |
+| A5 | **manette** (API Gamepad) : stick gauche bouger, stick droit regarder, A interagir, X roue, Y téléphone, B retour, LB/RB objets empilés, Start menu | vérification manuelle |
+| S4 | **4e affaire « La Dernière Toile »** : faux tableau vendu aux enchères, original revendu à Genève ; 7 secrets d’innocents, analyse des pigments, catalogue de galerie, échanges avec le faussaire | tests serveur (toutes les vérifications par scénario) |
+| G10 | **progression** : 100 XP par nuit, +150 par victoire, niveaux et titres (Témoin, Fouineur·se, Enquêteur·rice, Inspecteur·rice, Commissaire, Légende de la villa) sur le profil ; gain affiché à l’épilogue. Calculé à partir des statistiques existantes (aucune migration) | test unitaire |
+| O3 | éclairage précalculé : **non fait**. Les meubles sont fusionnés par matériau sans second jeu de coordonnées de texture ; précalculer des lightmaps demanderait de refaire la construction de la villa. Les ombres de contact précalculées (phase map) couvrent déjà l’essentiel du gain visuel | — |
+
 ## D. Bloqué par une autorisation ou une ressource
 
 | Élément | Ce qui manque | Ce qui est prêt |

@@ -779,3 +779,24 @@ kbd {
 .phone-leads li.done { color: rgba(255, 255, 255, 0.4); text-decoration: line-through; }
 .phone-home { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); width: 110px; height: 5px; border-radius: 3px; border: 0; background: rgba(255, 255, 255, 0.5); cursor: pointer; }
 @media (max-width: 560px) { .phone-backdrop { justify-content: center; padding-bottom: 90px; } }
+.guest-panel { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.guest-panel .row { display: flex; gap: 8px; }
+.guest-panel input { flex: 1; min-width: 0; }
+.roster-item.add-bot { cursor: pointer; color: var(--gold-2); font: inherit; font-size: 13px; text-align: left; }
+.roster-item.add-bot:hover { border-color: var(--line-strong); }
+
+/* Commandes tactiles */
+.touch-layer { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.touch-look { position: absolute; top: 60px; right: 0; bottom: 0; width: 55%; pointer-events: auto; touch-action: none; }
+.touch-stick { position: absolute; left: 22px; bottom: 34px; width: 130px; height: 130px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.18); pointer-events: auto; touch-action: none; display: grid; place-items: center; }
+.touch-knob { width: 56px; height: 56px; border-radius: 50%; background: rgba(227, 200, 138, 0.55); border: 2px solid rgba(255, 255, 255, 0.5); }
+.touch-buttons { position: absolute; right: 86px; bottom: 30px; display: grid; grid-template-columns: repeat(2, 58px); gap: 10px; pointer-events: auto; }
+.touch-btn { width: 58px; height: 58px; border-radius: 50%; background: rgba(14, 16, 22, 0.7); border: 2px solid var(--line-strong); color: #f1e7d0; font: 600 20px/1 inherit; touch-action: manipulation; }
+.touch-btn.big { grid-column: span 2; width: 100%; border-radius: 30px; background: rgba(227, 200, 138, 0.3); }
+.is-touch .cam-hint { display: none; }
+.progression { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.progression-head { display: flex; gap: 10px; align-items: baseline; }
+.progression-level { font-size: 11px; letter-spacing: 0.08em; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line-strong); color: var(--gold-2); }
+.progression-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.progression-bar > div { height: 100%; background: linear-gradient(90deg, #b8913e, var(--gold-2)); }
+.xp-gain { margin-left: 8px; color: var(--gold-2); font-weight: 600; }

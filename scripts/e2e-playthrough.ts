@@ -5,7 +5,7 @@
  *  - Deux autres joueurs sont des clients temps réel (mêmes événements que le navigateur).
  *  - Les déplacements suivent les règles du serveur (scripts/lib/walk.ts), escaliers compris.
  *
- *   EHAS_DB=/tmp/e2e.sqlite EHAS_TRANSITION_MS=2500 EHAS_LOAD_TIMEOUT_MS=90000 PORT=3001 npm start
+ *   EHAS_DB=/tmp/e2e.sqlite EHAS_TIME_SCALE=2 EHAS_TRANSITION_MS=2500 EHAS_LOAD_TIMEOUT_MS=90000 PORT=3001 npm start
  *   node --import tsx scripts/e2e-playthrough.ts
  *
  * Variables : E2E_BASE (défaut http://localhost:3001), CHROMIUM_PATH, E2E_SHOTS (défaut screenshots/).
@@ -181,8 +181,16 @@ const banner = page.waitForFunction(() => document.querySelector('.evening-banne
   () => errors.push('BUG : aucune annonce de la soirée affichée'),
 );
 // carte de rôle : une fois le plan sur le corps terminé, puis fermée d'un clic
-await page.waitForFunction(() => document.querySelector('.rolecard'), undefined, { timeout: 90000 }).then(
-  async () => (log('carte de rôle affichée :', await page.evaluate(() => document.querySelector('.rolecard-camp')?.textContent)), await shot(page, '02c-carte-de-role'), await page.evaluate(() => (document.querySelector('.rolecard-backdrop') as HTMLElement | null)?.click())),
+// (rendu logiciel lent : la carte peut déjà s'être refermée d'elle-même — elle note alors son passage)
+await page.waitForFunction(() => document.querySelector('.rolecard') || Object.keys(sessionStorage).some((k) => k.startsWith('ehas.rolecard.')), undefined, { timeout: 90000 }).then(
+  async () => {
+    const camp = await page.evaluate(() => document.querySelector('.rolecard-camp')?.textContent ?? null);
+    if (camp) {
+      log('carte de rôle affichée :', camp);
+      await shot(page, '02c-carte-de-role');
+      await page.evaluate(() => (document.querySelector('.rolecard-backdrop') as HTMLElement | null)?.click());
+    } else log('carte de rôle déjà affichée puis refermée (marque de session présente)');
+  },
   () => errors.push('BUG : carte de rôle absente'),
 );
 await sleep(3000);

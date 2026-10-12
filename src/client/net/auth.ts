@@ -114,6 +114,11 @@ export const supabaseAuth = {
     const { error } = await requireSupabase().auth.signInWithPassword({ email, password });
     if (error) throw new Error(frenchError(error.message, error.status));
   },
+  /** Invité : session anonyme Supabase (à activer dans le projet : Authentication → Sign In / Providers → Anonymous). */
+  async signInAnonymously() {
+    const { error } = await requireSupabase().auth.signInAnonymously();
+    if (error) throw new Error(/anonymous/i.test(error.message) ? 'Les parties en invité ne sont pas activées sur ce serveur.' : frenchError(error.message, error.status));
+  },
   async signOut() {
     await supabase?.auth.signOut().catch(() => {});
   },

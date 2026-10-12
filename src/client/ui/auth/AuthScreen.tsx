@@ -81,10 +81,36 @@ export function AuthScreen() {
     }
   };
 
+  const [guestName, setGuestName] = useState('');
+  const playAsGuest = async () => {
+    audio.unlock();
+    setError(null);
+    setBusy(true);
+    try {
+      if (supabase) await supabaseAuth.signInAnonymously();
+      else tokenStore.set((await api.guest(guestName.trim())).token);
+      await onAuthenticated();
+    } catch (err) {
+      setError((err as Error).message);
+      audio.error();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const invited = /[?&]join=/.test(location.search);
+
   return (
     <div className="auth-screen fade-in">
       <Logo />
       <p className="tagline">{GAME_TAGLINE}</p>
+      <div className="panel auth-panel guest-panel">
+        <strong>{invited ? 'Vous êtes invité·e à une partie' : 'Jouer tout de suite'}</strong>
+        <span className="small muted">Sans e-mail ni mot de passe : un compte invité lié à ce navigateur.</span>
+        <div className="row">
+          {!supabase && <input value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Votre prénom (facultatif)" maxLength={15} name="guest" aria-label="Prénom" />}
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={playAsGuest}>JOUER EN INVITÉ</button>
+        </div>
+      </div>
       <form className="panel auth-panel" onSubmit={submit}>
         <div className="tabs">
           <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Connexion</button>

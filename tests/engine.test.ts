@@ -12,9 +12,9 @@ import { allFurniture, roomById } from '../src/shared/content/villa';
 import type { GameObject, PlayerState } from '../src/server/game/state';
 import type { GameAction } from '../src/shared/protocol';
 
-const SCENARIOS = ['pacte', 'mensonges', 'testament'] as const;
+const SCENARIOS = ['pacte', 'mensonges', 'testament', 'toile'] as const;
 
-function makeGame(n = 4, seed = 42, scenarioId?: string) {
+function makeGame(n = 4, seed = 42, scenarioId?: string, bots = 0) {
   let t = 1_000_000;
   let finished = false;
   const g = new GameInstance({
@@ -33,6 +33,7 @@ function makeGame(n = 4, seed = 42, scenarioId?: string) {
     scenarioId,
     manual: true,
     now: () => t,
+    botIds: Array.from({ length: bots }, (_, i) => `p${n - 1 - i}`),
   });
   const advance = (ms: number, step = 50) => {
     for (let i = 0; i < ms; i += step) {
@@ -545,6 +546,18 @@ test('événements de la soirée : deux, annoncés à tous, sans nommer le meurt
     assert.ok(evs.length >= 1 && evs.length <= 2, `seed ${seed} : ${evs.length} événements`);
     for (const e of evs) assert.ok(!String(e.text).includes(murderer().name), 'un événement ne désigne jamais le meurtrier');
   }
+});
+
+test('joueurs IA : se déplacent, fouillent, déclarent un alibi, votent ; la nuit va à son terme', () => {
+  const { g, advance } = makeGame(4, 5, 'pacte', 3);
+  advance(Math.ceil((40 + 900) * 1000 * 0.05) + 20_000, 50);
+  const bots = [...g.bots.keys()];
+  assert.equal(bots.length, 3);
+  const searched = g.truth.filter((e) => e.type === 'FURNITURE_SEARCHED' && bots.includes(String(e.actorId)));
+  assert.ok(searched.length >= 3, `fouilles des IA : ${searched.length}`);
+  for (const id of bots) assert.ok(g.caseSystem.alibis.has(id) || !g.players.get(id)!.alive, 'chaque IA vivante a déclaré un alibi');
+  assert.ok(g.truth.some((e) => e.type === 'VOTE_CAST' && bots.includes(String(e.actorId))), 'les IA votent à la délibération');
+  assert.ok(g.ended, 'la partie se termine');
 });
 
 // ───────────────────────── menu Échap : version de l'histoire, premier choix ─────────────────────────

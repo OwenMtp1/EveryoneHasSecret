@@ -41,7 +41,7 @@ export function RoleCard({ ready }: { ready: boolean }) {
   }, [ready, gameId, hasDossier]);
   useEffect(() => {
     if (!open) return;
-    const t = setTimeout(() => setOpen(false), 12000);
+    const t = setTimeout(() => setOpen(false), 20000);
     const key = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'Escape' || e.code === 'Enter') {
         e.preventDefault();

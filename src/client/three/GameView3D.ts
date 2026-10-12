@@ -429,9 +429,55 @@ export class GameView3D {
   }
 
   /** Direction monde (x, z) à partir des touches et de l'orientation de la caméra. */
+  // ───────────── tactile et manette ─────────────
+
+  private stick = { r: 0, f: 0 };
+  private padPrev: boolean[] = [];
+  private padRun = false;
+  /** Bouton de manette pressé (A, X, B, Y, LB, RB, Start) : traduit en action par l'écran de jeu. */
+  onPadButton: (b: 'interact' | 'wheel' | 'back' | 'phone' | 'prev' | 'next' | 'menu') => void = () => {};
+
+  /** Joystick virtuel / stick gauche : r = droite, f = avant (−1…1). Au-delà de 90 % on court. */
+  setStick(r: number, f: number) {
+    this.stick = { r, f };
+    const run = Math.hypot(r, f) > 0.92;
+    if (run !== this.padRun) {
+      this.padRun = run;
+      this.running = run;
+    }
+    this.sendInput();
+  }
+
+  /** Regard (glisser au doigt, stick droit) : radians de lacet et de tangage. */
+  look(dYaw: number, dPitch: number) {
+    this.yaw -= dYaw;
+    if (this.mode === 'third') this.tpPitch = THREE.MathUtils.clamp(this.tpPitch + dPitch, -0.15, 1.25);
+    else this.fpPitch = THREE.MathUtils.clamp(this.fpPitch - dPitch, -1.3, 1.3);
+  }
+
+  /** Manette (API Gamepad) : interrogée à chaque image, sans configuration. */
+  private pollGamepad(dt: number) {
+    const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+    const pad = [...pads].find((x) => x && x.connected);
+    if (!pad) return;
+    const dz = (v: number) => (Math.abs(v) < 0.18 ? 0 : v);
+    const lx = dz(pad.axes[0] ?? 0);
+    const ly = dz(pad.axes[1] ?? 0);
+    if (lx || ly || this.stick.r || this.stick.f) this.setStick(lx, -ly);
+    const rx = dz(pad.axes[2] ?? 0);
+    const ry = dz(pad.axes[3] ?? 0);
+    if (rx || ry) this.look(rx * dt * 2.6, ry * dt * 1.8);
+    const map: [number, Parameters<GameView3D['onPadButton']>[0]][] = [[0, 'interact'], [2, 'wheel'], [1, 'back'], [3, 'phone'], [4, 'prev'], [5, 'next'], [9, 'menu']];
+    for (const [i, name] of map) {
+      const down = !!pad.buttons[i]?.pressed;
+      if (down && !this.padPrev[i]) this.onPadButton(name);
+      this.padPrev[i] = down;
+    }
+  }
+
   private sendInput(force = false) {
-    let f = 0;
-    let r = 0;
+    let f = this.stick.f;
+    let r = this.stick.r;
     for (const k of this.pressed) {
       f += MOVE_KEYS[k][1];
       r += MOVE_KEYS[k][0];
@@ -1001,6 +1047,7 @@ export class GameView3D {
       this.nextLightning = t + 10 + Math.random() * 18;
     }
     this.trackPerformance();
+    this.pollGamepad(this.lastDt);
     const blackout = this.view?.blackout;
     this.hemi.intensity = (blackout ? 0.06 : 0.38) + this.flash * 2.2;
     this.moon.intensity = (blackout ? 0.18 : 1.15) + this.flash * 1.8;

@@ -96,6 +96,15 @@ ou fait dans les vues, pour les 3 scénarios et 3 à 8 joueurs) et par inspectio
 - Codes : 3 erreurs → verrouillage de 30 s. Accusations : limitées, espacées, pièce lue obligatoire (sans oracle sur son sens).
 - `npm audit` : 0 vulnérabilité (rollup épinglé en 4.59.1).
 
+## 4 bis. Joueurs IA, invités, invitations
+
+- `server/game/bots.ts` : un `BotBrain` par joueur IA, appelé à chaque pas de simulation (suivi de chemin) et chaque
+  seconde (décisions). Il n'utilise que les actions publiques du jeu (`GameInstance.action`, `setInput`, `sendChat`) et le
+  chemin à pied partagé `shared/content/walk.ts` (mêmes règles que les humains). Les IA sont des joueurs du salon marqués
+  `bot` (jamais dans `inGame`, jamais dans les statistiques ni l'historique).
+- Compte invité : `POST /api/auth/guest` (mode local) ; Supabase : connexion anonyme côté client.
+- Lien `?join=CODE` : lu au chargement (`store.ts`), conservé en `sessionStorage`, utilisé à la première connexion du socket.
+
 ## 5. Performance
 
 - Simulation 8 joueurs : ~0,03 ms par tick, ~0,2 ms pour construire toutes les vues (`scripts/bench-server.ts`).
@@ -107,6 +116,7 @@ ou fait dans les vues, pour les 3 scénarios et 3 à 8 joueurs) et par inspectio
   (ombres, résolution), niveaux éloignés masqués, lumières du seul niveau du joueur,
   géométries/matériaux partagés entre personnages, chargement des modèles à la demande, envoi des entrées ≤ 30/s.
   Le joueur peut imposer un niveau (Paramètres → Qualité graphique) ; F3 affiche images/s, appels de dessin et triangles.
+- Entrées : clavier/souris, tactile (`ui/game/TouchControls.tsx`), manette (`GameView3D.pollGamepad`, API Gamepad).
 - Villa : ombres de contact précalculées (sols, pied des murs, plafonds) en multiplication, valables à tous les niveaux ;
   lumière de la pièce = projecteur ombré + lumière de rebond sous le plafond ; forêt et herbe instanciées.
 - Bundle découpé (`vite.config.ts`, `App.tsx`) : index ≈ 298 Ko, three ≈ 683 Ko, react ≈ 187 Ko, réseau ≈ 262 Ko

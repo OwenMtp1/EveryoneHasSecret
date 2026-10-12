@@ -820,6 +820,18 @@ export class CaseSystem {
     if (v.eligible.size === 0 || [...v.eligible].every((x) => v.ballots.has(x) || !this.g.players.get(x)?.connected)) this.closeVote();
   }
 
+  /** Premier choix d'un joueur (joueurs IA). */
+  stanceOf(id: string) {
+    return this.stances.get(id) ?? null;
+  }
+  /** Protecteur délié du meurtrier (opposition officielle ou secret révélé). */
+  isFreed(id: string) {
+    return this.freedProtectors.has(id) || this.isOpponentOfMurderer(id);
+  }
+  lockedFurnitureIds() {
+    return [...this.furnitureLocks.keys()];
+  }
+
   freePlayers() {
     return [...this.g.players.values()].filter((p) => p.alive && !p.arrested);
   }

@@ -10,7 +10,8 @@ couvre, on s’allie, on trahit, on vote — et chaque acte officiel a des cons�
 
 ```
 Compte (Supabase ou local) → Menu → Créer / rejoindre une partie (code privé ou serveurs publics)
-→ Salon : galerie des 40 personnages (réservation unique), prêt·e, lancement par l’hôte (3 à 8 joueurs)
+→ Salon : galerie des 40 personnages (réservation unique), prêt·e, lancement par l’hôte (3 à 8 joueurs, places libres
+  complétables par des joueurs IA) ; invitation par lien `?join=CODE`, partage, message Discord ; compte invité possible
 → Chargement de la villa et des personnages → Cinématique d’arrivée (22h00) → plan sur le corps
 → Enquête (fouilles, lectures, codes, alibis, dossier commun, accusations, votes)
 → Délibération finale à l’arrivée de la police → Épilogue (toute la vérité) → retour au salon
@@ -43,7 +44,7 @@ analyste numérique (contourne un verrou), enquêteur·rice (exige un témoignag
 annoncé — et recoupe un alibi avec les souvenirs des témoins), profileur·se (tensions sociales). Les résultats d’outils sont
 versés au dossier personnel comme des pièces (horodatées) et peuvent être présentés au dossier commun.
 
-## 4. Les trois scénarios (vérité générée une fois, stable toute la partie)
+## 4. Les scénarios (vérité générée une fois, stable toute la partie)
 
 Commun : à 20h45 le groupe part en ville, la victime reste seule à la villa. Le meurtrier quitte son groupe vers
 21h10 (« cigarettes »), passe à la station-service du col, tue la victime vers 21h25–21h36, cache l’arme, se lave les
@@ -57,6 +58,10 @@ Les cachettes (évier où l’arme est lavée, meubles, pièces des objets clés
 | Mobile | le meurtrier a poussé Théo ; la victime avait une photo de 23h42 | le meurtrier, amoureux en secret, a filmé et publié la vidéo | le meurtrier a détourné l’argent ; la victime avait l’ordre falsifié et les connexions |
 | Pièce décisive | photo de la falaise (clé USB) | fichier original et adresse de récupération du compte (clé USB) | journaux de connexion de la banque (clé USB) |
 | Secrets des innocents (7 possibles) | fausse déposition, téléphone jeté, photos effacées, liaison secrète, assurance, dispute entendue, voiture déplacée | ex trahi·e, personne de la vidéo, premier partage, vente à un site, liaison avec l’ex, témoin muet, cagnotte gardée | identifiants perdus, 5 000 € anonymes, signature imitée, héritier·ère, caisse empruntée, dispute avec Bernard, audit caché |
+
+D — **La Dernière Toile / Le faux de la villa Beaumont** : il y a un an, le groupe a vendu « La Baie au crépuscule »
+240 000 € ; c’était un faux. Le meurtrier avait fait copier la toile et revendu l’original à Genève ; la victime,
+restaurat·eur·rice, l’a prouvé par l’analyse des pigments. Pièce décisive : échanges avec le faussaire et reçu de la galerie.
 
 Le directeur (`server/game/case/director.ts`) adapte tout au nombre réel de joueurs (groupes de la soirée, témoins
 de l’absence du meurtrier, absences d’innocents qui servent de fausses pistes, protecteurs) et aux identifiants internes.
@@ -136,7 +141,12 @@ les arbres, allée. Chaque pièce a au moins deux cachettes ; trois meubles sont
 
 Les relations ne créent **jamais** d’opposition officielle : seuls les trois actes du §7 le font.
 
-## 12. Garde-fous
+## 12. Progression
+
+100 XP par nuit jouée, +150 par victoire ; niveaux (200, 600, 1 200, 2 000 XP…) et titres : Invité·e de passage,
+Témoin, Fouineur·se, Enquêteur·rice, Inspecteur·rice, Commissaire, Légende de la villa (`src/shared/progression.ts`).
+
+## 13. Garde-fous
 
 - La vérité (meurtrier, faits, codes, contenus non lus) reste sur le serveur ; le client ne reçoit que ce que le joueur a découvert.
 - Aucun objet décoratif cliquable « pour rien » : chaque interaction informe, change un état ou a une conséquence.

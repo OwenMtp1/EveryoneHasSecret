@@ -82,6 +82,8 @@ export interface LobbyPlayerView {
   ready: boolean;
   isHost: boolean;
   connected: boolean;
+  /** joueur tenu par l’IA du serveur */
+  bot?: boolean;
 }
 
 export interface LobbyChatMessage {

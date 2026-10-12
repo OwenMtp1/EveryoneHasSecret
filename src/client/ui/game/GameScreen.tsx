@@ -19,6 +19,7 @@ import { DossierTab } from './DossierTab';
 import { RoleCard, LeadsPanel } from './Guidance';
 import { ForceLockGame } from './Minigames';
 import { Phone } from './Phone';
+import { TouchControls, isTouchDevice } from './TouchControls';
 import { InvestigationTab } from '../investigation/InvestigationTab';
 import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker, PauseMenu } from './Overlays';
 
@@ -32,6 +33,7 @@ export function GameScreen() {
   const [camMode, setCamMode] = useState<'third' | 'first'>('third');
   const [showMap, setShowMap] = useState(false);
   const [showPhone, setShowPhone] = useState(false);
+  const [touch] = useState(isTouchDevice);
   const [locked, setLocked] = useState(false);
   const tab = useChatFocus((s) => s.tab);
   const setTab = useChatFocus((s) => s.setTab);
@@ -61,6 +63,23 @@ export function GameScreen() {
     v.onFirstFrame = () => useStore.setState({ gameViewReady: true });
     v.onTarget = (k, stack) => useTarget.getState().set(k, stack);
     v.onGhost = setGhost;
+    // manette : A interagir, X roue, Y téléphone, B retour, LB/RB objets empilés, Start menu
+    v.onPadButton = (b) => {
+      const ui = useChatFocus.getState();
+      if (b === 'menu') return ui.setPaused(!ui.paused);
+      if (b === 'back') {
+        if (usePicker.getState().open) return usePicker.getState().close();
+        if (useMinigame.getState().open) return useMinigame.getState().close();
+        setShowPhone(false);
+        setShowMap(false);
+        return ui.paused ? ui.setPaused(false) : setTab(null);
+      }
+      if (ui.paused || usePicker.getState().open || useMinigame.getState().open) return;
+      if (b === 'interact') triggerTarget(false);
+      else if (b === 'wheel') triggerTarget(true);
+      else if (b === 'phone') setShowPhone((x) => !x);
+      else v.key(b === 'prev' ? 'ArrowLeft' : 'ArrowRight', true);
+    };
     v.onReveal = (on) => {
       setRevealing(on);
       if (on) music.mark('bodyDiscovered');
@@ -222,7 +241,7 @@ export function GameScreen() {
   ];
 
   return (
-    <div className={`game game-full ${game.alive ? '' : 'is-dead'} ${game.blackout ? 'is-blackout' : ''} ${reduced ? 'reduced' : ''}`}>
+    <div className={`game game-full ${touch ? 'is-touch' : ''} ${game.alive ? '' : 'is-dead'} ${game.blackout ? 'is-blackout' : ''} ${reduced ? 'reduced' : ''}`}>
       <div className="view3d" ref={wrapRef} />
 
       <header className="hud-top">
@@ -263,6 +282,15 @@ export function GameScreen() {
       {showMap && <MapOverlay onClose={() => setShowMap(false)} />}
       {showPhone && !ghost && <Phone onClose={() => setShowPhone(false)} onMap={() => setShowMap(true)} />}
 
+      {touch && !ghost && !game.epilogue && (
+        <TouchControls
+          view={() => viewRef.current}
+          onInteract={() => triggerTarget(false)}
+          onWheel={() => triggerTarget(true)}
+          onPhone={() => setShowPhone((x) => !x)}
+          onChat={() => useChatFocus.getState().setChatOpen(true)}
+        />
+      )}
       <nav className="dock">
         {DOCK.map((d, i) => (
           <button key={d.label} className={`dock-btn ${tab === i ? 'active' : ''} ${d.alert ? 'alert' : ''}`} onClick={() => toggleTab(i)} title={`${d.label} (${i + 1})`}>

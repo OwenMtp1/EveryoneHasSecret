@@ -8,6 +8,7 @@
  *  2. CONNAISSANCE : player.knowledge (ce que chacun a vu, entendu, déduit, reçu)
  *  3. VUE      : buildSelfView() — ce que l'écran d'un joueur a le droit d'afficher
  */
+import { BotBrain } from './bots';
 import type {
   BoardEntry,
   ChatChannel,
@@ -61,6 +62,8 @@ import { doorsBetween } from './pathfinding';
 import { pick, seededRandom, shortId, shuffle, UserError } from '../util';
 
 export interface GameInit {
+  /** joueurs tenus par l'IA du serveur */
+  botIds?: string[];
   id: string;
   lobbyId: string;
   title: string;
@@ -128,6 +131,8 @@ export class GameInstance {
   }
   private timers: NodeJS.Timeout[] = [];
   private lastSecondTick = 0;
+  /** joueurs IA (cerveaux côté serveur) */
+  bots = new Map<string, BotBrain>();
   /** trajets de la nuit pour le rejeu de l'épilogue (une image toutes les 3 s, bornée) */
   replayFrames: { clock: number; p: [string, number, number][] }[] = [];
   private replayCountdown = 0;
@@ -198,6 +203,7 @@ export class GameInstance {
     this.assignIdentities();
     this.spawnAmbientObjects();
     this.caseSystem.setup({ victimCastId: init.victimCastId, scenarioId: init.scenarioId });
+    for (const id of init.botIds ?? []) if (this.players.has(id)) this.bots.set(id, new BotBrain(this, id, seededRandom(Math.floor(this.rnd() * 2 ** 31))));
     if (!init.manual) this.start();
     this.log('GAME_STARTED', { text: `La nuit commence — ${this.title}` });
   }
@@ -277,6 +283,7 @@ export class GameInstance {
     const now = this.now();
     const dt = Math.min(0.25, Math.max(0, (now - (this.lastSimAt || now)) / 1000));
     this.lastSimAt = now;
+    for (const b of this.bots.values()) b.steer();
     if (!this.ended) for (const p of this.players.values()) this.simulatePlayer(p, dt);
     if (now - this.lastSecondTick >= 1000) {
       this.lastSecondTick = now;
@@ -298,6 +305,7 @@ export class GameInstance {
         p: [...this.players.values()].filter((p) => p.alive && !p.arrested).map((p) => [p.id, Math.round(p.pos.x * 10) / 10, Math.round(p.pos.y * 10) / 10] as [string, number, number]),
       });
     }
+    if (!this.ended) for (const b of this.bots.values()) b.think((this.now() - this.startedAt) / 1000);
     if (!this.ended) {
       this.recordSightings();
       this.checkBodyDiscovery();

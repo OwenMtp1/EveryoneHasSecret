@@ -51,6 +51,19 @@ export interface Settings {
 }
 
 const SETTINGS_KEY = 'ehas.settings';
+
+/**
+ * Lien d'invitation « ?join=CODE » : le code est mis de côté dès le chargement (il survit à l'écran de connexion),
+ * retiré de l'adresse, puis utilisé une fois le joueur connecté.
+ */
+const PENDING_JOIN_KEY = 'ehas.pendingJoin';
+try {
+  const code = new URLSearchParams(location.search).get('join');
+  if (code && /^[A-Za-z0-9]{4,10}$/.test(code)) sessionStorage.setItem(PENDING_JOIN_KEY, code.toUpperCase());
+} catch {
+  /* stockage indisponible : le code se saisit à la main */
+}
+export const inviteLink = (code: string) => `${location.origin}${location.pathname}?join=${encodeURIComponent(code)}`;
 function loadSettings(): Settings {
   try {
     return { music: 0.4, sfx: 0.6, reducedMotion: false, quality: 'auto', showFps: false, comic: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
@@ -170,6 +183,16 @@ export const useStore = create<AppState>((set, get) => ({
       set({ connected: true });
       get().refreshFriends();
       get().refreshNotifications();
+      let code: string | null = null;
+      try {
+        code = sessionStorage.getItem(PENDING_JOIN_KEY);
+        sessionStorage.removeItem(PENDING_JOIN_KEY);
+        if (/[?&]join=/.test(location.search)) history.replaceState(null, '', location.pathname);
+      } catch {
+        /* rien */
+      }
+      if (code && !get().lobby && !get().inGame)
+        void attempt(call('lobby:join', { code })).then((lobby) => lobby && set(get().inGame ? { lobby } : { lobby, screen: 'lobby' }));
     });
     s.on('disconnect', () => set({ connected: false }));
     let refreshTried = false;

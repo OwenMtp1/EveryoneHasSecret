@@ -1,3 +1,4 @@
+import { progression, XP_PER_GAME, XP_PER_WIN } from '@shared/progression';
 import { useEffect, useState } from 'react';
 import { api } from '../../net/api';
 import { useStore } from '../../store';
@@ -24,6 +25,23 @@ export function ProfileScreen() {
           <h3 className="profile-name">{user?.username}</h3>
           <div className="muted">@{user?.username} · membre depuis {stats ? new Date(stats.createdAt).toLocaleDateString('fr-FR') : '…'}</div>
           <div className="muted small">Votre personnage se choisit dans le salon de chaque partie, parmi 40 invités.</div>
+          {(() => {
+            const pg = progression(stats?.gamesPlayed ?? 0, stats?.gamesWon ?? 0);
+            return (
+              <div className="progression">
+                <div className="progression-head">
+                  <span className="progression-level">Niv. {pg.level}</span>
+                  <strong>{pg.title}</strong>
+                  <span className="muted small">{pg.xp} XP</span>
+                </div>
+                <div className="progression-bar"><div style={{ width: `${Math.round(pg.progress * 100)}%` }} /></div>
+                <div className="muted small">
+                  Encore {pg.toNext} XP avant le niveau {pg.level + 1}
+                  {pg.nextTitle ? ` · « ${pg.nextTitle.title} » au niveau ${pg.nextTitle.level}` : ''} — {XP_PER_GAME} XP par nuit, +{XP_PER_WIN} en cas de victoire.
+                </div>
+              </div>
+            );
+          })()}
           <div className="stats">
             <div>
               <strong>{stats?.gamesPlayed ?? 0}</strong>

@@ -4,6 +4,7 @@ import { useStore, attempt } from '../../store';
 import { call } from '../../net/socket';
 import { Keypad } from './Minigames';
 import { Replay } from './Replay';
+import { xpForGame } from '@shared/progression';
 import { CastPortrait } from '../common/CastPortrait';
 import { EvidenceCard } from './DossierTab';
 import { act, useChatFocus, usePicker } from './helpers';
@@ -350,6 +351,7 @@ export function PauseMenu() {
 export function Epilogue() {
   const game = useStore((s) => s.game);
   const [step, setStep] = useState(0);
+  const [showReplay, setShowReplay] = useState(false);
   const e = game?.epilogue;
   useEffect(() => {
     if (!e) return;
@@ -361,13 +363,14 @@ export function Epilogue() {
   const murderer = game.players.find((p) => p.id === e.murdererId);
   const won = e.outcomes.find((o) => o.playerId === game.you)?.won;
   const leave = () => attempt(call('game:leave'));
-  const [showReplay, setShowReplay] = useState(false);
   return (
     <div className="epilogue">
       <div className="epilogue-inner">
         <div className="epilogue-kicker">ÉPILOGUE — {e.scenarioTitle}</div>
         <h2 className="epilogue-headline">{e.headline}</h2>
-        <div className={won ? 'ok' : 'bad'}>{won ? 'Vous avez gagné.' : 'Vous avez perdu.'} {e.winner === 'innocents' ? 'Victoire des innocents.' : 'Victoire du meurtrier.'}</div>
+        <div className={won ? 'ok' : 'bad'}>
+          {won ? 'Vous avez gagné.' : 'Vous avez perdu.'} {e.winner === 'innocents' ? 'Victoire des innocents.' : 'Victoire du meurtrier.'} <span className="xp-gain">+{xpForGame(!!won)} XP</span>
+        </div>
         {step >= 1 && murderer && (
           <div className="epilogue-culprit fade-in">
             <CastPortrait castId={murderer.character.castId} size={110} variant="card" />

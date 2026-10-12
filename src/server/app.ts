@@ -137,6 +137,11 @@ export function createApp(opts: { dbPath?: string; store?: MetaStore; auth?: Aut
     const r = await auth.login(req.body?.username, req.body?.password);
     return { token: r.token, user: { id: r.user.id, username: r.user.username } };
   }));
+  app.post('/api/auth/guest', route(async (req) => {
+    authLimit(`auth:${req.ip}`);
+    const r = await auth.guest(req.body?.name);
+    return { token: r.token, user: { id: r.user.id, username: r.user.username } };
+  }));
   app.post('/api/auth/logout', route(async (req) => {
     await auth.logout(bearer(req));
     return { ok: true };
@@ -286,6 +291,14 @@ export function createApp(opts: { dbPath?: string; store?: MetaStore; auth?: Aut
     }));
     socket.on('lobby:kick', handle((t: string) => {
       lobbies.kick(userId, String(t));
+      return null;
+    }));
+    socket.on('lobby:add-bot', handle(() => {
+      lobbies.addBot(userId);
+      return null;
+    }));
+    socket.on('lobby:remove-bot', handle((id: string) => {
+      lobbies.removeBot(userId, String(id));
       return null;
     }));
     socket.on('lobby:settings', handle((p) => {

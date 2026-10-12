@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { META_CONFIG, NIGHT_DURATIONS, type NightDuration } from '@shared/config';
 import { call } from '../../net/socket';
-import { attempt, useStore } from '../../store';
+import { attempt, inviteLink, useStore } from '../../store';
 import { Portrait } from '../common/Avatar';
 import { Stage3D } from '../common/Stage3D';
 import { CharacterGallery } from './CharacterGallery';
+
+/** Partage natif (téléphone) ou copie du lien d'invitation. */
+function shareInvite(code: string, name: string) {
+  const url = inviteLink(code);
+  const nav = navigator as Navigator & { share?: (d: { title: string; text: string; url: string }) => Promise<void> };
+  if (nav.share) nav.share({ title: 'Everyone Has a Secret', text: `Rejoins ma partie « ${name} »`, url }).catch(() => {});
+  else navigator.clipboard?.writeText(url).then(() => useStore.getState().flash('Lien d’invitation copié.'));
+}
 
 export function LobbyScreen() {
   const lobby = useStore((s) => s.lobby);
@@ -51,6 +59,18 @@ export function LobbyScreen() {
         <div className="lobby-code" title="Code à partager">
           CODE <strong>{lobby.code}</strong>
           <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(lobby.code).then(() => useStore.getState().flash('Code copié.'))}>Copier</button>
+          <button className="btn btn-ghost btn-sm" title="Lien direct : vos amis arrivent dans ce salon, même sans compte" onClick={() => shareInvite(lobby.code, lobby.name)}>🔗 Inviter</button>
+          <button
+            className="btn btn-ghost btn-sm"
+            title="Message prêt à coller dans Discord"
+            onClick={() =>
+              navigator.clipboard
+                ?.writeText(`🔪 **Everyone Has a Secret** — une nuit à la villa Beaumont, l’un de nous est un meurtrier.\nRejoignez « ${lobby.name} » : ${inviteLink(lobby.code)}\nCode : \`${lobby.code}\``)
+                .then(() => useStore.getState().flash('Message Discord copié.'))
+            }
+          >
+            Discord
+          </button>
         </div>
       </header>
 
@@ -76,10 +96,17 @@ export function LobbyScreen() {
                 {p.character ? `${p.character.firstName} ${p.character.lastName}` : 'Personnage à choisir'} <span className="muted small">@{p.username}</span>
               </span>
               <span className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'PRÊT·E ✓' : 'PAS PRÊT·E'}</span>
-              {isHost && !p.isHost && lobby.status === 'WAITING' && (
+              {isHost && !p.isHost && lobby.status === 'WAITING' && !p.bot && (
                 <button className="kick" title="Expulser" onClick={() => confirm(`Expulser ${p.username} ?`) && attempt(call('lobby:kick', p.userId))}>✕</button>
               )}
+              {isHost && p.bot && lobby.status === 'WAITING' && (
+                <button className="kick" title="Retirer ce joueur IA" onClick={() => attempt(call('lobby:remove-bot', p.userId))}>✕</button>
+              )}
             </div>
+          ) : isHost && lobby.status === 'WAITING' ? (
+            <button key={`empty-${i}`} className="roster-item empty add-bot" title="Un joueur tenu par l’ordinateur : il fouille, déclare un alibi et vote" onClick={() => attempt(call('lobby:add-bot'))}>
+              ＋ Ajouter un joueur IA
+            </button>
           ) : (
             <div key={`empty-${i}`} className="roster-item empty">Place libre</div>
           ),

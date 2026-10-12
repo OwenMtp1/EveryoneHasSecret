@@ -119,6 +119,16 @@ test('authentification : validations, doublons, mauvais mot de passe, session', 
   assert.equal(after.status, 401);
 });
 
+test('compte invité : pseudo dérivé du prénom (accents retirés), session valide, sans mot de passe connu', async () => {
+  const a = await http<{ token: string; user: { username: string } }>('POST', '/api/auth/guest', { name: 'Léa B!' });
+  assert.equal(a.status, 200);
+  assert.match(a.data.user.username, /^LeaB-\d{4}$/);
+  const me = await http<{ user: { username: string } }>('GET', '/api/me', undefined, a.data.token);
+  assert.equal(me.data.user.username, a.data.user.username);
+  const anon = await http<{ user: { username: string } }>('POST', '/api/auth/guest', {});
+  assert.match(anon.data.user.username, /^Joueur-\d{4}$/);
+});
+
 test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchronisée → reconnexion', async () => {
   const [host, b, c, d] = await Promise.all(['owen', 'thomas', 'camille', 'ines'].map(makeClient));
 
@@ -256,6 +266,33 @@ test('parcours multijoueur complet : lobby privé → 4 joueurs → villa synchr
 
   for (const p of [host, b, c]) p.socket.disconnect();
   s2.disconnect();
+});
+
+test('joueurs IA au salon : ajout par l’hôte seulement, toujours prêts, partie lancée avec eux, hors statistiques', async () => {
+  const host = await makeClient('ia_hote');
+  const b = await makeClient('ia_bea');
+  const lobby = await call<LobbyView>(host.socket, 'lobby:create', { name: 'Avec IA', maxPlayers: 4, visibility: 'PRIVATE' });
+  await call(b.socket, 'lobby:join', { code: lobby.code });
+  await assert.rejects(call(b.socket, 'lobby:add-bot'), /hôte/);
+  await call(host.socket, 'lobby:add-bot');
+  await call(host.socket, 'lobby:add-bot');
+  await waitFor(() => host.lobby?.players.filter((p) => p.bot).length === 2);
+  await assert.rejects(call(host.socket, 'lobby:add-bot'), /complète/);
+  const bots = host.lobby!.players.filter((p) => p.bot);
+  assert.ok(bots.every((p) => p.ready && p.castId), 'les IA ont un personnage et sont prêtes');
+  await call(host.socket, 'lobby:remove-bot', bots[1].userId);
+  await call(host.socket, 'lobby:add-bot');
+  await call(host.socket, 'lobby:pick', 'f02');
+  await call(b.socket, 'lobby:pick', 'm04');
+  await call(b.socket, 'lobby:ready', true);
+  await waitFor(() => host.lobby?.canStart);
+  for (const c of [host, b]) c.socket.on('lobby:intro', (p: { plan: { id: string }; loading: boolean }) => p.loading && c.socket.emit('lobby:intro-ready', { planId: p.plan.id }));
+  await call(host.socket, 'lobby:start');
+  await waitFor(() => host.lastFull && b.lastFull, 20000);
+  assert.equal(host.lastFull!.players.length, 4, 'deux humains et deux IA dans la partie');
+  const g = ctx.lobbies.gameOf(host.id)!;
+  assert.equal(g.bots.size, 2);
+  for (const c of [host, b]) c.socket.disconnect();
 });
 
 test('amis : demande, acceptation, invitation à une partie, présence', async () => {

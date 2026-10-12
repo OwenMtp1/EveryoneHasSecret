@@ -92,6 +92,8 @@ export interface ClientToServerEvents {
   /** réserve un personnage du catalogue (null = libérer) ; refusé s'il est déjà pris dans ce salon */
   'lobby:pick': (castId: string | null, ack: Ack<LobbyView>) => void;
   'lobby:kick': (userId: string, ack: Ack<null>) => void;
+  'lobby:add-bot': (ack: Ack<null>) => void;
+  'lobby:remove-bot': (botId: string, ack: Ack<null>) => void;
   'lobby:settings': (
     p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration },
     ack: Ack<null>,

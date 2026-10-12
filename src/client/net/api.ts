@@ -32,6 +32,7 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
 export const api = {
   register: (username: string, password: string) => request<AuthResponse>('POST', '/api/auth/register', { username, password }),
   login: (username: string, password: string) => request<AuthResponse>('POST', '/api/auth/login', { username, password }),
+  guest: (name: string) => request<AuthResponse>('POST', '/api/auth/guest', { name }),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
   me: () => request<MeResponse | PendingProfileResponse>('GET', '/api/me'),
   claimUsername: (username: string) => request<{ user: { id: string; username: string } }>('POST', '/api/profile/username', { username }),

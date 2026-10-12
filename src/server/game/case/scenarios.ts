@@ -1,5 +1,5 @@
 /**
- * Les trois scénarios (SERVEUR UNIQUEMENT : rien de ceci n'est envoyé au navigateur).
+ * Les quatre scénarios (SERVEUR UNIQUEMENT : rien de ceci n'est envoyé au navigateur).
  *
  * Un scénario fournit l'histoire passée, le mobile du meurtrier, les secrets personnels
  * possibles des innocents et les documents qui permettent de reconstituer la vérité.
@@ -46,7 +46,7 @@ export interface InnocentSecret {
 }
 
 export interface ScenarioDef {
-  id: 'pacte' | 'mensonges' | 'testament';
+  id: 'pacte' | 'mensonges' | 'testament' | 'toile';
   title: string;
   subtitle: string;
   murderRooms: string[];
@@ -420,7 +420,126 @@ const testament: ScenarioDef = {
   pastTimeline: ({ m }) => ['Il y a 6 mois, 09/04 — mort de Bernard Aubert.', `14/04, 02:13 — ${m.full} utilise ses identifiants et vire 180 000 € à l’étranger, avec une signature imitée.`],
 };
 
-export const SCENARIOS: ScenarioDef[] = [pacte, mensonges, testament];
+
+// ───────────────────────────────────────── D — La Dernière Toile ─────────────────────────────────────────
+
+const toile: ScenarioDef = {
+  id: 'toile',
+  title: 'La Dernière Toile',
+  subtitle: 'Le faux de la villa Beaumont',
+  murderRooms: ['studio', 'living', 'library'],
+  weapons: ['fire_poker', 'statuette', 'letter_opener'],
+  victimBio: ({ v }) => `${v.full}, restaurat${e(v, 'eur', 'rice')} de tableaux, l’œil le plus sûr de la bande : c’est ${e(v, 'lui', 'elle')} qui avait authentifié « La Baie au crépuscule » avant la vente.`,
+  publicBrief: ({ v }) =>
+    `Il y a un an, vous avez vendu ensemble « La Baie au crépuscule », la toile qui ornait le salon de la villa depuis trois générations : 240 000 € aux enchères, partagés entre vous. ` +
+    `Le mois dernier, ${v.full} a vu la même toile — l’originale — au catalogue d’une galerie de Genève. Ce qui a été vendu aux enchères était donc un faux. ` +
+    `Ce week-end, ${e(v, 'il', 'elle')} vous a prévenus : « Quelqu’un ici a fait peindre une copie et a gardé l’original. Lundi, j’apporte mes analyses à l’expert. » ` +
+    `À 20h45, vous êtes sortis en ville ; ${v.first} est resté${a(v)} à l’atelier. À votre retour vers 22h, ${e(v, 'il', 'elle')} était mort${a(v)}. La route est coupée jusqu’au matin.`,
+  murdererSecret: ({ v }) => ({
+    text:
+      `C’est vous. Avant la vente, vous avez fait peindre une copie de « La Baie au crépuscule » par un faussaire de Marseille et vous avez gardé l’original, revendu ensuite à une galerie de Genève. ` +
+      `${v.first} avait fait analyser les pigments de la toile vendue — un blanc de titane qui n’existait pas en 1890. ${e(v, 'Il', 'Elle')} allait tout montrer lundi. Ce soir, vous êtes revenu·e à la villa.`,
+    reveal: 'avait substitué une copie à « La Baie au crépuscule » et revendu l’original en secret',
+  }),
+  motive: ({ v, m }) => `${m.full} avait fait copier « La Baie au crépuscule », vendu le faux aux enchères et revendu l’original à Genève. ${v.full} en avait la preuve par l’analyse des pigments.`,
+  murdererMessages: () => [
+    { from: 'm', at: 21 * 60 + 2, text: 'Ton analyse peut se tromper. Ne détruis pas tout le monde pour une histoire de peinture.' },
+    { from: 'v', at: 21 * 60 + 4, text: 'Blanc de titane. En 1890. Il n’y a pas d’erreur possible.' },
+    { from: 'm', at: 21 * 60 + 5, text: 'J’arrive. Laisse-moi te montrer quelque chose avant lundi.' },
+  ],
+  innocentSecrets: [
+    {
+      id: 'sold_frame',
+      text: () => `Le cadre d’origine de la toile, en bois doré du XIXe, vous l’avez vendu à un antiquaire sans le dire à personne : 6 000 €.`,
+      reveal: () => 'avait vendu en douce le cadre d’origine de la toile',
+      givesMotive: false,
+      proof: (_c, p) => ({ type: 'receipt', name: 'Facture d’antiquaire', content: { title: 'Facture — Antiquités Lemoine', lines: [`Achat à ${p.full} : cadre en bois doré, fin XIXe — 6 000 € réglés en espèces.`] } }),
+    },
+    {
+      id: 'copyist_friend',
+      text: () => `Vous connaissez le faussaire de Marseille : c’est un ami d’enfance. Vous lui avez donné le numéro de quelqu’un du groupe, il y a deux ans, sans savoir pourquoi.`,
+      reveal: () => 'connaissait le faussaire et lui avait mis quelqu’un du groupe en contact',
+      givesMotive: true,
+      proof: (_c, p) => ({ type: 'letter', name: 'Carte postale de Marseille', content: { title: 'Carte postale — Vieux-Port', lines: [`« ${p.first}, merci pour le contact, le travail est fait. On est quittes. — Tonio »`] } }),
+      phoneMessage: () => 'Je ne savais pas ce qu’il allait faire de ce numéro. Je te le jure.',
+    },
+    {
+      id: 'insurance_claim',
+      text: () => `Vous avez assuré la toile à votre nom, sans prévenir les autres, juste avant la vente. Une prime de 2 000 € que vous n’avez jamais avouée.`,
+      reveal: () => 'avait assuré la toile à son seul nom avant la vente',
+      givesMotive: true,
+      proof: (_c, p) => ({ type: 'report', name: 'Contrat d’assurance', content: { title: 'Contrat — Assurances du Littoral', lines: [`Objet assuré : « La Baie au crépuscule ». Bénéficiaire : ${p.full}. Valeur déclarée : 250 000 €.`] } }),
+    },
+    {
+      id: 'auction_bid',
+      text: () => `Le jour de la vente, vous avez fait monter les enchères avec un complice pour gonfler le prix. Si ça se sait, la vente peut être annulée.`,
+      reveal: () => 'avait truqué les enchères avec un complice',
+      givesMotive: false,
+      proof: (_c, p) => ({ type: 'note', name: 'Mot griffonné', content: { title: 'Mot sur un catalogue de vente', lines: [`« Lot 47 : monte jusqu’à 230, pas plus. — ${p.first} »`] } }),
+      phoneMessage: () => 'Si tu parles des enchères, la vente saute et on rembourse tout. Réfléchis.',
+    },
+    {
+      id: 'damaged_canvas',
+      text: () => `Enfant, vous aviez crevé un coin de la toile avec un ballon. On l’a fait réparer en cachette. Ce coin « restauré » pourrait tout embrouiller.`,
+      reveal: () => 'avait abîmé la toile enfant et fait réparer le coin en cachette',
+      givesMotive: false,
+      proof: (_c, p) => ({ type: 'photo', name: 'Vieille photo', content: { title: 'Photo — le salon, il y a vingt ans', lines: [`Au dos : « ${p.first} et le ballon… le coin en bas à gauche. Ne rien dire à Grand-mère. »`] } }),
+    },
+    {
+      id: 'geneva_trip',
+      text: () => `Vous étiez à Genève il y a huit mois — pour une raison qui n’a rien à voir (un rendez-vous que vous cachez). Mais le billet existe.`,
+      reveal: () => 'était allé·e à Genève en secret il y a huit mois',
+      givesMotive: false,
+      proof: (_c, p) => ({ type: 'receipt', name: 'Billet de train', content: { title: 'Billet — Marseille → Genève', lines: [`Voyageur : ${p.full}. Aller simple, il y a huit mois.`] } }),
+    },
+    {
+      id: 'debt_victim',
+      text: ({ v }) => `Vous deviez 15 000 € à ${v.first}, qui vous les réclamait depuis la vente. Vous n’aviez pas de quoi rembourser.`,
+      reveal: ({ v }) => `devait 15 000 € à ${v.first}`,
+      givesMotive: true,
+      proof: ({ v }, p) => ({ type: 'letter', name: 'Reconnaissance de dette', content: { title: 'Reconnaissance de dette', lines: [`« Je soussigné·e ${p.full} reconnais devoir 15 000 € à ${v.full}, à rembourser après la vente. »`] } }),
+      phoneMessage: () => 'Je te rembourse dès que je peux. Arrête de me relancer devant les autres.',
+    },
+  ],
+  backstoryItems: ({ m }) => [
+    {
+      type: 'report',
+      name: 'Analyse des pigments',
+      room: ['studio', 'library', 'office'],
+      content: { title: 'Laboratoire Art & Matière — rapport d’analyse', lines: ['Échantillon : « La Baie au crépuscule » (lot 47).', 'Présence de blanc de titane (commercialisé après 1920) dans les ciels. Conclusion : œuvre postérieure à 1920 — copie.'], facts: [] },
+    },
+    {
+      type: 'newspaper',
+      name: 'Catalogue de galerie',
+      room: ['attic', 'library', 'studio', 'office'],
+      content: {
+        title: 'Galerie Rhône, Genève — catalogue d’automne',
+        lines: ['« La Baie au crépuscule », huile sur toile, 1890. Provenance : collection particulière française, acquise il y a dix mois.', `Annotation de la victime : « Vendeur : un intermédiaire de Marseille… payé sur un compte au nom de ${m.first[0]}. ? »`],
+        facts: [{ kind: 'motive', playerId: m.id }],
+      },
+    },
+  ],
+  laptopLines: ({ v }) => [
+    `Brouillon à l’expert : « Je vous apporte lundi l’analyse des pigments et le catalogue de Genève. La copie a été faite avant la vente, par quelqu’un qui avait accès à la villa. — ${v.full} »`,
+    'Dossier « Baie » : photos haute définition de la toile vendue et de celle de Genève, côte à côte.',
+  ],
+  decisiveProof: ({ m }) => ({
+    title: 'Clé USB — échanges avec le faussaire',
+    lines: [
+      `Courriels de « baie.1890@… » au faussaire : « Copie à l’identique, même craquelures. Livraison à la villa avant le 12. » Signés de l’initiale « ${m.first[0]}. ».`,
+      `Reçu de la galerie Rhône : 310 000 CHF versés sur un compte ouvert au nom de ${m.full}.`,
+      `Note de la victime : « ${m.first}… Tu t’es servi${a(m)} de nous tous. »`,
+    ],
+  }),
+  leverage: (_c, pr) => `Vous savez ce que cache ${pr.full}, preuve à l’appui. Si vous tombez, ${e(pr, 'il', 'elle')} tombera avec vous.`,
+  pastTimeline: ({ m }) => [
+    'Il y a deux ans — un faussaire de Marseille reçoit commande d’une copie de « La Baie au crépuscule ».',
+    `Il y a un an — la copie est vendue aux enchères 240 000 € ; ${m.full} garde l’original.`,
+    `Il y a dix mois — l’original est revendu à la galerie Rhône de Genève (310 000 CHF).`,
+  ],
+};
+
+export const SCENARIOS: ScenarioDef[] = [pacte, mensonges, testament, toile];
 export const scenarioById = (id: string) => SCENARIOS.find((s) => s.id === id);
 
 /** Noms de lieux de la soirée. */

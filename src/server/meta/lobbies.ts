@@ -23,6 +23,8 @@ interface LobbyPlayer {
   ready: boolean;
   joinedAt: number;
   connected: boolean;
+  /** joueur tenu par l'IA du serveur */
+  bot?: boolean;
 }
 
 interface Lobby {
@@ -118,6 +120,7 @@ export class LobbyManager {
         ready: p.ready,
         isHost: p.userId === l.hostId,
         connected: p.connected,
+        ...(p.bot ? { bot: true } : {}),
       })),
       chat: l.chat.slice(-60),
     };
@@ -302,12 +305,13 @@ export class LobbyManager {
     }
     this.emitter.toUser(userId, 'lobby:state', null);
     this.notifyFriendsOfPresence(userId);
-    if (l.players.length === 0) {
+    if (!l.players.some((p) => !p.bot)) {
+      l.players = [];
       this.destroy(l);
       return;
     }
     if (l.hostId === userId) {
-      l.hostId = l.players[0].userId;
+      l.hostId = l.players.find((p) => !p.bot)!.userId;
       this.system(l, `${this.nameOf(l, l.hostId)} est maintenant l’hôte.`);
     }
     // Pendant la cinématique, la composition est figée : on ne l'interrompt pas pour un départ.
@@ -360,6 +364,32 @@ export class LobbyManager {
     if (!castId) p.ready = false;
     this.broadcast(l);
     return this.view(l, userId);
+  }
+
+  /** Ajoute un joueur IA (personnage libre tiré au sort, toujours prêt). */
+  addBot(hostId: string) {
+    const l = this.requireHost(hostId);
+    if (l.game || l.status !== 'WAITING') throw new UserError('Impossible pendant une partie.');
+    if (l.players.length >= l.maxPlayers) throw new UserError('La partie est complète.');
+    const castId = this.freeCast(l);
+    const c = castById(castId)!;
+    l.players.push({ userId: `bot_${shortId('')}`, username: `${c.firstName} (IA)`, castId, ready: true, joinedAt: Date.now(), connected: true, bot: true });
+    this.system(l, `${c.firstName} (IA) rejoint la table.`);
+    this.broadcast(l);
+  }
+
+  removeBot(hostId: string, botId: string) {
+    const l = this.requireHost(hostId);
+    if (l.game || l.status !== 'WAITING') throw new UserError('Impossible pendant une partie.');
+    const b = l.players.find((p) => p.userId === botId && p.bot);
+    if (!b) throw new UserError('Joueur IA introuvable.');
+    l.players = l.players.filter((p) => p !== b);
+    this.system(l, `${b.username} quitte la table.`);
+    this.broadcast(l);
+  }
+
+  private freeCast(l: Lobby) {
+    return pick(CAST_IDS.filter((id) => !l.players.some((p) => p.castId === id)), Math.random);
   }
 
   kick(hostId: string, targetId: string) {
@@ -456,7 +486,7 @@ export class LobbyManager {
     const l = this.lobbyOfUser(userId);
     if (!l?.intro || l.intro.plan.id !== planId || !l.intro.loading) return;
     l.intro.ready.add(userId);
-    const waiting = l.players.filter((p) => p.connected && !l.intro!.ready.has(p.userId));
+    const waiting = l.players.filter((p) => p.connected && !p.bot && !l.intro!.ready.has(p.userId));
     if (!waiting.length) this.beginIntro(l, planId);
   }
 
@@ -486,7 +516,7 @@ export class LobbyManager {
   private introReadyCheck(l: Lobby) {
     const intro = l.intro;
     if (!intro?.loading) return;
-    if (!l.players.some((p) => p.connected && !intro.ready.has(p.userId))) this.beginIntro(l, intro.plan.id);
+    if (!l.players.some((p) => p.connected && !p.bot && !intro.ready.has(p.userId))) this.beginIntro(l, intro.plan.id);
   }
 
   private clearIntro(l: Lobby) {
@@ -508,7 +538,8 @@ export class LobbyManager {
       if (t) clearTimeout(t);
       this.disconnectTimers.delete(p.userId);
     }
-    l.inGame = new Set(players.filter((p) => present.has(p.userId)).map((p) => p.userId));
+    const botIds = new Set(l.players.filter((p) => p.bot).map((p) => p.userId));
+    l.inGame = new Set(players.filter((p) => present.has(p.userId) && !botIds.has(p.userId)).map((p) => p.userId));
     l.game = new GameInstance({
       id: newId(),
       lobbyId: l.id,
@@ -517,6 +548,7 @@ export class LobbyManager {
       timeScale: this.timeScale * NIGHT_DURATIONS[l.duration].scale,
       voteScale: this.timeScale,
       victimCastId: plan.victimCastId,
+      botIds: [...botIds],
       emit: (userId, event, payload) => {
         if (l.inGame.has(userId)) this.emitter.toUser(userId, event, payload);
       },
@@ -525,6 +557,7 @@ export class LobbyManager {
     l.status = 'IN_GAME';
     for (const p of players) if (!present.has(p.userId)) l.game.setConnected(p.userId, false);
     for (const p of l.players) {
+      if (p.bot) continue;
       if (!p.connected) l.game.setConnected(p.userId, false);
       this.emitter.toUser(p.userId, 'session:state', this.sessionState(p.userId));
       this.notifyFriendsOfPresence(p.userId);
@@ -535,21 +568,23 @@ export class LobbyManager {
   private onGameFinished(l: Lobby, epi: EpilogueView) {
     const g = l.game!;
     for (const p of g.players.values()) {
+      if (g.bots.has(p.id)) continue;
       const won = epi.outcomes.find((o) => o.playerId === p.id)?.won ?? false;
       this.profiles.recordGame(p.id, won).catch(() => {});
     }
     this.store
       .insertGame(
         { id: g.id, lobbyName: l.name, caseType: epi.scenarioTitle, summary: epi.headline, players: [...g.players.values()].map((p) => p.name), endedAt: Date.now() },
-        [...g.players.keys()],
+        [...g.players.keys()].filter((id) => !g.bots.has(id)),
       )
       .catch((e) => console.error('historique non enregistré', e));
     // Le salon redevient disponible ; nouvelle partie = nouvelle sélection des personnages
     l.status = 'WAITING';
     for (const p of l.players) {
-      p.ready = false;
+      p.ready = !!p.bot;
       p.castId = null;
     }
+    for (const p of l.players) if (p.bot) p.castId = this.freeCast(l);
     this.system(l, `Fin de la nuit : ${epi.headline}`);
     this.broadcast(l);
     // filet de sécurité : libère la partie au bout de 15 minutes

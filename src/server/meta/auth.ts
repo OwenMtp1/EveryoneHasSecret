@@ -120,6 +120,30 @@ export class AuthService {
     return { token: await this.createSession(id), user: { id, username, createdAt: now } };
   }
 
+  /**
+   * Compte invité (mode local) : pseudo choisi (ou « Joueur ») suivi de quatre chiffres, sans mot de passe à retenir —
+   * un secret aléatoire est haché comme un vrai mot de passe et jamais transmis. La session reste liée au navigateur.
+   */
+  async guest(nameIn: unknown): Promise<{ token: string; user: UserRecord }> {
+    this.requireLocal();
+    const raw = typeof nameIn === 'string' ? nameIn.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 15) : '';
+    const base = raw.length >= 2 ? raw : 'Joueur';
+    for (let i = 0; i < 12; i++) {
+      const username = `${base}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+      if (await this.store.findByUsername(username)) continue;
+      const id = newId();
+      const now = Date.now();
+      try {
+        await this.store.createProfile(id, username, now, hashPassword(randomBytes(24).toString('base64url')));
+      } catch (e) {
+        if (e instanceof DuplicateUsernameError) continue;
+        throw e;
+      }
+      return { token: await this.createSession(id), user: { id, username, createdAt: now } };
+    }
+    throw new UserError('Impossible de créer un compte invité, réessayez.');
+  }
+
   async login(usernameIn: unknown, passwordIn: unknown): Promise<{ token: string; user: UserRecord }> {
     this.requireLocal();
     if (typeof usernameIn !== 'string' || typeof passwordIn !== 'string') throw new UserError('Identifiants manquants.');
