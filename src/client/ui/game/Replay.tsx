@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatClock } from '@shared/config';
 import type { ReplayView } from '@shared/types';
 import { LEVELS, ROOMS, WORLD_H, WORLD_W, levelOf, localX, type Level } from '@shared/content/villa';
@@ -24,9 +24,10 @@ export function Replay({ replay, onClose }: { replay: ReplayView; onClose: () =>
     let raf = 0;
     let last = performance.now();
     const loop = (now: number) => {
-      const dt = (now - last) / 1000;
+      // l'horodatage de requestAnimationFrame peut précéder performance.now() du lancement : jamais négatif
+      const dt = Math.max(0, (now - last) / 1000);
       last = now;
-      const next = Math.min(n - 1, tRef.current + dt * speed);
+      const next = Math.max(0, Math.min(n - 1, tRef.current + dt * speed));
       setT(next);
       if (next >= n - 1) setPlaying(false);
       else raf = requestAnimationFrame(loop);
@@ -75,10 +76,12 @@ export function Replay({ replay, onClose }: { replay: ReplayView; onClose: () =>
       g.fillRect(a.x, a.y, r.rect.w * s, r.rect.h * s);
       g.strokeRect(a.x + 0.5, a.y + 0.5, r.rect.w * s - 1, r.rect.h * s - 1);
     }
-    const i0 = Math.floor(t);
-    const f = t - i0;
+    const tc = Math.max(0, Math.min(n - 1, Number.isFinite(t) ? t : 0));
+    const i0 = Math.floor(tc);
+    const f = tc - i0;
     const A = replay.frames[i0];
     const B = replay.frames[Math.min(n - 1, i0 + 1)];
+    if (!A || !B) return;
     const clock = A.clock + (B.clock - A.clock) * f;
     // morts survenues avant l'instant affiché
     for (const d of replay.deaths)
@@ -155,4 +158,18 @@ export function Replay({ replay, onClose }: { replay: ReplayView; onClose: () =>
       </div>
     </div>
   );
+}
+
+/** Filet de sécurité : une erreur du rejeu ne doit jamais effacer l'écran de fin. */
+export class ReplayBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(e: unknown) {
+    console.error('rejeu', e);
+  }
+  render() {
+    return this.state.failed ? <div className="small muted">Le rejeu n’a pas pu s’afficher.</div> : this.props.children;
+  }
 }

@@ -3,7 +3,7 @@ import { formatClock } from '@shared/config';
 import { useStore, attempt } from '../../store';
 import { call } from '../../net/socket';
 import { Keypad } from './Minigames';
-import { Replay } from './Replay';
+import { Replay, ReplayBoundary } from './Replay';
 import { xpForGame } from '@shared/progression';
 import { CastPortrait } from '../common/CastPortrait';
 import { EvidenceCard } from './DossierTab';
@@ -427,7 +427,11 @@ export function Epilogue() {
             </div>
           </div>
         )}
-        {showReplay && e.replay && <Replay replay={e.replay} onClose={() => setShowReplay(false)} />}
+        {showReplay && e.replay && (
+          <ReplayBoundary>
+            <Replay replay={e.replay} onClose={() => setShowReplay(false)} />
+          </ReplayBoundary>
+        )}
         <div className="epilogue-actions">
           {e.replay && e.replay.frames.length > 1 && !showReplay && (
             <button className="btn btn-lg" onClick={() => setShowReplay(true)}>▶ REVOIR LA NUIT</button>
