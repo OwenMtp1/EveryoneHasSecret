@@ -6,7 +6,7 @@ import { getSocket } from '../../net/socket';
 import { drawFrame, createRenderState, camera } from '../../render/villaRenderer';
 import { GameView3D } from '../../three/GameView3D';
 import { audio, music } from '../../audio';
-import { PHASE_LABEL, useChatFocus, usePicker, useTarget } from './helpers';
+import { PHASE_LABEL, useChatFocus, useMinigame, usePicker, useTarget } from './helpers';
 import { ActionBar, triggerTarget } from './ActionBar';
 import { ChatPanel } from './ChatPanel';
 import { Announcement, ChronicleTab } from './FeedPanel';
@@ -17,6 +17,8 @@ import { InventoryTab } from './InventoryTab';
 import { RelationsTab } from './RelationsTab';
 import { DossierTab } from './DossierTab';
 import { RoleCard, LeadsPanel } from './Guidance';
+import { ForceLockGame } from './Minigames';
+import { Phone } from './Phone';
 import { InvestigationTab } from '../investigation/InvestigationTab';
 import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker, PauseMenu } from './Overlays';
 
@@ -29,6 +31,7 @@ export function GameScreen() {
   const [room, setRoom] = useState<string | undefined>();
   const [camMode, setCamMode] = useState<'third' | 'first'>('third');
   const [showMap, setShowMap] = useState(false);
+  const [showPhone, setShowPhone] = useState(false);
   const [locked, setLocked] = useState(false);
   const tab = useChatFocus((s) => s.tab);
   const setTab = useChatFocus((s) => s.setTab);
@@ -40,6 +43,8 @@ export function GameScreen() {
   revealingRef.current = revealing;
   const showMapRef = useRef(false);
   showMapRef.current = showMap;
+  const showPhoneRef = useRef(false);
+  showPhoneRef.current = showPhone;
   const escOpenedAt = useRef(0);
 
   // Vue 3D (créée quand le conteneur existe)
@@ -47,7 +52,7 @@ export function GameScreen() {
     const wrap = wrapRef.current;
     if (!wrap) return;
     const st = useStore.getState().settings;
-    const v = new GameView3D(wrap, { reducedMotion: st.reducedMotion, quality: st.quality, showFps: st.showFps });
+    const v = new GameView3D(wrap, { reducedMotion: st.reducedMotion, quality: st.quality, showFps: st.showFps, comic: st.comic });
     viewRef.current = v;
     const dbg = (window as unknown as { __ehas?: Record<string, unknown> }).__ehas;
     if (dbg) dbg.view3d = v; // accroche de test (?debug)
@@ -66,6 +71,7 @@ export function GameScreen() {
     const unsubSettings = useStore.subscribe((s, prev) => {
       if (s.settings.quality !== prev.settings.quality) v.setQualityMode(s.settings.quality);
       if (s.settings.showFps !== prev.settings.showFps) v.setFpsVisible(s.settings.showFps);
+      if (s.settings.comic !== prev.settings.comic) v.setComic(s.settings.comic);
     });
     const ro = new ResizeObserver(() => v.refreshSize());
     ro.observe(wrap);
@@ -156,7 +162,7 @@ export function GameScreen() {
       } else if (viewRef.current?.isGhost && e.code === 'KeyF') {
         if (!usePicker.getState().open && !useChatFocus.getState().paused) viewRef.current.ghostFollow(e.shiftKey ? -1 : 1);
       } else if (e.code === 'KeyE' || e.code === 'KeyF') {
-        if (usePicker.getState().open || useChatFocus.getState().paused) return;
+        if (usePicker.getState().open || useMinigame.getState().open || useChatFocus.getState().paused) return;
         triggerTarget(e.code === 'KeyF');
       } else if (e.code === 'Enter') {
         e.preventDefault();
@@ -170,6 +176,10 @@ export function GameScreen() {
         e.preventDefault();
         const st = useStore.getState();
         st.updateSettings({ showFps: !st.settings.showFps });
+      } else if (e.code === 'KeyP') {
+        if (usePicker.getState().open || useChatFocus.getState().paused) return;
+        if (document.pointerLockElement) document.exitPointerLock();
+        setShowPhone((x) => !x);
       } else if (e.code === 'KeyM') {
         setShowMap((m) => !m);
       } else if (e.code === 'Escape') {
@@ -177,8 +187,9 @@ export function GameScreen() {
         const ui = useChatFocus.getState();
         if (performance.now() - escOpenedAt.current < 400) return; // même Échap que celui qui a libéré la souris
         if (usePicker.getState().open) usePicker.getState().close();
-        else if (ui.tab !== null || showMapRef.current) {
+        else if (ui.tab !== null || showMapRef.current || showPhoneRef.current) {
           setShowMap(false);
+          setShowPhone(false);
           setTab(null);
         } else ui.setPaused(!ui.paused);
       }
@@ -229,7 +240,7 @@ export function GameScreen() {
       </header>
 
       <div className="cam-hint" hidden={!!ghost}>
-        <kbd>ZQSD</kbd> bouger · <kbd>E</kbd> interagir · <kbd>1</kbd>–<kbd>5</kbd> panneaux · <kbd>Échap</kbd> menu{!locked && camMode === 'third' ? ' · clic : orienter la caméra' : ''}
+        <kbd>ZQSD</kbd> bouger · <kbd>E</kbd> interagir · <kbd>F</kbd> roue · <kbd>P</kbd> téléphone · <kbd>1</kbd>–<kbd>5</kbd> panneaux · <kbd>Échap</kbd> menu{!locked && camMode === 'third' ? ' · clic : orienter la caméra' : ''}
       </div>
 
       {revealing && game.caseInfo && <RevealCaption caseInfo={game.caseInfo} />}
@@ -250,6 +261,7 @@ export function GameScreen() {
       <ActionBar />
       <ChatPanel />
       {showMap && <MapOverlay onClose={() => setShowMap(false)} />}
+      {showPhone && !ghost && <Phone onClose={() => setShowPhone(false)} onMap={() => setShowMap(true)} />}
 
       <nav className="dock">
         {DOCK.map((d, i) => (
@@ -259,6 +271,10 @@ export function GameScreen() {
             {d.badge !== null && <span className="badge">{d.badge}</span>}
           </button>
         ))}
+        <button className="dock-btn" onClick={() => setShowPhone((x) => !x)} title="Téléphone (P)">
+          <span className="dock-icon">📱</span>
+          <kbd>P</kbd>
+        </button>
         <button className="dock-btn" onClick={() => useChatFocus.getState().setChatOpen(true)} title="Chat (Entrée)">
           <span className="dock-icon">💬</span>
           <kbd>↵</kbd>
@@ -284,6 +300,7 @@ export function GameScreen() {
       <VoteModal />
       <TestimonyModal />
       <Picker />
+      <ForceLockGame />
       <PauseMenu />
       <RoleCard ready={roleReady && !game.epilogue} />
       <Epilogue />

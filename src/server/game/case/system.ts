@@ -37,12 +37,13 @@ import type {
 import { castById } from '@shared/content/cast';
 import { characterFromCast } from '@shared/content/character';
 import { objectTypeDef } from '@shared/content/objects';
-import { ROLES, roleById } from '@shared/content/roles';
+import { ROLES, SHADOW_TOOLS, roleById } from '@shared/content/roles';
 import { DOORS, allFurniture, randomFreeTile, roomById, roomName } from '@shared/content/villa';
 import { GAME_CONFIG, formatClock } from '@shared/config';
 import type { GameInstance } from '../GameInstance';
 import type { GameObject, PlayerState } from '../state';
 import { buildCase, murdererBriefing, PLACES } from './director';
+import { atPlace } from './scenarios';
 import type { CaseItemSpec, CaseTruth, EvidenceContent, Fact, Lock, PlaceId } from './model';
 import { pick, shortId, shuffle, UserError } from '../../util';
 
@@ -131,6 +132,8 @@ export class CaseSystem {
   private lastEliminationAt = -Infinity;
   private investigationEndsAt = 0;
   private blackoutAt = 0;
+  /** événements de la soirée : deux tirés au sort, chacun apporte un indice vrai mais partiel */
+  private eveningEvents: { at: number; id: string }[] = [];
   private victimBodyId = 'b_victim';
   /** meubles verrouillés (coffre-fort à code, tiroir et malle à clé) : verrou réel côté serveur */
   furnitureLocks = new Map<string, ({ kind: 'code'; code: string; fails: number; until: number } | { kind: 'key'; keyId: string }) & { hint?: string }>();
@@ -221,6 +224,9 @@ export class CaseSystem {
     const scale = g.timeScale;
     this.investigationEndsAt = g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec) * 1000 * scale;
     this.blackoutAt = g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec * CASE_TIMING.blackoutAtFraction) * 1000 * scale;
+    this.eveningEvents = shuffle(['dog', 'phone', 'window', 'neighbor'], g.rnd)
+      .slice(0, 2)
+      .map((id, i) => ({ id, at: g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec * (i === 0 ? 0.24 : 0.68)) * 1000 * scale }));
     g.log('CASE_OPENED', { text: `Affaire : ${t.scenarioTitle}. Victime : ${t.victim.name}. Meurtrier : ${m.name}.`, data: { scenario: t.scenarioId } });
   }
 
@@ -274,6 +280,44 @@ export class CaseSystem {
   /** Un meuble est-il encore verrouillé ? (fouille impossible tant qu'il l'est) */
   furnitureLocked(furnitureId: string) {
     return this.furnitureLocks.has(furnitureId);
+  }
+
+  private forceCooldown = new Map<string, number>();
+
+  /**
+   * Forcer au pied-de-biche un meuble fermé à clé (pas le coffre-fort à code). Le geste est bruyant (entendu des
+   * pièces voisines), qu'il réussisse ou non ; réussi, il laisse une serrure forcée que les enquêteurs remarquent.
+   * `ok` vient du mini-jeu du client ; un essai toutes les 15 s au plus.
+   */
+  forceFurniture(p: PlayerState, furnitureId: string, ok: boolean): string {
+    this.requireActive(p);
+    const g = this.g;
+    const lock = this.furnitureLocks.get(furnitureId);
+    const f = allFurniture().find((x) => x.id === furnitureId);
+    if (!f || f.roomId !== p.roomId) throw new UserError('Meuble introuvable ici.');
+    const cx = Math.max(f.x, Math.min(p.pos.x, f.x + f.w));
+    const cy = Math.max(f.y, Math.min(p.pos.y, f.y + f.h));
+    if (Math.hypot(cx - p.pos.x, cy - p.pos.y) > GAME_CONFIG.interactRange) throw new UserError('Approchez-vous du meuble.');
+    if (!lock) throw new UserError(`${f.name} n’est pas verrouillé.`);
+    if (lock.kind !== 'key') throw new UserError('Un coffre-fort ne se force pas : il faut le code.');
+    const bar = p.inventory.map((id) => g.objects.get(id)).find((o) => o?.def.useEffect === 'force');
+    if (!bar) throw new UserError('Il vous faut un outil pour forcer la serrure.');
+    const now = g.now();
+    if ((this.forceCooldown.get(p.id) ?? 0) > now) throw new UserError(`Vos mains tremblent encore : réessayez dans ${Math.ceil(((this.forceCooldown.get(p.id) ?? 0) - now) / 1000)} s.`);
+    this.forceCooldown.set(p.id, now + 15_000);
+    g.actions.touch(p, bar);
+    if (!ok) {
+      g.hearFrom(p.roomId, `Un grincement de métal sur du bois — du côté de : ${roomName(p.roomId)}.`, p.id);
+      g.perceive(p.id, `${p.name} s’acharne sur ${f.name.toLowerCase()} avec un pied-de-biche.`);
+      return 'Le pied-de-biche ripe : la serrure tient bon (et ça s’est entendu).';
+    }
+    this.furnitureLocks.delete(furnitureId);
+    g.addEvidence('forced_lock', p.roomId, { x: f.x + f.w / 2, y: f.y + f.h / 2 }, { furnitureId }, true, p.id);
+    g.log('FURNITURE_FORCED', { actorId: p.id, roomId: p.roomId, objectId: bar.id, data: { furnitureId }, text: `${p.name} force : ${f.name}` });
+    g.hearFrom(p.roomId, `Un craquement de bois arraché — du côté de : ${roomName(p.roomId)}.`, p.id);
+    g.perceive(p.id, `${p.name} force ${f.name.toLowerCase()} au pied-de-biche.`, { important: true });
+    g.markAllDirty();
+    return `La serrure cède. ${g.actions.search(p, furnitureId)}`;
   }
 
   /** Ouvrir un meuble verrouillé : code saisi, ou clé correspondante dans l'inventaire. */
@@ -360,8 +404,48 @@ export class CaseSystem {
       g.startBlackout(CASE_TIMING.blackoutSec * g.timeScale);
       g.feedAll('danger', 'Un éclair, puis le noir : l’orage a coupé le courant. Restez groupés… ou pas.');
     }
+    for (const ev of this.eveningEvents)
+      if (ev.at && now >= ev.at && g.phase === 'INVESTIGATION') {
+        ev.at = 0;
+        this.runEveningEvent(ev.id);
+      }
     if (this.vote && now >= this.vote.endsAt) this.closeVote();
     if (!this.vote && g.phase === 'INVESTIGATION' && now >= this.investigationEndsAt) this.startFinalVote();
+  }
+
+  /** Pièce où se trouve un objet de l'affaire en ce moment (sur un joueur : la pièce de ce joueur). */
+  private roomOfRef(ref: string): string | null {
+    const g = this.g;
+    let o = [...g.objects.values()].find((x) => x.props.ref === ref);
+    for (let i = 0; o && o.location.kind === 'inside' && i < 4; i++) o = g.objects.get((o.location as { containerId: string }).containerId);
+    if (!o) return null;
+    const loc = o.location;
+    if (loc.kind === 'floor' || loc.kind === 'hidden') return loc.roomId;
+    if (loc.kind === 'player') return g.players.get(loc.playerId)?.roomId ?? null;
+    return null;
+  }
+
+  /** Événements de la soirée (S5) : bruit, coup de fil, visite — chacun apporte une information vraie et partielle. */
+  private runEveningEvent(id: string) {
+    const g = this.g;
+    const t = this.truth;
+    let text: string | null = null;
+    if (id === 'dog') {
+      const r = this.roomOfRef(t.weaponRef);
+      if (r) text = `Le chien du gardien s’est échappé de sa niche : il gratte et aboie longuement du côté de : ${roomName(r)}. Il a flairé quelque chose.`;
+    } else if (id === 'phone') {
+      const m = t.players.get(t.murdererId);
+      const at = m?.absence ? formatClock(m.absence.from + 4) : formatClock(t.murderAt - 15);
+      text = `Le téléphone fixe du hall sonne. La station-service du col : « Un de vos invités est passé vers ${at} et a oublié sa monnaie. Je n’ai pas vu son visage, il avait la capuche. » Qui a quitté son groupe ce soir ?`;
+    } else if (id === 'window') {
+      const r = this.roomOfRef('camera');
+      if (r) text = `Une fenêtre claque dans : ${roomName(r)}. En allant la fermer, on entend un appareil photo tomber d’un meuble… Quelqu’un y a rangé ses souvenirs de la soirée.`;
+    } else if (id === 'neighbor') {
+      text = `Le voisin frappe à la porte, trempé. Vers ${formatClock(t.murderAt - 2)}, il a vu une silhouette traverser le jardin vers la villa, sans lampe. « Pas le visage, mais elle connaissait le chemin. »`;
+    }
+    if (!text) return;
+    g.feedAll('announce', `🌩 ${text}`);
+    g.log('EVENING_EVENT', { data: { id }, text });
   }
 
   // ───────────────────────── accès aux contenus ─────────────────────────
@@ -607,7 +691,7 @@ export class CaseSystem {
     const text = String(textIn ?? '').trim().slice(0, 200);
     this.alibis.set(p.id, { playerId: p.id, playerName: p.name, place, placeName: PLACES[place as PlaceId].name, text, at: g.clock(), status: 'unverified' });
     if (prev && prev.place !== place) g.feedAll('whisper', `${p.name} modifie sa déclaration d’alibi (avant : ${prev.placeName}).`);
-    else g.feedAll('narration', `${p.name} déclare avoir été à ${PLACES[place as PlaceId].name} entre 21h et 22h.`);
+    else g.feedAll('narration', `${p.name} déclare avoir été ${atPlace(PLACES[place as PlaceId].name)} entre 21h et 22h.`);
     g.log('ALIBI_DECLARED', { actorId: p.id, data: { place, truthful: this.truth.players.get(p.id)?.place === place }, text: `${p.name} déclare : ${place}` });
     if (p.pendingTestimony) p.pendingTestimony = null;
     g.markAllDirty();
@@ -627,8 +711,8 @@ export class CaseSystem {
             status: contradicts ? 'contradicts' : 'confirms',
             text:
               f.kind === 'place'
-                ? `« ${pe.title} » place ${a.playerName} à ${PLACES[f.place].name} à ${formatClock(f.at)}`
-                : `« ${pe.title} » montre que ${a.playerName} n’était pas à ${PLACES[f.place].name} à ${formatClock(f.at)}`,
+                ? `« ${pe.title} » place ${a.playerName} ${atPlace(PLACES[f.place].name)} à ${formatClock(f.at)}`
+                : `« ${pe.title} » montre que ${a.playerName} n’était pas ${atPlace(PLACES[f.place].name)} à ${formatClock(f.at)}`,
           });
         }
       }
@@ -841,7 +925,7 @@ export class CaseSystem {
     const g = this.g;
     if (g.phase === 'EPILOGUE') throw new UserError('Trop tard.');
     const role = p.roleId ? roleById(p.roleId) : undefined;
-    const tool = role?.tools.find((t) => t.id === toolId);
+    const tool = role?.tools.find((t) => t.id === toolId) ?? this.shadowTools(p).find((t) => t.id === toolId);
     if (!tool) throw new UserError('Vous n’avez pas cet outil.');
     const used = p.toolUses[toolId] ?? 0;
     if (tool.maxUses !== undefined && used >= tool.maxUses) throw new UserError('Vous avez épuisé cet outil.');
@@ -870,6 +954,23 @@ export class CaseSystem {
     const g = this.g;
     const t = this.truth;
     switch (toolId) {
+      case 'cut_power': {
+        if (p.roomId !== 'basement') throw new UserError('Le tableau électrique est au sous-sol, près de la chaudière.');
+        if (g.isBlackout()) throw new UserError('Le courant est déjà coupé.');
+        if (this.vote) throw new UserError('Pas pendant un vote : tout le monde est sur le qui-vive.');
+        g.startBlackout(30 * g.timeScale);
+        g.feedAll('danger', 'Un claquement au sous-sol… et la villa plonge dans le noir.');
+        g.log('POWER_CUT', { actorId: p.id, roomId: p.roomId, text: `${p.name} coupe le courant au tableau électrique` });
+        return 'Vous abaissez le disjoncteur général. Trente secondes de noir complet : personne ne voit dans les autres pièces.';
+      }
+      case 'anonymous_note': {
+        const target = targetId ? g.players.get(targetId) : undefined;
+        if (!target || target.id === p.id || !target.alive || target.arrested) throw new UserError('Choisissez un joueur.');
+        const place = roomName(t.victim.roomId).toLowerCase();
+        g.feedAll('whisper', `Un mot non signé circule de main en main : « J’ai vu ${target.name} sortir de ${place} vers ${formatClock(t.murderAt + 4)}. Demandez-lui pourquoi. »`);
+        g.log('ANONYMOUS_NOTE', { actorId: p.id, targetId: target.id, text: `${p.name} fait circuler un mot anonyme contre ${target.name}` });
+        return `Votre mot contre ${target.name} circule. Personne ne sait qu’il vient de vous… pour l’instant.`;
+      }
       case 'examine_body': {
         const body = g.bodies.find((b) => b.roomId === p.roomId && Math.hypot(b.pos.x - p.pos.x, b.pos.y - p.pos.y) <= GAME_CONFIG.interactRange + 0.6);
         if (!body) throw new UserError('Approchez-vous d’un corps.');
@@ -1021,6 +1122,11 @@ export class CaseSystem {
       return c === 'protector' && (this.freedProtectors.has(id) || this.isOpponentOfMurderer(id)) ? 'innocent' : c;
     };
     this.epilogue = {
+      replay: {
+        players: [...g.players.values()].map((p) => ({ id: p.id, name: p.name, castId: p.character.castId, murderer: p.id === t.murdererId })),
+        frames: g.replayFrames,
+        deaths: g.bodies.filter((b) => !b.npc).map((b) => ({ clock: b.clock, x: b.pos.x, y: b.pos.y, name: g.nameOf(b.playerId) })),
+      },
       winner,
       headline,
       scenarioTitle: t.scenarioTitle,
@@ -1086,14 +1192,14 @@ export class CaseSystem {
       const a = pt.absence;
       return [
         open,
-        `Ce que vous raconterez : vous avez passé la soirée à ${place}, à part une courte sortie « cigarettes ».`,
+        `Ce que vous raconterez : vous avez passé la soirée ${atPlace(place)}, à part une courte sortie « cigarettes ».`,
         `Ce qui s’est vraiment passé : ${a ? `de ${formatClock(a.from)} à ${formatClock(a.to)}` : 'vers 21h10'}, vous êtes revenu${ag(p)} à la villa. Vers ${formatClock(t.murderAt)}, vous avez tué ${v.name}. Vous avez caché l’arme, vous vous êtes lavé les mains, puis vous avez rejoint les autres.`,
         'À 22h, vous êtes rentré·e avec tout le monde et vous avez fait semblant de découvrir le corps. Personne ne doit savoir.',
       ];
     }
     return [
       open,
-      `Vous avez passé la soirée à ${place}.${pt.absence ? ` Vous vous êtes éclipsé${ag(p)} de ${formatClock(pt.absence.from)} à ${formatClock(pt.absence.to)} (${pt.absence.whereabouts}) — ça pourrait se retourner contre vous.` : ''}`,
+      `Vous avez passé la soirée ${atPlace(place)}.${pt.absence ? ` Vous vous êtes éclipsé${ag(p)} de ${formatClock(pt.absence.from)} à ${formatClock(pt.absence.to)} (${pt.absence.whereabouts}) — ça pourrait se retourner contre vous.` : ''}`,
       `À 22h, en rentrant, vous avez trouvé ${v.name} sans vie (${roomName(v.roomId)}). L’un de vous l’a tué${vf ? 'e' : ''}.`,
       camp === 'protector'
         ? 'Vous savez qui. Et cette personne sait ce que vous cachez.'
@@ -1184,7 +1290,16 @@ export class CaseSystem {
   roleView(p: PlayerState): RoleView | null {
     const r = p.roleId ? roleById(p.roleId) : undefined;
     if (!r) return null;
-    return { id: r.id, name: r.name, description: r.description, tools: r.tools.map((t) => ({ id: t.id, name: t.name, description: t.description, usesLeft: t.maxUses !== undefined ? t.maxUses - (p.toolUses[t.id] ?? 0) : undefined })) };
+    const view = (t: { id: string; name: string; description: string; maxUses?: number }, shadow?: boolean) => ({ id: t.id, name: t.name, description: t.description, usesLeft: t.maxUses !== undefined ? t.maxUses - (p.toolUses[t.id] ?? 0) : undefined, ...(shadow ? { shadow } : {}) });
+    return { id: r.id, name: r.name, description: r.description, tools: [...r.tools.map((t) => view(t)), ...this.shadowTools(p).map((t) => view(t, true))] };
+  }
+
+  /** Outils de l'ombre du joueur selon son camp (meurtrier, protecteur encore lié au meurtrier). */
+  shadowTools(p: PlayerState) {
+    const t = this.truth;
+    if (!t) return [];
+    const camp = p.id === t.murdererId ? 'murderer' : t.protectorIds.includes(p.id) && !this.freedProtectors.has(p.id) ? 'protector' : null;
+    return camp ? SHADOW_TOOLS.filter((x) => x.camps.includes(camp)) : [];
   }
 
   /** Interactions proposées pour un objet (le client n'affiche que celles-ci). */

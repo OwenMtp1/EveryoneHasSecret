@@ -128,6 +128,9 @@ export class GameInstance {
   }
   private timers: NodeJS.Timeout[] = [];
   private lastSecondTick = 0;
+  /** trajets de la nuit pour le rejeu de l'épilogue (une image toutes les 3 s, bornée) */
+  replayFrames: { clock: number; p: [string, number, number][] }[] = [];
+  private replayCountdown = 0;
   private lastSimAt = 0;
   private readonly emitFn: GameInit['emit'];
   private readonly finishedFn?: GameInit['onFinished'];
@@ -287,6 +290,13 @@ export class GameInstance {
       this.log('BLACKOUT_ENDED', { text: 'Le courant revient' });
       this.feedAll('narration', 'Le courant revient dans un grésillement. Les lumières clignotent.');
       this.markAllDirty();
+    }
+    if (!this.ended && --this.replayCountdown <= 0 && this.replayFrames.length < 400) {
+      this.replayCountdown = 3;
+      this.replayFrames.push({
+        clock: this.clock(),
+        p: [...this.players.values()].filter((p) => p.alive && !p.arrested).map((p) => [p.id, Math.round(p.pos.x * 10) / 10, Math.round(p.pos.y * 10) / 10] as [string, number, number]),
+      });
     }
     if (!this.ended) {
       this.recordSightings();
@@ -630,6 +640,9 @@ export class GameInstance {
       }
       case 'unlock_furniture':
         msg = this.caseSystem.unlockFurniture(p, String(a.furnitureId), a.code === undefined ? undefined : String(a.code));
+        break;
+      case 'force_furniture':
+        msg = this.caseSystem.forceFurniture(p, String(a.furnitureId), a.ok === true);
         break;
       case 'insert':
         msg = this.caseSystem.insert(p, String(a.mediaId), String(a.deviceId));

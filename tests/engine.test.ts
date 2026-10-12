@@ -493,6 +493,60 @@ test('meubles verrouillés : fouille impossible sans la clé ou le bon code ; le
   assert.ok(p.inventory.includes(ref('laptop').id));
 });
 
+test('pied-de-biche : forcer un meuble fermé à clé est bruyant, laisse une trace ; pas le coffre-fort', () => {
+  const { g, act, fetch, innocents, startInvestigation, goTo, advance } = makeGame(4, 31, 'pacte');
+  startInvestigation();
+  const p = innocents()[0];
+  const bar = [...g.objects.values()].find((o) => o.def.type === 'crowbar')!;
+  assert.ok(bar, 'un pied-de-biche existe dans la villa');
+  const desk = allFurniture().find((f) => f.id === 'f_office_desk')!;
+  const safe = allFurniture().find((f) => f.id === 'f_office_safe')!;
+  goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
+  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: desk.id, ok: true }), /outil/);
+  fetch(p, bar);
+  goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
+  assert.match(act(p, { type: 'force_furniture', furnitureId: desk.id, ok: false })!, /ripe/);
+  assert.ok(g.caseSystem.furnitureLocked(desk.id));
+  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: desk.id, ok: true }), /réessayez/);
+  advance(16_000, 500);
+  goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
+  assert.match(act(p, { type: 'force_furniture', furnitureId: desk.id, ok: true })!, /cède/);
+  assert.ok(!g.caseSystem.furnitureLocked(desk.id));
+  assert.ok(g.evidence.some((e) => e.kind === 'forced_lock' && e.data.furnitureId === desk.id));
+  goTo(p, { x: safe.x + 0.5, y: safe.y + 0.5 }, safe.roomId);
+  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: safe.id, ok: true }), /code/);
+});
+
+test('outils de l’ombre : réservés au meurtrier, courant coupé depuis le sous-sol, mot anonyme public', () => {
+  const { g, act, murderer, innocents, startInvestigation, goTo } = makeGame(4, 31, 'pacte');
+  startInvestigation();
+  const m = murderer();
+  const inno = innocents()[0];
+  assert.ok(g.caseSystem.roleView(m)!.tools.some((t) => t.id === 'cut_power' && t.shadow));
+  assert.ok(!g.caseSystem.roleView(inno)!.tools.some((t) => t.shadow));
+  assert.throws(() => act(inno, { type: 'tool', toolId: 'cut_power' }), /pas cet outil/);
+  if (m.roomId !== 'basement') assert.throws(() => act(m, { type: 'tool', toolId: 'cut_power' }), /sous-sol/);
+  const boiler = allFurniture().find((f) => f.id === 'f_basement_boiler')!;
+  goTo(m, { x: boiler.x - 0.6, y: boiler.y + 0.5 }, 'basement');
+  act(m, { type: 'tool', toolId: 'cut_power' });
+  assert.ok(g.isBlackout());
+  assert.throws(() => act(m, { type: 'tool', toolId: 'cut_power' }), /épuisé/);
+  act(m, { type: 'tool', toolId: 'anonymous_note', targetId: inno.id });
+  const feed = JSON.stringify(g.buildSelfView(innocents()[1]).feed);
+  assert.match(feed, new RegExp(`mot non signé[^"]*${inno.name}`));
+});
+
+test('événements de la soirée : deux, annoncés à tous, sans nommer le meurtrier', () => {
+  for (const seed of [3, 8, 21]) {
+    const { g, startInvestigation, advance, murderer } = makeGame(4, seed, 'mensonges');
+    startInvestigation();
+    advance(Math.ceil(900 * 1000 * 0.05 * 0.72), 200);
+    const evs = g.truth.filter((e) => e.type === 'EVENING_EVENT');
+    assert.ok(evs.length >= 1 && evs.length <= 2, `seed ${seed} : ${evs.length} événements`);
+    for (const e of evs) assert.ok(!String(e.text).includes(murderer().name), 'un événement ne désigne jamais le meurtrier');
+  }
+});
+
 // ───────────────────────── menu Échap : version de l'histoire, premier choix ─────────────────────────
 
 test('premier choix : amitié = main tendue à tous (visible), trahison = discrète ; définitif ; histoire sans fuite', () => {

@@ -46,14 +46,16 @@ export interface Settings {
   quality: 'auto' | 0 | 1 | 2;
   /** compteur d'images en partie (touche F3) */
   showFps: boolean;
+  /** style graphique dessiné (aplats + contours encrés) */
+  comic: boolean;
 }
 
 const SETTINGS_KEY = 'ehas.settings';
 function loadSettings(): Settings {
   try {
-    return { music: 0.4, sfx: 0.6, reducedMotion: false, quality: 'auto', showFps: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
+    return { music: 0.4, sfx: 0.6, reducedMotion: false, quality: 'auto', showFps: false, comic: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
   } catch {
-    return { music: 0.4, sfx: 0.6, reducedMotion: false, quality: 'auto', showFps: false };
+    return { music: 0.4, sfx: 0.6, reducedMotion: false, quality: 'auto', showFps: false, comic: false };
   }
 }
 

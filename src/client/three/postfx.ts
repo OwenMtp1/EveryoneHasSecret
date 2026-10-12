@@ -57,7 +57,48 @@ const GradeShader = {
     }`,
 };
 
+/**
+ * Style « bande dessinée » (optionnel) : aplats (postérisation douce), couleurs plus franches et contours
+ * encrés détectés sur la luminance — un rendu dessiné sans changer les modèles.
+ */
+const InkShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    resolution: { value: new THREE.Vector2(1, 1) },
+    levels: { value: 5.0 },
+    ink: { value: 0.85 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    uniform float levels, ink;
+    varying vec2 vUv;
+    float lum(vec2 uv) { return dot(texture2D(tDiffuse, uv).rgb, vec3(0.299, 0.587, 0.114)); }
+    void main() {
+      vec2 px = 1.0 / resolution;
+      float tl = lum(vUv + px * vec2(-1.0, 1.0)), t = lum(vUv + px * vec2(0.0, 1.0)), tr = lum(vUv + px * vec2(1.0, 1.0));
+      float l = lum(vUv + px * vec2(-1.0, 0.0)), r = lum(vUv + px * vec2(1.0, 0.0));
+      float bl = lum(vUv + px * vec2(-1.0, -1.0)), b = lum(vUv + px * vec2(0.0, -1.0)), br = lum(vUv + px * vec2(1.0, -1.0));
+      float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+      float gy = -tl - 2.0 * t - tr + bl + 2.0 * b + br;
+      float edge = smoothstep(0.12, 0.35, sqrt(gx * gx + gy * gy));
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      float y = dot(c, vec3(0.299, 0.587, 0.114));
+      // aplats : la luminance par paliers adoucis, la teinte conservée
+      float q = (floor(y * levels) + smoothstep(0.35, 0.65, fract(y * levels))) / levels;
+      c *= q / max(y, 0.001);
+      c = mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, 1.25);
+      c = mix(c, vec3(0.04, 0.03, 0.05), edge * ink);
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+    }`,
+};
+
 export interface PostFx {
+  /** style dessiné (aplats + contours encrés) */
+  setComic(on: boolean): void;
   composer: EffectComposer;
   /** 0 = complet (AO + halo + étalonnage), 1 = étalonnage seul, 2 = rendu direct (machines modestes) */
   setLevel(level: 0 | 1 | 2): void;
@@ -87,6 +128,10 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   composer.addPass(new OutputPass());
   const grade = new ShaderPass(GradeShader);
   composer.addPass(grade);
+  const inkPass = new ShaderPass(InkShader);
+  inkPass.enabled = false;
+  composer.addPass(inkPass);
+  let comic = false;
   let level: 0 | 1 | 2 = 0;
   let aoAllowed = true;
   return {
@@ -102,12 +147,17 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
       aoAllowed = on;
       ao.enabled = level === 0 && on;
     },
+    setComic(on) {
+      comic = on;
+      inkPass.enabled = on;
+    },
     render() {
-      if (level === 2) renderer.render(scene, camera);
+      if (level === 2 && !comic) renderer.render(scene, camera);
       else composer.render();
     },
     setSize(w, h) {
       composer.setSize(w, h);
+      (inkPass.uniforms.resolution.value as THREE.Vector2).set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
       // l'occlusion se calcule à demi-résolution : quasi invisible, deux fois moins coûteuse
       ao.setSize(Math.max(1, Math.floor((w * renderer.getPixelRatio()) / 2)), Math.max(1, Math.floor((h * renderer.getPixelRatio()) / 2)));
     },

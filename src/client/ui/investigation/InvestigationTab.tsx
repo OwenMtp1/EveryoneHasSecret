@@ -15,6 +15,8 @@ const TOOL_TARGET: Record<string, 'player' | 'object' | 'none' | 'alibi'> = {
   examine_shoes: 'player',
   bypass_lock: 'object',
   social_profile: 'none',
+  cut_power: 'none',
+  anonymous_note: 'player',
 };
 
 /** Enquête commune : l'affaire, le dossier commun, les alibis, les oppositions et l'accusation formelle. */
@@ -100,7 +102,8 @@ export function InvestigationTab() {
               <div className="small muted">{game.role.description}</div>
               <div className="row-actions">
                 {game.role.tools.map((t) => (
-                  <button key={t.id} className="btn btn-sm" disabled={!free || t.usesLeft === 0} title={t.description} onClick={() => useTool(t.id)}>
+                  <button key={t.id} className={`btn btn-sm ${t.shadow ? 'btn-shadow' : ''}`} disabled={!free || t.usesLeft === 0} title={t.description} onClick={() => useTool(t.id)}>
+                    {t.shadow && '🕶 '}
                     {t.name}
                     {t.usesLeft !== undefined && ` (${t.usesLeft})`}
                   </button>

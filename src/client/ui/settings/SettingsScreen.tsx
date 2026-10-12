@@ -30,6 +30,10 @@ export function SettingsScreen() {
           </select>
         </label>
         <label className="inline check">
+          <input type="checkbox" checked={s.comic} onChange={(e) => update({ comic: e.target.checked })} />
+          Style dessiné (aplats de couleur et contours encrés)
+        </label>
+        <label className="inline check">
           <input type="checkbox" checked={s.showFps} onChange={(e) => update({ showFps: e.target.checked })} />
           Afficher le compteur d’images (<kbd>F3</kbd>)
         </label>
@@ -38,8 +42,8 @@ export function SettingsScreen() {
           <li><kbd>Z Q S D</kbd> / <kbd>W A S D</kbd> / flèches — se déplacer (relatif à la caméra)</li>
           <li>Souris — cliquer dans la vue pour orienter la caméra · molette : distance</li>
           <li><kbd>V</kbd> — troisième personne ↔ première personne</li>
-          <li><kbd>E</kbd> — action principale sur ce que vous visez · <kbd>F</kbd> — autres actions · <kbd>←</kbd> <kbd>→</kbd> — objets empilés</li>
-          <li><kbd>Entrée</kbd> — écrire dans le chat</li>
+          <li><kbd>E</kbd> — action principale sur ce que vous visez · <kbd>F</kbd> — roue d’actions · <kbd>←</kbd> <kbd>→</kbd> — objets empilés</li>
+          <li><kbd>Entrée</kbd> — écrire dans le chat · <kbd>P</kbd> — téléphone (messages, photos, pistes, plan)</li>
           <li><kbd>M</kbd> — plan 2D de la villa · <kbd>F3</kbd> — compteur d’images</li>
           <li><kbd>1</kbd>–<kbd>4</kbd> — Dossier, Inventaire, Enquête, Relations · <kbd>5</kbd> — Chronique</li>
           <li><kbd>N</kbd> — couper ou rétablir le micro · <kbd>Échap</kbd> — votre histoire, réglages, quitter</li>

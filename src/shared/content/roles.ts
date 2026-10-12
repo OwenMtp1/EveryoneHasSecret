@@ -93,3 +93,12 @@ export const ROLES: RoleDef[] = [
 ];
 
 export const roleById = (id: string) => ROLES.find((r) => r.id === id);
+
+/**
+ * Outils de l'ombre : en plus de sa spécialité, le meurtrier (et ses protecteurs pour le mot anonyme) dispose de
+ * moyens de brouiller l'enquête. Invisibles des autres joueurs.
+ */
+export const SHADOW_TOOLS: (RoleToolDef & { camps: ('murderer' | 'protector')[] })[] = [
+  { id: 'cut_power', name: 'Couper le courant', description: 'Au tableau électrique du sous-sol : noir complet dans la villa pendant une trentaine de secondes.', target: 'none', maxUses: 1, camps: ['murderer'] },
+  { id: 'anonymous_note', name: 'Mot anonyme', description: 'Fait circuler un mot non signé qui jette le soupçon sur quelqu’un.', target: 'player', maxUses: 1, camps: ['murderer', 'protector'] },
+];

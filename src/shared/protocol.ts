@@ -40,6 +40,8 @@ export type GameAction =
   | { type: 'open'; objectId: string }
   /** meuble verrouillé : code (coffre-fort) ou clé détenue (tiroir, malle) */
   | { type: 'unlock_furniture'; furnitureId: string; code?: string }
+  /** forcer un meuble fermé à clé au pied-de-biche ; ok = résultat du mini-jeu */
+  | { type: 'force_furniture'; furnitureId: string; ok: boolean }
   | { type: 'insert'; mediaId: string; deviceId: string }
   /** fouiller le corps de la victime */
   | { type: 'search_body'; bodyId: string }

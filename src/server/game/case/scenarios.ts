@@ -434,5 +434,8 @@ export const PLACES = {
   belvedere: { id: 'belvedere', name: 'le belvédère de la corniche', photoScene: 'cliff' },
 } as const;
 
+/** « à » + nom de lieu, avec les contractions (au restaurant, au bar, à la plage, à l’épicerie). */
+export const atPlace = (name: string) => (name.startsWith('le ') ? `au ${name.slice(3)}` : name.startsWith('les ') ? `aux ${name.slice(4)}` : `à ${name}`);
+
 /** Surnoms (téléphone de la victime) : identifier un expéditeur demande la photo de groupe. */
 export const NICKNAMES = ['Capitaine', 'Bambi', 'Le Phare', 'Moustique', 'Princesse', 'Le Prof', 'Tornade', 'Petit Loup', 'Coco', 'Ninja', 'Doudou', 'Picasso'];

@@ -17,7 +17,7 @@ import { castById } from '@shared/content/cast';
 import { formatClock } from '@shared/config';
 import { objectTypeDef } from '@shared/content/objects';
 import { roomById } from '@shared/content/villa';
-import { NICKNAMES, PLACES, SCENARIOS, scenarioById, a, e, type ScenarioCtx, type ScenarioDef, type Who } from './scenarios';
+import { NICKNAMES, PLACES, atPlace, SCENARIOS, scenarioById, a, e, type ScenarioCtx, type ScenarioDef, type Who } from './scenarios';
 import type { CaseItemSpec, CaseTruth, Fact, PlaceId, PlayerTruth } from './model';
 import { pick, shuffle } from '../../util';
 
@@ -118,7 +118,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
     const group = all.filter((o) => o.id !== p.id && placeOf.get(o.id) === pl);
     const mem: string[] = [];
     mem.push(`20h45 — vous quittez la villa avec les autres. ${v.first} reste seul${a(v)}, « fatigué${a(v)} ».`);
-    mem.push(group.length ? `21h00 — vous êtes à ${placeName(pl)} avec ${group.map((o) => o.full).join(', ')}.` : `21h00 — vous êtes à ${placeName(pl)}, seul${a(p)}.`);
+    mem.push(group.length ? `21h00 — vous êtes ${atPlace(placeName(pl))} avec ${group.map((o) => o.full).join(', ')}.` : `21h00 — vous êtes ${atPlace(placeName(pl))}, seul${a(p)}.`);
     for (const o of group) {
       if (o.id === m.id && p.id !== m.id) mem.push(`Vers ${formatClock(leaveAt)}, ${o.first} est sorti${a(o)} en disant « je vais chercher des cigarettes ». ${e(o, 'Il', 'Elle')} n’est revenu${a(o)} que vers ${formatClock(backAt)}.`);
       const ab = absent.get(o.id);
@@ -362,7 +362,7 @@ export function murdererBriefing(c: CaseTruth, murdererId: string, nameOf: (id: 
   const t = c.players.get(murdererId)!;
   const prot = c.protectorIds.map(nameOf);
   return [
-    `Votre version : vous êtes resté·e à ${PLACES[t.place].name} toute la soirée (sauf une courte sortie « cigarettes »).`,
+    `Votre version : vous êtes resté·e ${atPlace(PLACES[t.place].name)} toute la soirée (sauf une courte sortie « cigarettes »).`,
     'Ce qui peut vous trahir :',
     '• votre ticket de la station-service du col, oublié dans une poche de veste, près d’une entrée de la maison ;',
     '• les messages que vous avez échangés avec la victime, dans son téléphone ;',

@@ -12,6 +12,7 @@ import { buildCharacter, type Character3D } from './character3d';
 import type { Villa3D } from './villa3d';
 import { takeGameVilla } from './prebuilt';
 import { labelSprite, emojiSprite } from './sprites';
+import { buildCrimeScene } from './crimescene';
 import { objectModel } from './objects3d';
 import { voice } from '../voice';
 import { loadEnvironment } from './materials';
@@ -76,6 +77,10 @@ export class GameView3D {
   private moon: THREE.DirectionalLight;
   private selfLight = new THREE.PointLight('#ffd9a8', 2.2, 4.5, 1.4);
   private raycaster = new THREE.Raycaster();
+  /** dernières positions des cibles possibles (mise en évidence de la cible visée) */
+  private candPos = new Map<string, { c: THREE.Vector3; r: number }>();
+  private focusMark = focusBrackets();
+  private outlined: THREE.Mesh[] = [];
   private fx: PostFx;
   private grid = buildWorldGrid();
   private clock = new THREE.Clock();
@@ -147,7 +152,7 @@ export class GameView3D {
   }
   onReveal: (active: boolean) => void = () => {};
 
-  constructor(private container: HTMLElement, opts: { reducedMotion?: boolean; quality?: QualityMode; showFps?: boolean } = {}) {
+  constructor(private container: HTMLElement, opts: { reducedMotion?: boolean; quality?: QualityMode; showFps?: boolean; comic?: boolean } = {}) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.qualityMode = opts.quality ?? 'auto';
     if (this.qualityMode !== 'auto') this.quality = this.qualityMode;
@@ -188,6 +193,7 @@ export class GameView3D {
 
     // Post-traitement : halo léger autour des sources lumineuses
     this.fx = createPostFx(this.renderer, this.scene, this.camera);
+    if (opts.comic) this.fx.setComic(true);
 
     this.villa = takeGameVilla();
     this.scene.add(this.villa.group);
@@ -355,10 +361,50 @@ export class GameView3D {
 
   private setTarget(k: string | null) {
     this.target = k;
+    this.highlight(k);
     const id = k?.startsWith('o:') ? k.slice(2) : null;
     const st = id ? this.stackOf.get(id) : undefined;
     this.refreshLabels();
     this.onTarget(k, st && st.length > 1 ? { index: st.indexOf(id!), total: st.length } : undefined);
+  }
+
+  /**
+   * Mise en évidence de la cible : contour doré (coque inversée) sur l'objet modélisé, et crochets de visée
+   * autour de tout ce qui peut être visé (meuble, porte, joueur, corps, trace).
+   */
+  private highlight(k: string | null) {
+    for (const o of this.outlined) o.removeFromParent();
+    this.outlined = [];
+    const id = k?.startsWith('o:') ? k.slice(2) : null;
+    const e = id ? this.objects.get(id) : undefined;
+    if (e?.modeled)
+      e.visual.traverse((m) => {
+        const mesh = m as THREE.Mesh;
+        if (!mesh.isMesh || (mesh as THREE.SkinnedMesh).isSkinnedMesh || mesh.userData.outline) return;
+        const hull = new THREE.Mesh(mesh.geometry, OUTLINE_MAT);
+        hull.userData.outline = true;
+        hull.raycast = () => {};
+        mesh.add(hull);
+        this.outlined.push(hull);
+      });
+    if (!this.focusMark.parent) this.scene.add(this.focusMark);
+    this.focusMark.visible = !!k;
+  }
+
+  /** Crochets de visée : suivent la cible (joueur en mouvement) et respirent doucement. */
+  private updateFocusMark(t: number) {
+    const c = this.target ? this.candPos.get(this.target) : undefined;
+    if (!c || !this.target) {
+      this.focusMark.visible = false;
+      return;
+    }
+    this.focusMark.visible = true;
+    const tall = this.target.startsWith('p:') ? 2.1 : this.target.startsWith('d:') ? 2.3 : 1;
+    const w = Math.max(0.4, c.r * 2.3);
+    const pulse = 1 + Math.sin(t * 5) * 0.04;
+    this.focusMark.position.copy(c.c);
+    this.focusMark.scale.set(w * pulse, (tall > 1 ? tall : w) * pulse, 1);
+    (this.focusMark.material as THREE.SpriteMaterial).opacity = 0.75 + Math.sin(t * 5) * 0.2;
   }
 
   /** Dans un groupe, seule l'étiquette de l'objet visé (ou du premier) s'affiche : rien ne se superpose. */
@@ -684,6 +730,13 @@ export class GameView3D {
       c3d.setDead(true, !!witnessed);
       toRender(b.pos.x, b.pos.y, c3d.root.position);
       c3d.root.rotation.y = witnessed ? witnessed.rotY : (b.pos.x * 7) % (Math.PI * 2);
+      // repères numérotés des enquêteurs autour du corps (pas sous les yeux du témoin : posés à la découverte)
+      if (!witnessed) {
+        const scene = buildCrimeScene(b.pos.x * 13 + b.pos.y, b.npc ? 4 : 2);
+        scene.position.copy(c3d.root.position);
+        c3d.root.userData.crimeScene = scene;
+        this.scene.add(scene);
+      }
       this.scene.add(c3d.root);
       this.bodies.set(b.id, c3d);
     }
@@ -691,6 +744,7 @@ export class GameView3D {
     for (const [id, c] of this.bodies)
       if (!seen.has(id)) {
         this.scene.remove(c.root);
+        if (c.root.userData.crimeScene) this.scene.remove(c.root.userData.crimeScene as THREE.Object3D);
         c.dispose();
         this.bodies.delete(id);
       }
@@ -961,6 +1015,7 @@ export class GameView3D {
       if (k?.startsWith('o:') && cur && this.stackOf.get(cur)?.includes(k.slice(2))) k = this.target;
       if (k !== this.target) this.setTarget(k);
     }
+    this.updateFocusMark(t);
     // Ombres de la lampe de la pièce où l'on se trouve
     const me = this.view ? this.actors.get(this.view.you) : undefined;
     const meView = this.view?.players.find((p) => p.id === this.view!.you);
@@ -1014,6 +1069,8 @@ export class GameView3D {
         cands.push({ key: `d:${d.id}`, c: at(d.x + 0.5, d.y + 0.5, 1.1), r: 0.6 });
     if (v.inventory.some((o) => o.type === 'cloth'))
       for (const t of v.traces) if (t.roomId === meV.roomId && near(t.pos.x, t.pos.y, 0.4)) cands.push({ key: `t:${t.id}`, c: at(t.pos.x, t.pos.y, 0.05), r: 0.3 });
+    this.candPos.clear();
+    for (const c of cands) this.candPos.set(c.key, c);
     if (!cands.length) return null;
     const occluded = (from: THREE.Vector3, to: THREE.Vector3) => {
       const dir = to.clone().sub(from);
@@ -1082,6 +1139,11 @@ export class GameView3D {
       this.quality = mode;
       this.applyQuality();
     }
+  }
+
+  /** Style dessiné (Paramètres → Style graphique). */
+  setComic(on: boolean) {
+    this.fx.setComic(on);
   }
 
   /** Compteur d'images (paramètres ou touche F3) : images/s, appels de dessin, triangles, niveau de qualité. */
@@ -1172,6 +1234,41 @@ export class GameView3D {
 }
 
 const _target = new THREE.Vector3();
+
+/** Contour : coque gonflée le long des normales, faces arrière seules, toujours lisible (sans brouillard). */
+const OUTLINE_MAT = (() => {
+  const m = new THREE.MeshBasicMaterial({ color: '#ffd27a', side: THREE.BackSide, fog: false, toneMapped: false });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize(normal) * 0.012;');
+  };
+  return m;
+})();
+
+/** Quatre coins dorés (texture dessinée une fois), affichés par-dessus le décor. */
+function focusBrackets(): THREE.Sprite {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d')!;
+  g.strokeStyle = '#ffd27a';
+  g.lineWidth = 7;
+  g.lineCap = 'round';
+  g.shadowColor = 'rgba(0,0,0,0.8)';
+  g.shadowBlur = 6;
+  const a = 10, b = 118, l = 26;
+  for (const [x, y, dx, dy] of [[a, a, 1, 1], [b, a, -1, 1], [a, b, 1, -1], [b, b, -1, -1]] as const) {
+    g.beginPath();
+    g.moveTo(x, y + dy * l);
+    g.lineTo(x, y);
+    g.lineTo(x + dx * l, y);
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false }));
+  s.renderOrder = 20;
+  s.visible = false;
+  return s;
+}
 const _step = { x: 0, y: 0 };
 const _tmpR = new THREE.Vector3();
 const _server = new THREE.Vector3();

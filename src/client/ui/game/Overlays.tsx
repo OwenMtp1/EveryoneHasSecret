@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { formatClock } from '@shared/config';
 import { useStore, attempt } from '../../store';
 import { call } from '../../net/socket';
+import { Keypad } from './Minigames';
+import { Replay } from './Replay';
 import { CastPortrait } from '../common/CastPortrait';
 import { EvidenceCard } from './DossierTab';
 import { act, useChatFocus, usePicker } from './helpers';
@@ -155,6 +157,15 @@ export function Picker() {
   const [text, setText] = useState('');
   useEffect(() => setText(''), [open]);
   if (!open) return null;
+  if (open.kind === 'text' && /chiffres/i.test(open.hint))
+    return (
+      <div className="modal-backdrop" onClick={close}>
+        <div className="modal picker" onClick={(e) => e.stopPropagation()}>
+          <Keypad title={open.title} hint={open.hint} onCancel={close} onSubmit={(code) => (close(), open.onSubmit(code))} />
+        </div>
+      </div>
+    );
+  if (open.kind === 'choice' && open.wheel) return <ActionWheel title={open.title} options={open.options} onPick={(id) => (close(), open.onPick(id))} onCancel={close} />;
   return (
     <div className="modal-backdrop" onClick={close}>
       <div className="modal picker" onClick={(e) => e.stopPropagation()}>
@@ -190,6 +201,49 @@ export function Picker() {
           </form>
         )}
         <button className="btn btn-ghost btn-sm" onClick={close}>Annuler</button>
+      </div>
+    </div>
+  );
+}
+
+/** Roue d'actions (touche F) : options en cercle autour du centre de l'écran, choisies au clic ou au chiffre. */
+function ActionWheel({ title, options, onPick, onCancel }: { title: string; options: { id: string; label: string }[]; onPick: (id: string) => void; onCancel: () => void }) {
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      e.stopPropagation();
+      const n = /^(Digit|Numpad)([1-9])$/.exec(e.code)?.[2];
+      if (n && options[Number(n) - 1]) {
+        e.preventDefault();
+        onPick(options[Number(n) - 1].id);
+      } else if (e.code === 'Escape' || e.code === 'KeyF') {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', down, true);
+    return () => window.removeEventListener('keydown', down, true);
+  }, [options, onPick, onCancel]);
+  const R = options.length <= 4 ? 120 : 150;
+  return (
+    <div className="wheel-backdrop" onClick={onCancel}>
+      <div className="wheel" style={{ width: R * 2 + 200, height: R * 2 + 90 }}>
+        <div className="wheel-hub">{title}</div>
+        {options.map((o, i) => {
+          const a = -Math.PI / 2 + (i / options.length) * Math.PI * 2;
+          return (
+            <button
+              key={o.id}
+              className={`wheel-item ${i === 0 ? 'primary' : ''}`}
+              style={{ left: `calc(50% + ${Math.cos(a) * R}px)`, top: `calc(50% + ${Math.sin(a) * R * 0.8}px)` }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onPick(o.id);
+              }}
+            >
+              <kbd>{i + 1}</kbd> {o.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -307,6 +361,7 @@ export function Epilogue() {
   const murderer = game.players.find((p) => p.id === e.murdererId);
   const won = e.outcomes.find((o) => o.playerId === game.you)?.won;
   const leave = () => attempt(call('game:leave'));
+  const [showReplay, setShowReplay] = useState(false);
   return (
     <div className="epilogue">
       <div className="epilogue-inner">
@@ -369,7 +424,11 @@ export function Epilogue() {
             </div>
           </div>
         )}
+        {showReplay && e.replay && <Replay replay={e.replay} onClose={() => setShowReplay(false)} />}
         <div className="epilogue-actions">
+          {e.replay && e.replay.frames.length > 1 && !showReplay && (
+            <button className="btn btn-lg" onClick={() => setShowReplay(true)}>▶ REVOIR LA NUIT</button>
+          )}
           <button className="btn btn-primary btn-lg" onClick={leave}>RETOUR AU SALON — REJOUER</button>
         </div>
       </div>

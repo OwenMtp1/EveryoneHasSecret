@@ -25,6 +25,9 @@ Aide au joueur : une **carte de rôle** s’affiche une fois après le plan sur 
 un panneau **Pistes** (haut gauche, repliable) propose l’étape suivante de la chaîne d’enquête, déduite uniquement des
 pièces que le joueur a déjà lues (rien n’est révélé) ; le bandeau affiche le compte à rebours avant la police et les
 accusations restantes ; l’onglet **Chronique** (touche 5) garde tout le fil de la soirée, filtrable.
+Le **téléphone** (P) regroupe messages, photos des pièces lues, pistes et plan ; **F** ouvre une roue avec toutes les
+actions de la cible ; la cible visée est soulignée d’un contour doré. À l’épilogue, **Revoir la nuit** rejoue les trajets
+de chacun sur le plan.
 
 ## 3. Rôles secrets (distribués par le serveur, indépendamment de l’apparence)
 
@@ -101,6 +104,15 @@ c’était l’accusé·e). Aucune occasion d’élimination pendant un vote. À
 prévient qu’une arrestation à tort donnerait la victoire au meurtrier.
 
 ## 9. Objets
+
+Pied-de-biche : force une porte ou un meuble fermé à clé (mini-jeu), bruyant, laisse une serrure forcée. Les codes à
+chiffres se composent sur un pavé.
+
+Outils de l’ombre (invisibles des autres) : le meurtrier peut couper le courant au sous-sol (une fois) et faire circuler
+un mot anonyme (une fois) ; un protecteur encore lié au meurtrier dispose du mot anonyme.
+
+Événements de la soirée : deux par partie, tirés au sort (chien, appel de la station-service, fenêtre, voisin), chacun
+apporte une information vraie mais partielle — jamais un nom.
 
 Inventaire détaillé (fonction, interactions, conditions, conséquences) : `docs/VALIDATION.md`, section « Inventaire des objets ».
 Objets volontairement absents : horloge, montre, enregistreur audio, dictaphone, disque dur externe, tableau blanc,

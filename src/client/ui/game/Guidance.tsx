@@ -102,6 +102,7 @@ export function computeLeads(game: GameSelfView): Lead[] {
       alibi,
       { text: 'Le ticket de caisse et la carte mémoire peuvent vous trahir : faites-les disparaître (briquet, cheminée)', done: false },
       { text: 'Le téléphone de la victime vous désigne par un surnom : gardez-le loin des curieux', done: false },
+      { text: d.camp === 'murderer' ? 'Outils de l’ombre (Enquête, touche 3) : couper le courant au sous-sol, faire circuler un mot anonyme' : 'Un mot anonyme (Enquête, touche 3) peut détourner les soupçons', done: false },
       { text: d.camp === 'murderer' ? 'Un témoin trop curieux ? Restez seul·e avec lui ou elle et attendez l’occasion' : 'Couvrez le meurtrier : un alibi commun, une fausse piste', done: false },
     ];
   }

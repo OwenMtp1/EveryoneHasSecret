@@ -36,17 +36,28 @@ export async function act(a: GameAction) {
 /** Sélecteur modal générique (choix d'une option, ou saisie d'un texte comme un code). */
 interface PickerState {
   open:
-    | { kind: 'choice'; title: string; options: { id: string; label: string; hint?: string }[]; onPick: (id: string) => void }
+    | { kind: 'choice'; title: string; options: { id: string; label: string; hint?: string }[]; onPick: (id: string) => void; wheel?: boolean }
     | { kind: 'text'; title: string; hint: string; placeholder?: string; onSubmit: (text: string) => void }
     | null;
-  ask: (title: string, options: { id: string; label: string; hint?: string }[], onPick: (id: string) => void) => void;
+  ask: (title: string, options: { id: string; label: string; hint?: string }[], onPick: (id: string) => void, wheel?: boolean) => void;
   askText: (title: string, hint: string, onSubmit: (text: string) => void, placeholder?: string) => void;
   close: () => void;
 }
 export const usePicker = create<PickerState>((set) => ({
   open: null,
-  ask: (title, options, onPick) => set({ open: { kind: 'choice', title, options, onPick } }),
+  ask: (title, options, onPick, wheel) => set({ open: { kind: 'choice', title, options, onPick, wheel } }),
   askText: (title, hint, onSubmit, placeholder) => set({ open: { kind: 'text', title, hint, onSubmit, placeholder } }),
+  close: () => set({ open: null }),
+}));
+
+/** Mini-jeu en cours (forcer une serrure) : le résultat part au serveur, qui décide des conséquences. */
+export const useMinigame = create<{
+  open: { kind: 'force'; title: string; onDone: (ok: boolean) => void } | null;
+  force: (title: string, onDone: (ok: boolean) => void) => void;
+  close: () => void;
+}>((set) => ({
+  open: null,
+  force: (title, onDone) => set({ open: { kind: 'force', title, onDone } }),
   close: () => set({ open: null }),
 }));
 
@@ -120,6 +131,8 @@ export function targetActions(g: GameSelfView, key: string | null): { title: str
         ? { label: `Déverrouiller (${key.name.toLowerCase()})`, run: () => act({ type: 'use', objectId: key.id }) }
         : { label: 'Fermée à clé — il vous faut la bonne clé', run: () => {} },
     );
+    const bar = inv.find((o) => o.type === 'crowbar');
+    if (bar) out.push({ label: 'Forcer au pied-de-biche (bruyant)', run: () => act({ type: 'use', objectId: bar.id }) });
     return { title: `🔒 ${d.label ?? 'Porte verrouillée'}`, actions: out };
   }
   if (kind === 'b') {
@@ -152,6 +165,8 @@ export function targetActions(g: GameSelfView, key: string | null): { title: str
     const lock = g.lockedFurniture.find((l) => l.id === f.id);
     if (lock?.kind === 'code') out.push({ label: 'Saisir le code', run: () => picker.askText(f.name, lock.hint ?? 'Code à quatre chiffres', (code) => act({ type: 'unlock_furniture', furnitureId: f.id, code })) });
     if (lock?.kind === 'key') out.push({ label: 'Ouvrir avec une clé', run: () => act({ type: 'unlock_furniture', furnitureId: f.id }) });
+    if (lock?.kind === 'key' && inv.some((o) => o.type === 'crowbar'))
+      out.push({ label: 'Forcer au pied-de-biche (bruyant)', run: () => useMinigame.getState().force(f.name, (ok) => act({ type: 'force_furniture', furnitureId: f.id, ok })) });
     if (lock) return { title: `🔒 ${f.name}`, hint: lock.hint, actions: out };
     if (f.hiding) out.push({ label: 'Fouiller', run: () => act({ type: 'search', furnitureId: f.id }) });
     if (f.kind === 'sink') out.push({ label: 'Se laver les mains', run: () => act({ type: 'wash' }) });

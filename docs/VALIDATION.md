@@ -116,6 +116,21 @@ La qualité adaptative baisse d'un niveau si l'image dépasse ~28 ms. **Non mesu
 | O7 | qualité graphique manuelle (auto / élevée / moyenne / basse) dans Paramètres ; « auto » reste le défaut au premier lancement | vérification manuelle (catégorie C) |
 | O2 | instanciation des meubles répétés : **reportée** (gain incertain sans mesure sur un vrai GPU) | — |
 
+## Phase 2 de l’audit — « Rendre accrocheur »
+
+| Code | Changement | Vérifié par |
+|---|---|---|
+| V8 | cible visée mise en évidence : contour doré sur l’objet, crochets de visée autour de tout ce qui se vise (meuble, porte, joueur, corps, trace) | partie automatisée (captures) |
+| V5 | scène de crime : chevalets jaunes numérotés autour des corps découverts | partie automatisée (captures) |
+| V1–V3 | **style dessiné** optionnel (Paramètres) : aplats de couleur et contours encrés en post-traitement. Pas de nouveaux modèles « cartoon » : les banques d’assets gratuites ne sont pas joignables depuis l’environnement de développement | vérification manuelle (catégorie C) |
+| U9 | téléphone du personnage (P) : heure, réseau coupé après 23h, applications Messages, Dossier, Photos (photos des pièces lues), Pistes, Plan, Chronique, Enquête, Relations | partie automatisée (ouverture, fermeture par Échap) |
+| U10 | roue d’actions (F) : toutes les actions de la cible en cercle, choix au clic ou au chiffre | vérification manuelle |
+| G6 | pavé à code pour les verrous à chiffres (téléphone, coffre-fort, coffret) ; **forcer une serrure** au pied-de-biche (nouvel objet : garage, cave, atelier, sous-sol) : mini-jeu de frappe en rythme (3 goupilles), bruit entendu des pièces voisines, serrure forcée visible ; le coffre-fort ne se force pas | test serveur (pied-de-biche) ; mini-jeu : vérification manuelle |
+| G4 | outils de l’ombre : meurtrier — couper le courant (au sous-sol, 30 s, une fois), mot anonyme (une fois) ; protecteurs — mot anonyme | test serveur |
+| S5 | événements de la soirée : deux tirés au sort (chien qui flaire l’arme, appel de la station-service, fenêtre qui claque près de l’appareil photo, voisin qui a vu une silhouette), chacun vrai mais partiel, jamais nominatif | test serveur (3 graines) |
+| U15 | épilogue : « Revoir la nuit », trajets de chacun sur le plan des quatre niveaux (une position toutes les 3 s), meurtrier entouré, morts marquées, lecture / pause / vitesse | partie automatisée (rejeu affiché) |
+| — | français : « au restaurant », « au bar » (contractions des lieux) | relecture |
+
 ## D. Bloqué par une autorisation ou une ressource
 
 | Élément | Ce qui manque | Ce qui est prêt |

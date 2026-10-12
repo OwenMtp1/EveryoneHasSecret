@@ -269,7 +269,7 @@ export interface RoleView {
   id: string;
   name: string;
   description: string;
-  tools: { id: string; name: string; description: string; usesLeft?: number }[];
+  tools: { id: string; name: string; description: string; usesLeft?: number; shadow?: boolean }[];
 }
 
 /** Spécification d'une photo d'enquête : rendue par le client avec les vrais personnages de la partie. */
@@ -385,7 +385,16 @@ export interface VoteView {
   rules: string;
 }
 
+/** Trajets de la nuit (positions échantillonnées), rejoués sur le plan à l'épilogue. */
+export interface ReplayView {
+  players: { id: string; name: string; castId: string; murderer: boolean }[];
+  /** [joueur, x, y] (coordonnées de la grille, niveaux côte à côte) */
+  frames: { clock: number; p: [string, number, number][] }[];
+  deaths: { clock: number; x: number; y: number; name: string }[];
+}
+
 export interface EpilogueView {
+  replay?: ReplayView;
   winner: 'innocents' | 'murderer';
   headline: string;
   scenarioTitle: string;

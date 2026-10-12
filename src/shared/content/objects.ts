@@ -29,7 +29,8 @@ export type ObjectTag =
   | 'device'
   | 'media'
   | 'container'
-  | 'personal';
+  | 'personal'
+  | 'tool';
 
 export type UseEffect =
   | 'unlock' // clé : porte, contenant ou meuble verrouillé correspondant, à proximité
@@ -117,6 +118,7 @@ export const OBJECT_TYPES: ObjectTypeDef[] = [
   { type: 'lighter', name: 'Briquet', icon: '🔥', description: 'Un briquet tempête en laiton : de quoi brûler un papier.', tags: ['fire'], spawnRooms: ['living', 'garden', 'office', 'studio'], spawnChance: 1, model: [{ kind: 'box', size: [0.04, 0.06, 0.016], p: [0, 0.03, 0], color: BRASS, metal: 0.9, rough: 0.25 }] },
   { type: 'cloth', name: 'Torchon', icon: '🧻', description: 'Un torchon propre. Pour essuyer… n’importe quoi.', tags: ['cleaning'], spawnRooms: ['kitchen', 'bathroom', 'bathroom2'], spawnChance: 1, model: [{ kind: 'box', size: [0.26, 0.012, 0.2], p: [0, 0.006, 0], r: [0, 0.3, 0], color: '#e8e2d2' }] },
   { type: 'gloves', name: 'Gants de jardinage', icon: '🧤', description: 'En les portant, on ne laisse plus d’empreintes sur ce qu’on touche.', tags: ['gloves'], useEffect: 'wear', spawnRooms: ['garden', 'cellar', 'studio'], spawnChance: 1, model: [{ kind: 'box', size: [0.1, 0.02, 0.16], p: [0, 0.01, 0], r: [0, 0.4, 0], color: '#6d7d3b', rough: 0.9 }, { kind: 'box', size: [0.1, 0.02, 0.16], p: [0.05, 0.03, 0.02], r: [0, -0.2, 0], color: '#6d7d3b', rough: 0.9 }] },
+  { type: 'crowbar', name: 'Pied-de-biche', icon: '🪛', description: 'Lourd, rouillé. De quoi forcer une serrure… bruyamment, et en laissant des marques.', tags: ['tool'], useEffect: 'force', spawnRooms: ['garage', 'cellar', 'studio', 'basement'], spawnChance: 1, model: [{ kind: 'box', size: [0.5, 0.018, 0.022], p: [0, 0.011, 0], color: '#7a2a20', metal: 0.6, rough: 0.6 }, { kind: 'box', size: [0.06, 0.018, 0.022], p: [0.26, 0.02, 0.02], r: [0, 0.9, 0], color: '#7a2a20', metal: 0.6, rough: 0.6 }] },
   { type: 'flashlight', name: 'Lampe torche', icon: '🔦', description: 'Elle fonctionne encore. Utile si le courant saute.', tags: ['light'], useEffect: 'toggle_light', spawnRooms: ['kitchen', 'hall', 'bedroom1', 'guestroom'], spawnChance: 1, model: [{ kind: 'cyl', size: [0.02, 0.16], p: [-0.02, 0.022, 0], r: [0, 0, 1.5708], color: BLACK, rough: 0.4 }, { kind: 'cyl', size: [0.026, 0.004], p: [0.1, 0.03, 0], r: [0, 0, 1.5708], color: '#fff6d8', emissive: '#fff1c4' }] },
 ];
 

@@ -180,8 +180,22 @@ const banner = page.waitForFunction(() => document.querySelector('.evening-banne
   async (h) => (log('annonce de la soirée :', await h.jsonValue()), shot(page, '02b-annonce-soiree')),
   () => errors.push('BUG : aucune annonce de la soirée affichée'),
 );
-await sleep(7000);
+// carte de rôle : une fois le plan sur le corps terminé, puis fermée d'un clic
+await page.waitForFunction(() => document.querySelector('.rolecard'), undefined, { timeout: 90000 }).then(
+  async () => (log('carte de rôle affichée :', await page.evaluate(() => document.querySelector('.rolecard-camp')?.textContent)), await shot(page, '02c-carte-de-role'), await page.evaluate(() => (document.querySelector('.rolecard-backdrop') as HTMLElement | null)?.click())),
+  () => errors.push('BUG : carte de rôle absente'),
+);
+await sleep(3000);
 await shot(page, '03-en-jeu');
+// téléphone (P) : écran d'accueil avec ses applications, refermé par Échap
+await page.keyboard.press('KeyP');
+await page.waitForFunction(() => document.querySelectorAll('.phone-app').length >= 6, undefined, { timeout: 30000 }).then(
+  async () => (log('téléphone ouvert'), await shot(page, '03a-telephone')),
+  () => errors.push('BUG : le téléphone ne s’ouvre pas'),
+);
+await page.keyboard.press('Escape');
+await page.waitForFunction(() => !document.querySelector('.phone'), undefined, { timeout: 30000 }).catch(() => errors.push('BUG : Échap ne ferme pas le téléphone'));
+await sleep(600);
 // menu Échap : panneau à gauche, version de l'histoire, premier choix
 await page.keyboard.press('Escape');
 await page.waitForFunction(() => document.querySelector('.story-panel')?.textContent?.includes('Votre version'), undefined, { timeout: 15000 }).then(
@@ -189,7 +203,7 @@ await page.waitForFunction(() => document.querySelector('.story-panel')?.textCon
   () => errors.push('BUG : Échap n’ouvre pas le panneau de l’histoire'),
 );
 await page.evaluate(() => (document.querySelector('.stance-friend') as HTMLButtonElement | null)?.click());
-await page.waitForFunction(() => document.querySelector('.story-panel')?.textContent?.includes('Vous avez choisi l’amitié'), undefined, { timeout: 15000 }).then(
+await page.waitForFunction(() => document.querySelector('.story-panel')?.textContent?.includes('Vous avez choisi l’amitié'), undefined, { timeout: 60000 }).then(
   () => log('premier choix enregistré : amitié'),
   () => errors.push('BUG : premier choix non enregistré'),
 );
@@ -277,11 +291,25 @@ log('téléphone :', await act(sleuth, { type: 'examine', objectId: phone.id }))
 
 // ── la boîte cadenassée est cachée dans la chambre de la victime : on fouille ──
 const boxKey = await waitFor('clé dorée en poche', () => sleuth.view!.inventory.find((o) => o.name.includes('dorée')));
-const { allFurniture } = await import('../src/shared/content/villa');
+const { allFurniture, buildWorldGrid, roomAt } = await import('../src/shared/content/villa');
+const grid = buildWorldGrid();
+/** point d'approche d'un meuble : un des quatre côtés, dans la même pièce et accessible */
+const approach = (f: { x: number; y: number; w: number; h: number; roomId: string }) =>
+  [
+    { x: f.x + f.w / 2, y: f.y + f.h + 0.6 },
+    { x: f.x + f.w / 2, y: f.y - 0.6 },
+    { x: f.x - 0.6, y: f.y + f.h / 2 },
+    { x: f.x + f.w + 0.6, y: f.y + f.h / 2 },
+  ].find((pt) => roomAt(grid, pt.x, pt.y)?.id === f.roomId && findPath(me(sleuth).pos!, pt, new Set(sleuth.view!.unlockedDoors)));
 let diaryRead = false;
 for (const room of ['suite', 'bedroom2', 'guestroom']) {
   for (const f of allFurniture().filter((x) => x.roomId === room && x.hiding)) {
-    await walkTo(sleuth, { x: f.x + f.w / 2, y: f.y + f.h + 0.6 }, f.name);
+    const pt = approach(f);
+    if (!pt) {
+      log('meuble inaccessible, ignoré :', f.name);
+      continue;
+    }
+    await walkTo(sleuth, pt, f.name);
     const r = await act(sleuth, { type: 'search', furnitureId: f.id }).catch((e) => String(e.message));
     log('fouille', f.name, '→', r);
     await sleep(300);
@@ -323,6 +351,12 @@ await waitFor('épilogue', () => host.view!.epilogue, 30000);
 log('épilogue :', host.view!.epilogue!.headline, '— gagnants :', host.view!.epilogue!.winner);
 await sleep(6000);
 await shot(page, '07-epilogue');
+// rejeu de la nuit : trajets sur le plan
+await page.evaluate(() => [...document.querySelectorAll('.epilogue-actions button')].find((b) => b.textContent?.includes('REVOIR'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+await page.waitForFunction(() => document.querySelector('.replay-canvas'), undefined, { timeout: 30000 }).then(
+  async () => (log('rejeu de la nuit affiché'), await sleep(2500), await shot(page, '07b-rejeu')),
+  () => errors.push('BUG : rejeu de la nuit absent'),
+);
 
 // ── retour au salon : personnages libérés pour la partie suivante ──
 for (const p of all) await call(p, 'game:leave').catch(() => {});

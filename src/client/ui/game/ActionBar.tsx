@@ -33,7 +33,7 @@ export function ActionBar() {
         </span>
         {t.actions.length > 1 && (
           <span className="muted">
-            <kbd>F</kbd> autres actions ({t.actions.length - 1})
+            <kbd>F</kbd> roue d’actions ({t.actions.length})
           </span>
         )}
       </div>
@@ -49,5 +49,6 @@ export function triggerTarget(secondary: boolean) {
   if (!t || !t.actions.length) return;
   if (!secondary) return t.actions[0].run();
   if (t.actions.length < 2) return;
-  usePicker.getState().ask(t.title, t.actions.slice(1).map((a, i) => ({ id: String(i), label: a.label })), (id) => t.actions[1 + Number(id)].run());
+  // roue d'actions : toutes les actions de la cible autour du centre de l'écran (chiffre ou clic)
+  usePicker.getState().ask(t.title, t.actions.map((a, i) => ({ id: String(i), label: a.label })), (id) => t.actions[Number(id)].run(), true);
 }
