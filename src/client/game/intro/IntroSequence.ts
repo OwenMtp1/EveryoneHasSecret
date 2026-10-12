@@ -5,9 +5,10 @@
  */
 import * as THREE from 'three';
 import { introSchedule, introStateAt, seededRandom, type GameIntroState, type IntroPlan } from '@shared/content/intro';
-import { WORLD_W } from '@shared/content/villa';
 import { buildVilla, DRIVEWAY_X } from '../../three/villa3d';
 import { loadEnvironment, MAT } from '../../three/materials';
+import { createPostFx, type PostFx } from '../../three/postfx';
+import { barkMaterial, crownGeometry, foliageClump, foliageMaterial } from '../../three/nature';
 import { buildIntroVehicle } from './IntroVehicle';
 import { buildIntroCast, type CastControls } from './IntroCharacters';
 import { IntroCamera } from './IntroCamera';
@@ -74,6 +75,7 @@ function silhouetteTexture() {
 
 export class IntroSequence {
   private renderer: THREE.WebGLRenderer;
+  private fx: PostFx;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(40, 1, 0.05, 600);
   private raf = 0;
@@ -97,10 +99,19 @@ export class IntroSequence {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = false;
     host.appendChild(this.renderer.domElement);
+    // même étalonnage et même halo que la partie (sans occlusion ambiante : extérieur trop vaste)
+    this.fx = createPostFx(this.renderer, this.scene, this.camera);
+    this.fx.setPixelRatio(this.renderer.getPixelRatio());
+    this.fx.setAO(false);
+    this.fx.setLevel(0);
+    // halo réservé aux vraies sources (lanternes, fenêtres) : pas sur la peau ou l'écran du tableau de bord
+    this.fx.bloom.threshold = 1.15;
+    this.fx.bloom.strength = 0.22;
     const resize = () => {
       const w = host.clientWidth || window.innerWidth;
       const h = host.clientHeight || window.innerHeight;
       this.renderer.setSize(w, h, false);
+      this.fx.setSize(w, h);
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
     };
@@ -126,7 +137,7 @@ export class IntroSequence {
     const rand = seededRandom(plan.seed);
     const vehicleDef = resolveVehicle(plan);
     scene.background = new THREE.Color('#03040a');
-    const fog = new THREE.FogExp2('#05070d', 0.03);
+    const fog = new THREE.FogExp2('#18213c', 0.03);
     scene.fog = fog;
     const hemi = new THREE.HemisphereLight('#6f82b5', '#0a0a10', 0.55);
     scene.add(hemi);
@@ -164,10 +175,10 @@ export class IntroSequence {
     }
     // arbres le long de la route (position tirée de la graine commune)
     const trunkGeo = new THREE.CylinderGeometry(0.22, 0.32, 3, 6);
-    const crownGeo = new THREE.IcosahedronGeometry(2.3, 1);
+    const crownGeo = crownGeometry(2.1, 7, undefined, 2);
     const n = 70;
-    const trunks = new THREE.InstancedMesh(trunkGeo, MAT.paint('#251a12', 1), n);
-    const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ color: '#122217', roughness: 1, flatShading: true }), n);
+    const trunks = new THREE.InstancedMesh(trunkGeo, barkMaterial(), n);
+    const crowns = new THREE.InstancedMesh(crownGeo, foliageMaterial(), n);
     const q = new THREE.Quaternion();
     for (let i = 0; i < n; i++) {
       const side = i % 2 ? 1 : -1;
@@ -189,9 +200,13 @@ export class IntroSequence {
       const l = new THREE.PointLight('#ffb66b', 14, 12, 1.6);
       l.position.set(DRIVEWAY_X + sx * 4.2, 2.5, 30.6);
       scene.add(l);
+      // haie feuillue : touffes instanciées le long du muret
       const hedgeLen = 30;
-      const hedge = new THREE.Mesh(new THREE.BoxGeometry(hedgeLen, 1.1, 0.9), new THREE.MeshStandardMaterial({ color: '#16271a', roughness: 1 }));
-      hedge.position.set(DRIVEWAY_X + sx * (4.6 + hedgeLen / 2), 0.55, 30);
+      const nh = Math.round(hedgeLen / 0.7);
+      const hedge = new THREE.InstancedMesh(foliageClump(0.62, 4, '#7aae50', '#3a6236'), foliageMaterial(), nh);
+      for (let i = 0; i < nh; i++)
+        hedge.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(DRIVEWAY_X + sx * (4.6 + (i + 0.5) * (hedgeLen / nh)), 0.55, 30), q, new THREE.Vector3(1, 0.95, 0.85)));
+      hedge.computeBoundingSphere();
       scene.add(hedge);
     }
     // réverbères le long de la route : têtes lumineuses partout, mais seulement deux vraies lampes,
@@ -214,9 +229,7 @@ export class IntroSequence {
       const near = [...postsZ].sort((a, b) => Math.abs(a - carZ) - Math.abs(b - carZ)).slice(0, 2);
       streetLights.forEach((l, i) => l.position.set(DRIVEWAY_X - 3.6, 4.3, near[i] ?? -100));
     };
-    const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(3, 24, 16), new THREE.MeshBasicMaterial({ color: '#c8d2e8', fog: false }));
-    moonDisc.position.set(WORLD_W / 2 - 90, 60, -120);
-    scene.add(moonDisc);
+    // lune, nuages et étoiles : ciel de la villa (nature.ts)
 
     // ── Fenêtres de la façade : s'allument une à une ; rideaux ; une silhouette ──
     const facade = villa.exteriorWindows.filter((w) => w.z > 20);
@@ -346,7 +359,7 @@ export class IntroSequence {
       const outside = state === 'INTRO_REVEAL' ? clamp01((u - 0.2) / 0.2) : ORDER.indexOf(state) > ORDER.indexOf('INTRO_REVEAL') ? 1 : 0;
       this.audio.update(state, speed, outside, u);
       villa.update(clock.elapsedTime);
-      this.renderer.render(scene, this.camera);
+      this.fx.render();
     };
     loop();
     this.cleanup.push(() => {
@@ -361,6 +374,7 @@ export class IntroSequence {
     this.audio.dispose();
     this.loader.dispose();
     for (const c of this.cleanup) c();
+    this.fx.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

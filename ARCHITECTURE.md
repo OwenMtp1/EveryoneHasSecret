@@ -55,14 +55,17 @@ src/
     three/
       cast3d.ts                 personnages du catalogue (chargés à la demande, animations Rocketbox)
       photo.ts                  photos d'enquête rendues avec les VRAIS personnages de la partie
-      GameView3D.ts             vue de jeu, ciblage par raycast (E/F), plan de découverte du corps
+      GameView3D.ts             vue de jeu, ciblage par raycast (E/F), plan de découverte du corps, fantôme
+      postfx.ts                 rendu : MSAA en post-traitement, occlusion ambiante (GTAO), halo, étalonnage, vignettage
+      nature.ts                 feuillages en touffes, forêt instanciée, ciel nocturne (nuages, lune, collines), herbe et fleurs
       villa3d.ts, furnishing3d.ts, objects3d.ts, character3d.ts (repli procédural)
     ui/
       lobby/CharacterGallery    galerie : Disponible / Sélectionné par vous / Indisponible
       game/                     invite d'interaction, dossier, inventaire, vote, pause, épilogue
       investigation/            affaire, dossier commun, alibis, accusation, outils de spécialité
 supabase/migrations/            schéma Postgres + politiques RLS
-scripts/                        partie automatisée (navigateur réel), mesure de charge, pipeline des personnages
+scripts/                        partie automatisée (navigateur réel), inspection visuelle pièce par pièce (inspect-villa.ts),
+                                mesure de charge, pipeline des personnages
 tests/                          engine, villa, intro, multiplayer, supabase, audio
 ```
 
@@ -100,8 +103,11 @@ ou fait dans les vues, pour les 3 scénarios et 3 à 8 joueurs) et par inspectio
 - Marche fluide : même physique de marche côté serveur et prédiction client (aucun recalage), vitesse transmise
   dans les vues, trajectoire des autres joueurs en courbe d'Hermite (positions + vitesses), animation et orientation
   pilotées par la vitesse, virages à vitesse de rotation bornée.
-- Client : qualité adaptative (halo, ombres, résolution), niveaux éloignés masqués, lumières du seul niveau du joueur,
+- Client : qualité adaptative en 3 niveaux — 0 : occlusion ambiante + halo + étalonnage ; 1 : étalonnage ; 2 : rendu direct —
+  (ombres, résolution), niveaux éloignés masqués, lumières du seul niveau du joueur,
   géométries/matériaux partagés entre personnages, chargement des modèles à la demande, envoi des entrées ≤ 30/s.
+- Villa : ombres de contact précalculées (sols, pied des murs, plafonds) en multiplication, valables à tous les niveaux ;
+  lumière de la pièce = projecteur ombré + lumière de rebond sous le plafond ; forêt et herbe instanciées.
 - Le bundle principal fait ~1,5 Mo (≈ 425 Ko gzip), Three.js compris.
 
 ## 6. Étendre le jeu

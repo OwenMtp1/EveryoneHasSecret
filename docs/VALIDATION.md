@@ -63,10 +63,28 @@ Conditions : tests automatisés (`npm test`), partie de bout en bout dans Chromi
 | Fluidité réelle (FPS) sur un PC ordinaire et un portable | Pas de GPU : rendu logiciel ≈ 1 image / 5 s | Ouvrir une partie, vérifier la qualité adaptative (halo, ombres) |
 | Partie à **plusieurs vraies personnes** (4 à 8) : lisibilité, équilibre des scénarios, durée | Une seule personne pilotée en navigateur | Une session de test par scénario |
 | Plan sur le corps (16 s) et cinématique (34 s) sur un vrai GPU | En rendu logiciel une capture prend ~15 s : les plans ont été vérifiés en étirant la cinématique (EHAS_TRANSITION_MS=240000) | Observer le doigt du conducteur, le plan sur le corps, les annonces |
+| Rendu de la nouvelle villa sur un vrai GPU (fluidité au niveau 0 avec occlusion ambiante) | Rendu logiciel seulement : ~1 image / 5 s | Jouer 5 minutes, vérifier que la qualité ne descend pas en boucle |
 | Fantôme après une vraie mort | Vérifié en forçant la vue locale « mort » (?debug) ; aucune élimination réelle dans la partie automatisée | Se faire éliminer, voler à travers la villa, F pour suivre un joueur |
 | Petits écrans et mobile | Testé seulement en 1280×720 | Ouvrir en 1366×768, 1920×1080 et sur une tablette |
 | Firefox et Safari | Testé seulement sous Chromium | Parcours complet dans chaque navigateur |
 | Chat vocal entre deux appareils | Nécessite deux micros réels | Deux joueurs, bouton 🎙 |
+
+## Refonte graphique de la villa (la « map »)
+
+Captures avant / après : `docs/graphisme/` (intérieur, extérieur, cinématique), prises par `scripts/inspect-villa.ts`
+(une vue par pièce, caméra libre, interface masquée) en rendu logiciel.
+
+| Domaine | Changement |
+|---|---|
+| Rendu | post-traitement avec MSAA (l'anti-crénelage était perdu au niveau de qualité le plus haut), occlusion ambiante GTAO (niveau 0), étalonnage couleur (contraste, saturation, ombres froides / lumières chaudes, vignettage) — jeu et cinématique |
+| Lumière | lumière de rebond sous le plafond (plafonds et haut des murs éclairés au lieu de noirs), projecteur adouci (moins de reflets brûlés sur les tables), clair de lune et ciel plus lisibles |
+| Ombres de contact | précalculées par pièce (pied des murs, coins, dessous et pourtour des meubles) + bandes en bas des murs et sous les plafonds, à tous les niveaux de qualité |
+| Extérieur | ciel nocturne (dégradé, nuages d'orage, lune, étoiles, collines), forêt instanciée (feuillus + sapins), arbres et haies en touffes arrondies dégradées, herbe et fleurs, pelouse et gravier mouillé |
+| Intérieur | vitres de nuit (ciel, cimes, gouttes) au lieu de reflets blancs, chanfreins sur les grands meubles |
+
+Coût mesuré (appels de dessin / triangles par image, toutes passes) : ancienne version ≈ 1 400–1 750 / 0,85 M ;
+niveau 1 ≈ 1 400–1 770 / 1,0 M ; niveau 0 (avec occlusion ambiante, une passe de plus) ≈ 2 800–3 500 / 2 M.
+La qualité adaptative baisse d'un niveau si l'image dépasse ~28 ms. **Non mesuré sur un vrai GPU** (catégorie C).
 
 ## Lot de 10 demandes (dernière série)
 

@@ -26,7 +26,11 @@ function mesh(parent: THREE.Object3D, geo: THREE.BufferGeometry, m: THREE.Materi
 }
 /** Boîte, éventuellement à arêtes arrondies (1 segment d'arrondi : ~100 triangles au lieu de ~600). */
 function box(parent: THREE.Object3D, size: V3, m: THREE.Material, pos: V3, rot: V3 = [0, 0, 0], rounded = 0) {
-  const geo = rounded ? new RoundedBoxGeometry(size[0], size[1], size[2], 1, Math.min(rounded, size[0] / 2.1, size[1] / 2.1, size[2] / 2.1)) : new THREE.BoxGeometry(...size);
+  // par défaut, un léger chanfrein (≤ 2,5 cm) sur les pièces assez épaisses : les arêtes accrochent la lumière
+  // (seulement les pièces assez grandes pour que l'arrondi se voie : coût en triangles maîtrisé)
+  const min = Math.min(...size);
+  const r = rounded || (min >= 0.1 && Math.max(...size) >= 0.45 ? Math.min(0.025, min / 4) : 0);
+  const geo = r ? new RoundedBoxGeometry(size[0], size[1], size[2], 1, Math.min(r, size[0] / 2.1, size[1] / 2.1, size[2] / 2.1)) : new THREE.BoxGeometry(...size);
   return mesh(parent, geo, m, pos, rot);
 }
 function sphere(parent: THREE.Object3D, r: number, m: THREE.Material, pos: V3, scale: V3 = [1, 1, 1], ws = 10, hs = 7) {

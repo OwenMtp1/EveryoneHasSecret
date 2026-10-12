@@ -39,9 +39,10 @@ import {
   type Level,
   type RoomDef,
 } from '@shared/content/villa';
-import { MAT, fabricTex } from './materials';
+import { MAT } from './materials';
 import { box, cyl, sphere } from './build';
 import { buildFurnishing } from './furnishing3d';
+import { barkMaterial, buildForest, buildGroundCover, buildSky, crownGeometry, foliageClump, foliageMaterial } from './nature';
 
 export const WALL_H = 3;
 /** Égout du toit (haut des façades) et faîtage. */
@@ -107,6 +108,111 @@ function tiledPlane(r: RoomDef['rect'], skip: (x: number, y: number) => boolean,
       geos.push(p);
     }
   return geos.length ? mergeGeometries(geos) : null;
+}
+
+// ───────────── ombres de contact ─────────────
+
+/** Meubles qui ne touchent pas le sol (muraux) ou qui ne sont pas des meubles. */
+const NO_FLOOR_SHADOW = new Set(['darts', 'stairs', 'ladder', 'rope_ladder', 'railing', 'tree', 'big_tree', 'hedge', 'fountain']);
+/** Meubles fins (pied, tige) : ombre plus petite et plus légère. */
+const LIGHT_SHADOW = new Set(['plant', 'floor_lamp', 'coat_rack', 'globe', 'easel', 'chair', 'harp', 'ironing_board']);
+const AO_PX = 10; // pixels par mètre
+
+/**
+ * Calque d'occlusion d'une pièce (texture calculée une fois) : chaque contributeur assombrit selon la distance
+ * (mur : 35 % au pied, ~30 cm de portée ; meuble : 55 % dessous, ~25 cm autour) ; les coins cumulent.
+ * Rendu en multiplication, au-dessus du sol et des tapis.
+ */
+function contactShadowMesh(r: RoomDef): THREE.Mesh | null {
+  const { x: rx, y: ry, w, h } = r.rect;
+  const W = w * AO_PX;
+  const H = h * AO_PX;
+  // segments de mur (bord de la pièce sauf portes et trémies)
+  const walls: [number, number, number, number][] = [];
+  for (let x = rx; x < rx + w; x++) {
+    if (!isDoor(x, ry - 1) && roomIdx(x, ry - 1) !== roomIdx(x, ry)) walls.push([x, ry, x + 1, ry]);
+    if (!isDoor(x, ry + h) && roomIdx(x, ry + h) !== roomIdx(x, ry + h - 1)) walls.push([x, ry + h, x + 1, ry + h]);
+  }
+  for (let y = ry; y < ry + h; y++) {
+    if (!isDoor(rx - 1, y) && roomIdx(rx - 1, y) !== roomIdx(rx, y)) walls.push([rx, y, rx, y + 1]);
+    if (!isDoor(rx + w, y) && roomIdx(rx + w, y) !== roomIdx(rx + w - 1, y)) walls.push([rx + w, y, rx + w, y + 1]);
+  }
+  const furn = allFurniture()
+    .filter((f) => f.roomId === r.id && !NO_FLOOR_SHADOW.has(f.kind))
+    .map((f) => {
+      const light = LIGHT_SHADOW.has(f.kind);
+      const inset = light ? 0.3 : 0.08;
+      return { x0: f.x + inset, y0: f.y + inset, x1: f.x + f.w - inset, y1: f.y + f.h - inset, k: light ? 0.38 : 0.62, reach: light ? 0.22 : 0.32 };
+    });
+  const data = new Uint8Array(W * H * 4);
+  for (let j = 0; j < H; j++)
+    for (let i = 0; i < W; i++) {
+      const px = rx + (i + 0.5) / AO_PX;
+      const py = ry + (j + 0.5) / AO_PX;
+      if (isVoid(Math.floor(px), Math.floor(py))) continue;
+      let lit = 1;
+      for (const [x0, y0, x1, y1] of walls) {
+        const cx = Math.max(x0, Math.min(px, x1));
+        const cy = Math.max(y0, Math.min(py, y1));
+        const d = Math.hypot(px - cx, py - cy);
+        if (d < 1.1) lit *= 1 - 0.42 * Math.exp(-d / 0.38);
+      }
+      for (const f of furn) {
+        const dx = Math.max(f.x0 - px, 0, px - f.x1);
+        const dy = Math.max(f.y0 - py, 0, py - f.y1);
+        const d = Math.hypot(dx, dy);
+        if (d < 1) lit *= 1 - f.k * Math.exp(-d / f.reach);
+      }
+      // ligne 0 de la texture = bas de l'image : le sud de la pièce (v = 0 au sud, comme les sols)
+      const o = ((H - 1 - j) * W + i) * 4;
+      const v = Math.round(lit * 255);
+      data[o] = data[o + 1] = data[o + 2] = v;
+      data[o + 3] = 255;
+    }
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.MultiplyBlending, premultipliedAlpha: true, depthWrite: false, toneMapped: false, fog: false });
+  const holed = tilesOfRect(r.rect).some(([x, y]) => isVoid(x, y));
+  const geo = holed ? tiledPlane(r.rect, isVoid, true) : new THREE.PlaneGeometry(w, h).rotateX(-Math.PI / 2).translate(rx + w / 2, 0, ry + h / 2);
+  if (!geo) return null;
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.y = 0.009;
+  mesh.renderOrder = 1;
+  mesh.userData.level = r.level ?? 0;
+  mesh.name = `ao:${r.id}`;
+  return mesh;
+}
+
+/** Dégradé vertical (sombre en v = 0 → neutre en v = 1), appliqué en multiplication sur les murs. */
+let _wallShade: THREE.MeshBasicMaterial | null = null;
+function wallShadeMaterial() {
+  if (_wallShade) return _wallShade;
+  const H = 64;
+  const data = new Uint8Array(4 * H);
+  for (let j = 0; j < H; j++) {
+    const v = j / (H - 1);
+    const lit = 1 - 0.38 * Math.exp(-v * 3.2) * (1 - v);
+    data.set([lit * 255, lit * 255, lit * 255, 255], j * 4);
+  }
+  const tex = new THREE.DataTexture(data, 1, H, THREE.RGBAFormat);
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  _wallShade = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    blending: THREE.MultiplyBlending,
+    premultipliedAlpha: true,
+    depthWrite: false,
+    toneMapped: false,
+    fog: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+  });
+  return _wallShade;
 }
 
 // ───────────── style des pièces ─────────────
@@ -585,29 +691,38 @@ function buildFurniture(f: FurnitureDef, fires: THREE.Object3D[], waters: THREE.
       break;
     }
     case 'hedge': {
+      // haie taillée : rangée de touffes feuillues serrées (silhouette douce, dégradé de vert)
       g.rotation.y = 0;
-      const leaf = new THREE.MeshStandardMaterial({ color: '#4a6a3e', map: fabricTex('#3a5a32'), roughness: 1 });
-      box(g, [f.w - 0.05, 1.3, f.h - 0.05], leaf, [0, 0.65, 0], [0, 0, 0], 0.18);
+      const long = Math.max(f.w, f.h);
+      const along = f.w >= f.h;
+      const n = Math.max(1, Math.round(long / 0.7));
+      const parts: THREE.BufferGeometry[] = [];
+      for (let i = 0; i < n; i++) {
+        const t = -long / 2 + (i + 0.5) * (long / n);
+        const c = foliageClump(0.62, (f.x * 3 + f.y * 7 + i) % 9, '#7aae50', '#3a6236').clone().scale(1, 1.05, 0.9);
+        if (!along) c.rotateY(Math.PI / 2);
+        parts.push(c.translate(along ? t : 0, 0.62, along ? 0 : t));
+      }
+      const hedge = new THREE.Mesh(mergeGeometries(parts)!, foliageMaterial());
+      hedge.castShadow = true;
+      g.add(hedge);
       break;
     }
     case 'tree': {
       g.rotation.y = 0;
-      cyl(g, 0.12, 0.2, 2.2, MAT.paint('#3b2a1c', 1), [0, 1.1, 0], [0, 0, 0], 10);
+      cyl(g, 0.12, 0.2, 2.2, barkMaterial(), [0, 1.1, 0], [0, 0, 0], 10);
       const fruit = f.name.includes('Pommier') ? '#b8312a' : f.name.includes('Cerisier') ? '#7a1020' : f.name.includes('Poirier') ? '#c9b040' : '#4a2a5a';
-      const leaves = MAT.paint('#2a4a26', 1);
-      for (const [x, y, z, r] of [[0, 2.7, 0, 1.15], [0.6, 2.4, 0.3, 0.8], [-0.55, 2.5, -0.25, 0.85], [0.15, 3.25, -0.3, 0.75]] as const) {
-        const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves);
-        m.position.set(x, y, z);
-        m.castShadow = true;
-        g.add(m);
-      }
+      const crown = new THREE.Mesh(crownGeometry(1.15, Math.round(f.x + f.y * 3) % 11), foliageMaterial());
+      crown.position.set(0, 2.75, 0);
+      crown.castShadow = true;
+      g.add(crown);
       for (let i = 0; i < 7; i++) sphere(g, 0.06, MAT.paint(fruit, 0.5), [Math.cos(i * 2.1) * 0.95, 2.2 + (i % 3) * 0.35, Math.sin(i * 2.1) * 0.85]);
       break;
     }
     case 'big_tree': {
       // grand arbre des cabanes : tronc massif, branches maîtresses, houppier au-dessus de la plateforme
       g.rotation.y = 0;
-      const bark = MAT.paint('#3b2a1c', 1);
+      const bark = barkMaterial();
       cyl(g, 0.38, 0.6, 7.2, bark, [0, 3.6, 0], [0, 0, 0], 12);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2 + 0.4;
@@ -617,13 +732,12 @@ function buildFurniture(f: FurnitureDef, fires: THREE.Object3D[], waters: THREE.
         cyl(b, 0.1, 0.2, 3.2, bark, [1.4, 0.9, 0], [0, 0, -1.05], 8);
         g.add(b);
       }
-      const leaves = new THREE.MeshStandardMaterial({ color: '#1f3a22', roughness: 1, flatShading: true });
-      for (const [x, y, z, r] of [[0, 8.2, 0, 2.6], [2.2, 7.2, 0.6, 1.9], [-2.0, 7.4, -0.5, 2.0], [0.6, 7.0, 2.2, 1.8], [-0.5, 7.1, -2.2, 1.8], [0.4, 9.4, -0.4, 1.7]] as const) {
-        const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves);
+      [[0, 8.2, 0, 2.6], [2.2, 7.2, 0.6, 1.9], [-2.0, 7.4, -0.5, 2.0], [0.6, 7.0, 2.2, 1.8], [-0.5, 7.1, -2.2, 1.8], [0.4, 9.4, -0.4, 1.7]].forEach(([x, y, z, r], i) => {
+        const m = new THREE.Mesh(foliageClump(r, i + 20), foliageMaterial());
         m.position.set(x, y, z);
         m.castShadow = true;
         g.add(m);
-      }
+      });
       break;
     }
     case 'car': {
@@ -734,6 +848,8 @@ function mergeStatic(root: THREE.Object3D, keep: Set<THREE.Object3D>) {
   root.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh || keep.has(m) || (m as THREE.InstancedMesh).isInstancedMesh || Array.isArray(m.material)) return;
+    // couleurs par sommet (feuillages) : la fusion ne garde que position / normale / uv → on ne fusionne pas
+    if ((m.material as THREE.MeshStandardMaterial).vertexColors) return;
     const g = m.geometry;
     if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv || g.morphAttributes.position) return;
     const key = `${m.material.uuid}|${m.castShadow}|${m.receiveShadow}`;
@@ -806,20 +922,18 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   lawn.position.y = -0.03;
   lawn.receiveShadow = true;
   terrain.add(lawn);
-  const treeMat = new THREE.MeshStandardMaterial({ color: '#13241a', roughness: 1, flatShading: true });
-  const trunkMat = MAT.paint('#2a1e14', 1);
-  for (let i = 0; i < 80; i++) {
-    const a = (i / 80) * Math.PI * 2;
-    const r = 44 + ((i * 37) % 17);
-    const x = cx + Math.cos(a) * r;
-    const z = cz + Math.sin(a) * r * 0.8;
-    const s = 0.8 + ((i * 13) % 7) / 6;
-    if (opts.driveway && Math.abs(x - DRIVEWAY_X) < 6 && z > WORLD_H) continue;
-    cyl(terrain, 0.25 * s, 0.35 * s, 3 * s, trunkMat, [x, 1.5 * s, z]);
-    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4 * s, 1), treeMat);
-    crown.position.set(x, 4.2 * s, z);
-    terrain.add(crown);
-  }
+  // forêt (feuillus + sapins instanciés), ciel nocturne, herbe et fleurs du jardin
+  terrain.add(buildForest({ cx, cz, count: 170, rMin: 41, rMax: 78, avoid: (x, z) => !!opts.driveway && Math.abs(x - DRIVEWAY_X) < 6 && z > WORLD_H }));
+  terrain.add(buildSky());
+  terrain.add(
+    buildGroundCover({ x0: -2, z0: -2, x1: WORLD_W + 2, z1: WORLD_H + 2 }, 2600, (x, z) => {
+      const tx = Math.floor(x);
+      const tz = Math.floor(z);
+      const r = roomAtTile(tx, tz);
+      if (!r || !r.outdoor || r.treehouse || r.floor !== 'grass') return false;
+      return !allFurniture().some((f) => f.roomId === r.id && x > f.x - 0.2 && x < f.x + f.w + 0.2 && z > f.y - 0.2 && z < f.y + f.h + 0.2);
+    }),
+  );
 
   // ── Sols, tapis, seuils ──
   for (const r of ROOMS) {
@@ -844,6 +958,13 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       rug.userData.level = lvl;
       group.add(rug);
     }
+  }
+  // Ombres de contact précalculées : pied des murs, coins, dessous et pourtour des meubles (multiplient TOUTE
+  // la lumière, lampes comprises — c'est ce qui « pose » les objets sur le sol)
+  for (const r of ROOMS) {
+    if (r.outdoor || r.treehouse) continue;
+    const m = contactShadowMesh(r);
+    if (m) group.add(m);
   }
   for (const d of DOORS) {
     const sill = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), MAT.marble(1, 1));
@@ -926,6 +1047,8 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
   const faces = new Map<string, { m: THREE.Material; lvl: Level; geos: THREE.BufferGeometry[] }>();
   const trims = new Map<Level, THREE.BufferGeometry[]>();
   const crowns = new Map<Level, THREE.BufferGeometry[]>();
+  /** ombres de contact des murs : pied du mur et jonction avec le plafond (bandes en multiplication) */
+  const shades = new Map<Level, THREE.BufferGeometry[]>();
   const push = (m: Map<Level, THREE.BufferGeometry[]>, l: Level, g: THREE.BufferGeometry) => (m.get(l) ?? m.set(l, []).get(l)!).push(g);
   const windowSpots: { x: number; z: number; ry: number; outdoor: boolean; lvl: Level; y?: number }[] = [];
   // [dx, dy, rotation de la face pour qu'elle regarde la pièce]
@@ -992,6 +1115,19 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
             base.translate(x + 0.5 + dx * 0.487, 0.06, y + 0.5 + dy * 0.487);
             push(trims, lvl, base);
           }
+          // pied du mur assombri (40 cm) ; sous le plafond, un voile plus léger (30 cm)
+          const foot = new THREE.PlaneGeometry(1, 0.4);
+          foot.rotateY(ry);
+          foot.translate(x + 0.5 + dx * 0.497, 0.2, y + 0.5 + dy * 0.497);
+          push(shades, lvl, foot);
+          if (!attic) {
+            const top = new THREE.PlaneGeometry(1, 0.3);
+            const tuv = top.getAttribute('uv') as THREE.BufferAttribute;
+            for (let i = 0; i < tuv.count; i++) tuv.setY(i, 1 - tuv.getY(i)); // sombre en haut
+            top.rotateY(ry);
+            top.translate(x + 0.5 + dx * 0.497, WALL_H - 0.15, y + 0.5 + dy * 0.497);
+            push(shades, lvl, top);
+          }
           if (!attic) {
             const crown = new THREE.BoxGeometry(1, 0.09, 0.06);
             crown.rotateY(ry);
@@ -1049,6 +1185,12 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       c.userData.level = lvl;
       group.add(c);
     }
+    if (shades.get(lvl)?.length) {
+      const sh = new THREE.Mesh(mergeGeometries(shades.get(lvl)!), wallShadeMaterial());
+      sh.userData.level = lvl;
+      sh.renderOrder = 1;
+      group.add(sh);
+    }
   }
 
   // ── Chants de dalle autour des trémies (entre le plafond du dessous et le plancher du dessus) ──
@@ -1085,7 +1227,7 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     g.rotation.y = w.ry;
     g.userData.level = w.lvl;
     if (w.y) g.userData.placed = true;
-    const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.2), w.outdoor ? (opts.roof ? glowMat.clone() : glowMat) : MAT.glass());
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.2), w.outdoor ? (opts.roof ? glowMat.clone() : glowMat) : MAT.nightGlass());
     if (w.outdoor && opts.roof) exteriorWindows.push({ mesh: pane, x: w.x, z: w.z, ry: w.ry });
     pane.position.set(0, 1.6, 0.003);
     g.add(pane);
@@ -1257,7 +1399,11 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
     group.add(l);
     return { light: l, src: null as LightSource | null };
   });
-  const shadowLamp = new THREE.SpotLight('#ffc98a', 0, 14, 1.25, 0.6, 1.5);
+  const shadowLamp = new THREE.SpotLight('#ffc98a', 0, 14, 1.3, 0.85, 1.5);
+  // lumière renvoyée par le sol et les murs (rebond) : éclaire le plafond et le haut des murs, adoucit les coins
+  const bounce = new THREE.PointLight('#ffd8b0', 0, 7, 1.7);
+  bounce.userData.placed = true;
+  group.add(bounce);
   shadowLamp.castShadow = inGame;
   shadowLamp.shadow.mapSize.set(1024, 1024);
   shadowLamp.shadow.bias = -0.002;
@@ -1347,8 +1493,15 @@ export function buildVilla(opts: { roof?: boolean; driveway?: boolean } = {}): V
       shadowLamp.target.position.set(shadowSrc.pos.x, shadowSrc.pos.y - 3, shadowSrc.pos.z);
       shadowLamp.color.set(shadowSrc.color);
       shadowLamp.distance = shadowSrc.distance;
-      shadowLamp.intensity = intensityOf(shadowSrc) * 1.6;
-    } else shadowLamp.intensity = 0;
+      shadowLamp.intensity = intensityOf(shadowSrc) * 1.15;
+      // juste sous le plafond : halo de la lampe au plafond et en haut des murs, le sol garde ses ombres
+      bounce.position.set(shadowSrc.pos.x, shadowSrc.pos.y + 0.55, shadowSrc.pos.z);
+      bounce.color.set(shadowSrc.color);
+      bounce.intensity = intensityOf(shadowSrc) * 0.32;
+    } else {
+      shadowLamp.intensity = 0;
+      bounce.intensity = 0;
+    }
   };
   // Niveaux affichés : celui du joueur et ses voisins (on voit par les trémies) ; le reste est masqué
   const showLevels = (l: Level, outdoor: boolean) => {

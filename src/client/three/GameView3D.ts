@@ -15,10 +15,7 @@ import { labelSprite, emojiSprite } from './sprites';
 import { objectModel } from './objects3d';
 import { voice } from '../voice';
 import { loadEnvironment } from './materials';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { createPostFx, type PostFx } from './postfx';
 import { LEVEL_HEIGHT, allFurniture, buildWorldGrid, doorAt, elevationAt, gridX, localX, roomAt, type Level } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
 import { advance, steer } from '@shared/content/locomotion';
@@ -76,8 +73,7 @@ export class GameView3D {
   private moon: THREE.DirectionalLight;
   private selfLight = new THREE.PointLight('#ffd9a8', 2.2, 4.5, 1.4);
   private raycaster = new THREE.Raycaster();
-  private composer: EffectComposer;
-  private bloom: UnrealBloomPass;
+  private fx: PostFx;
   private grid = buildWorldGrid();
   private clock = new THREE.Clock();
   private raf = 0;
@@ -153,6 +149,8 @@ export class GameView3D {
     }
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
+    // statistiques cumulées sur toute l'image (passes de post-traitement comprises), remises à zéro à chaque image
+    this.renderer.info.autoReset = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.domElement.className = 'villa-canvas';
     this.renderer.shadowMap.enabled = true;
@@ -160,11 +158,12 @@ export class GameView3D {
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color('#05070c');
-    this.scene.fog = new THREE.FogExp2('#06080e', 0.03);
-    this.hemi = new THREE.HemisphereLight('#6d7fa8', '#0b0b10', 0.32);
+    // brouillard teinté comme l'horizon du ciel : les lointains se fondent dans la nuit au lieu du noir
+    this.scene.fog = new THREE.FogExp2('#18213c', 0.024);
+    this.hemi = new THREE.HemisphereLight('#7f94c8', '#141018', 0.38);
     this.scene.add(this.hemi);
     // Clair de lune : ombres portées à l'extérieur et à travers les fenêtres
-    this.moon = new THREE.DirectionalLight('#8fa6d8', 0.6);
+    this.moon = new THREE.DirectionalLight('#9db3e6', 1.15);
     this.moon.position.set(WORLD_W / 2 - 18, 32, -14);
     this.moon.target.position.set(WORLD_W / 2, 0, WORLD_H / 2);
     this.moon.castShadow = true;
@@ -177,11 +176,7 @@ export class GameView3D {
     loadEnvironment(this.renderer, this.scene, 0.22);
 
     // Post-traitement : halo léger autour des sources lumineuses
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.55, 0.88);
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
+    this.fx = createPostFx(this.renderer, this.scene, this.camera);
 
     this.villa = takeGameVilla();
     this.scene.add(this.villa.group);
@@ -942,8 +937,8 @@ export class GameView3D {
     }
     this.trackPerformance();
     const blackout = this.view?.blackout;
-    this.hemi.intensity = (blackout ? 0.06 : 0.32) + this.flash * 2.2;
-    this.moon.intensity = (blackout ? 0.18 : 0.6) + this.flash * 1.8;
+    this.hemi.intensity = (blackout ? 0.06 : 0.38) + this.flash * 2.2;
+    this.moon.intensity = (blackout ? 0.18 : 1.15) + this.flash * 1.8;
     this.selfLight.intensity = blackout ? 0.8 : 2.2;
     this.flash = Math.max(0, this.flash - dt * 4);
     this.updateCamera();
@@ -965,8 +960,8 @@ export class GameView3D {
       this.villa.focus(c.x, c.z, room?.id, lvl * LEVEL_HEIGHT);
     } else if (me) this.villa.focus(me.pos.x, me.pos.z, meView?.roomId, me.pos.y);
     else this.villa.focus(this.camera.position.x, this.camera.position.z);
-    if (QUALITY[this.quality].bloom) this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    this.renderer.info.reset();
+    this.fx.render();
     if (++this.framesDrawn === 2) this.onFirstFrame();
   };
 
@@ -1047,7 +1042,8 @@ export class GameView3D {
   private applyQuality() {
     const q = QUALITY[this.quality];
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
-    this.composer.setPixelRatio(this.renderer.getPixelRatio());
+    this.fx.setPixelRatio(this.renderer.getPixelRatio());
+    this.fx.setLevel(this.quality as 0 | 1 | 2);
     if (this.renderer.shadowMap.enabled !== q.shadows) {
       this.renderer.shadowMap.enabled = q.shadows;
       this.scene.traverse((o) => {
@@ -1095,7 +1091,7 @@ export class GameView3D {
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     this.renderer.setSize(w, h, false);
-    this.composer?.setSize(w, h);
+    this.fx?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   };
@@ -1116,7 +1112,7 @@ export class GameView3D {
       const m = o as THREE.Mesh;
       m.geometry?.dispose?.();
     });
-    this.composer.dispose();
+    this.fx.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

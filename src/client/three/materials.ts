@@ -209,6 +209,45 @@ export function plasterTex() {
   });
 }
 
+/** Vue de nuit à travers une vitre : dégradé (horizon plus clair), silhouette d'arbres, gouttes. */
+export function nightWindowTex() {
+  return canvasTex('nightWindow', 256, (x, s) => {
+    const g = x.createLinearGradient(0, 0, 0, s);
+    g.addColorStop(0, '#070b18');
+    g.addColorStop(0.62, '#1a2746');
+    g.addColorStop(0.75, '#22325a');
+    g.addColorStop(1, '#0a0f1c');
+    x.fillStyle = g;
+    x.fillRect(0, 0, s, s);
+    // cimes d'arbres au loin
+    x.fillStyle = '#060a12';
+    x.beginPath();
+    x.moveTo(0, s);
+    for (let i = 0; i <= 16; i++) x.lineTo((i / 16) * s, s * (0.7 + 0.08 * Math.sin(i * 2.3) + 0.05 * Math.sin(i * 5.1)));
+    x.lineTo(s, s);
+    x.fill();
+    // gouttes et coulures
+    let seed = 3;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 70; i++) {
+      const px = r() * s;
+      const py = r() * s;
+      x.fillStyle = `rgba(170,190,230,${0.12 + r() * 0.25})`;
+      x.beginPath();
+      x.arc(px, py, 0.8 + r() * 1.8, 0, Math.PI * 2);
+      x.fill();
+      if (r() < 0.3) {
+        x.strokeStyle = 'rgba(150,170,215,0.12)';
+        x.lineWidth = 1;
+        x.beginPath();
+        x.moveTo(px, py);
+        x.lineTo(px + (r() - 0.5) * 3, py + 10 + r() * 30);
+        x.stroke();
+      }
+    }
+  });
+}
+
 export function rugTex(base: string, border: string) {
   return canvasTex(`rug|${base}|${border}`, 512, (x, s) => {
     x.fillStyle = base;
@@ -269,10 +308,11 @@ export const MAT = {
       }),
     ),
   grass: (w: number, h: number) =>
-    mat(`grass|${w}|${h}`, () => new THREE.MeshStandardMaterial({ color: '#7d8f78', map: rep(photo('grasslight-big.jpg', true), w / 4, h / 4), roughness: 1 })),
+    mat(`grass|${w}|${h}`, () => new THREE.MeshStandardMaterial({ color: '#a9c29c', map: rep(photo('grasslight-big.jpg', true), w / 4, h / 4), roughness: 0.82 })),
   marble: (w: number, h: number) => mat(`marble|${w}|${h}`, () => new THREE.MeshStandardMaterial({ map: rep(marbleTex(), w, h), roughness: 0.18, metalness: 0.02 })),
   concrete: (w: number, h: number) => mat(`concrete|${w}|${h}`, () => new THREE.MeshStandardMaterial({ map: rep(concreteTex(), w / 2, h / 2), roughness: 0.95 })),
-  gravel: (w: number, h: number) => mat(`gravel|${w}|${h}`, () => new THREE.MeshStandardMaterial({ map: rep(gravelTex(), w / 1.5, h / 1.5), roughness: 1 })),
+  // gravier mouillé par l'orage : reflets des lanternes
+  gravel: (w: number, h: number) => mat(`gravel|${w}|${h}`, () => new THREE.MeshStandardMaterial({ map: rep(gravelTex(), w / 1.5, h / 1.5), roughness: 0.55 })),
   wallpaper: (base: string, accent: string, kind: 'damask' | 'stripes' | 'plain' | 'tiles', height: number) =>
     mat(`wp|${base}|${accent}|${kind}|${height}`, () =>
       new THREE.MeshStandardMaterial({ map: rep(wallpaperTex(base, accent, kind), kind === 'tiles' ? 1 : 2, kind === 'tiles' ? height : height * 2), roughness: kind === 'tiles' ? 0.3 : 0.85 }),
@@ -294,6 +334,9 @@ export const MAT = {
       new THREE.MeshStandardMaterial({ color: '#1c2f3d', normalMap: rep(photo('Water_1_M_Normal.jpg'), 2, 2), roughness: 0.05, metalness: 0.4 }),
     ),
   shingles: (w: number, h: number) => mat(`shingles|${w}|${h}`, () => new THREE.MeshStandardMaterial({ map: rep(shingleTex(), w, h), roughness: 0.82 })),
+  /** vitre vue de l'intérieur la nuit : ciel d'orage bleu nuit, gouttes de pluie, faible lueur de lune */
+  nightGlass: () =>
+    mat('nightGlass', () => new THREE.MeshStandardMaterial({ map: nightWindowTex(), emissive: '#ffffff', emissiveMap: nightWindowTex(), emissiveIntensity: 0.55, roughness: 0.12, metalness: 0.1, envMapIntensity: 0.25 })),
   glass: () => mat('glass', () => new THREE.MeshStandardMaterial({ color: '#16202e', roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.55 })),
 };
 
