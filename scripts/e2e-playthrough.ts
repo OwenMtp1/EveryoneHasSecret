@@ -84,6 +84,17 @@ const act = (c: Client, a: Record<string, unknown>) => call<{ message?: string }
 
 /** Marche jusqu'à un point (chemin calculé avec les règles du serveur), en courant. */
 async function walkTo(c: Client, target: { x: number; y: number }, label: string) {
+  // un angle de meuble peut arrêter la marche : on recalcule l'itinéraire depuis là où l'on est (3 essais)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await walkOnce(c, target, label);
+    const pos = me(c).pos!;
+    if (Math.hypot(pos.x - target.x, pos.y - target.y) <= 1.2) break;
+  }
+  const pos = me(c).pos!;
+  log(`${c.name} arrivé·e : ${label} (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}) — ${me(c).roomId}`);
+}
+
+async function walkOnce(c: Client, target: { x: number; y: number }, label: string) {
   const start = me(c).pos!;
   const path = findPath(start, target, new Set(c.view!.unlockedDoors));
   if (!path) throw new Error(`aucun chemin vers ${label}`);
@@ -108,8 +119,6 @@ async function walkTo(c: Client, target: { x: number; y: number }, label: string
   }
   c.s.emit('game:input', { dx: 0, dy: 0 });
   await sleep(300);
-  const pos = me(c).pos!;
-  log(`${c.name} arrivé·e : ${label} (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}) — ${me(c).roomId}`);
 }
 
 async function shot(page: Page, name: string) {
