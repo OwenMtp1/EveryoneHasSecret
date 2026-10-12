@@ -42,14 +42,18 @@ export interface Settings {
   music: number;
   sfx: number;
   reducedMotion: boolean;
+  /** qualité graphique : 'auto' (selon la fluidité) ou imposée (0 élevée · 1 moyenne · 2 basse) */
+  quality: 'auto' | 0 | 1 | 2;
+  /** compteur d'images en partie (touche F3) */
+  showFps: boolean;
 }
 
 const SETTINGS_KEY = 'ehas.settings';
 function loadSettings(): Settings {
   try {
-    return { music: 0.4, sfx: 0.6, reducedMotion: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
+    return { music: 0.4, sfx: 0.6, reducedMotion: false, quality: 'auto', showFps: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
   } catch {
-    return { music: 0.4, sfx: 0.6, reducedMotion: false };
+    return { music: 0.4, sfx: 0.6, reducedMotion: false, quality: 'auto', showFps: false };
   }
 }
 

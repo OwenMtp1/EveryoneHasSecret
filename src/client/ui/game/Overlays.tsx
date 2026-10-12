@@ -138,7 +138,12 @@ export function TestimonyModal() {
           ))}
         </select>
         <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={200} rows={2} placeholder="Avec qui ? Pourquoi ?" name="text" />
-        <button className="btn btn-primary" disabled={!place}>Déclarer</button>
+        <div className="row-actions">
+          <button className="btn btn-primary" disabled={!place}>Déclarer</button>
+          <button type="button" className="btn btn-ghost" onClick={() => act({ type: 'testimony', requestId: req.requestId, decline: true })}>
+            Garder le silence
+          </button>
+        </div>
       </form>
     </div>
   );

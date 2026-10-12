@@ -174,6 +174,7 @@ export function InvestigationTab() {
             la personne accusée. Accusations restantes : <strong>{c.accusationsLeft}</strong>.
           </p>
           {!c.canAccuse && <div className="form-error">{c.accuseBlockedReason}</div>}
+          {c.parityWarning && <div className="form-error">⚠ {c.parityWarning}</div>}
           <div className="suspect-grid">
             {suspects.map((p) => (
               <button type="button" key={p.id} className={`suspect ${target === p.id ? 'active' : ''}`} onClick={() => setTarget(p.id)}>

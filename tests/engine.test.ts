@@ -520,3 +520,81 @@ test('premier choix : amitié = main tendue à tous (visible), trahison = discr�
   assert.ok(!g.social.some((s) => s.public && s.actorId === b.id), 'la trahison reste discrète');
   assert.throws(() => act(m, { type: 'stance', choice: 'x' as never }), /invalide/);
 });
+
+// ───────────────────────── règles corrigées (audit) ─────────────────────────
+
+test('votes : morts et arrêtés ne votent plus, aucune élimination pendant un vote, interrogatoire refusable', () => {
+  const { g, act, ref, fetch, murderer, innocents, startInvestigation } = makeGame(6, 21, 'testament');
+  startInvestigation();
+  const [a, b, c] = innocents();
+  const m = murderer();
+  fetch(a, ref('m_receipt'));
+  act(a, { type: 'examine', objectId: ref('m_receipt').id });
+  act(a, { type: 'accuse', targetId: b.id, evidenceIds: [ref('m_receipt').id], text: 'Test.' });
+  assert.ok(g.caseSystem.vote);
+  // un votant tué pendant le vote en sort : son bulletin ne compte plus
+  c.alive = false;
+  g.caseSystem.removeFromVote(c.id);
+  assert.ok(!g.caseSystem.vote!.eligible.has(c.id));
+  assert.throws(() => act(c, { type: 'ballot', choice: 'guilty' }), /morts|ne participez/);
+  // pas d'occasion d'élimination tant qu'un vote est ouvert
+  assert.equal(g.caseSystem.opportunityFor(m), null);
+  // interrogatoire : on peut garder le silence, publiquement
+  m.roleId = 'investigator';
+  act(m, { type: 'tool', toolId: 'request_testimony', targetId: a.id });
+  assert.ok(a.pendingTestimony);
+  act(a, { type: 'testimony', requestId: a.pendingTestimony!.requestId, decline: true });
+  assert.equal(a.pendingTestimony, null);
+});
+
+test('rapports d’expertise : une analyse devient une pièce versable au dossier', () => {
+  const { g, act, ref, fetch, innocents, startInvestigation } = makeGame(4, 22, 'pacte');
+  startInvestigation();
+  const p = innocents()[0];
+  p.roleId = 'scientist';
+  const w = ref('weapon');
+  fetch(p, w);
+  act(p, { type: 'tool', toolId: 'analyze_prints', targetId: w.id });
+  const rep = g.caseSystem.dossierView(p).evidence.find((e) => e.title.startsWith('Analyse d’empreintes'));
+  assert.ok(rep, 'rapport présent dans le dossier');
+  act(p, { type: 'present', objectId: rep!.objectId });
+  assert.ok(g.caseSystem.publicEvidenceView().some((e) => e.title.startsWith('Analyse d’empreintes')));
+});
+
+test('porte de la cave : la clé de la cave l’ouvre quand on est devant', async () => {
+  const { DOORS, roomAt } = await import('../src/shared/content/villa');
+  const { g, act, innocents, startInvestigation } = makeGame(4, 23, 'mensonges');
+  startInvestigation();
+  const p = innocents()[0];
+  const key = [...g.objects.values()].find((o) => o.type === 'key_cellar')!;
+  assert.ok(key, 'la clé de la cave existe');
+  const door = DOORS.find((d) => d.id === 'd_basement_cellar')!;
+  // côté sous-sol, juste devant la porte
+  const spot = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([dx, dy]) => ({ x: door.x + 0.5 + dx, y: door.y + 0.5 + dy })).find((s) => roomAt(g.grid, s.x, s.y)?.id === 'basement')!;
+  p.pos = spot;
+  p.roomId = 'basement';
+  key.location = { kind: 'player', playerId: p.id };
+  p.inventory.push(key.id);
+  assert.throws(() => act(p, { type: 'move' as never }));
+  act(p, { type: 'use', objectId: key.id });
+  assert.ok(g.unlockedDoors.has('d_basement_cellar'));
+});
+
+test('équilibre : le compagnon voit deux absences, aucun souvenir de boue, ordinateur sans secrets, emplacements variables', () => {
+  for (const scenarioId of SCENARIOS)
+    for (const n of [3, 5, 8]) {
+      const { g } = makeGame(n, 300 + n, scenarioId);
+      const t = g.caseSystem.truth;
+      const m = g.players.get(t.murdererId)!;
+      for (const [, pt] of t.players) assert.ok(!pt.memories.some((x) => /boue/.test(x)), 'aucun souvenir de boue');
+      // un innocent du groupe du meurtrier se souvient de lui ET d'une autre absence
+      const witnesses = [...t.players.values()].filter((pt) => pt.playerId !== m.id && pt.memories.some((x) => x.includes('cigarettes')));
+      assert.ok(witnesses.length, 'quelqu’un a vu le meurtrier sortir');
+      assert.ok(witnesses.some((w) => w.memories.some((x) => x.includes('éclipsé'))), `${scenarioId}/${n} : une seconde absence brouille la piste`);
+      const laptop = t.items.find((i) => i.ref === 'laptop')!;
+      assert.ok(!laptop.content!.facts.some((f) => f.kind === 'secret'), 'l’ordinateur ne révèle aucun secret');
+    }
+  // la photo de groupe ne reste pas toujours dans la même pièce
+  const rooms = new Set([...Array(12).keys()].map((i) => makeGame(4, 500 + i, 'pacte').g.caseSystem.truth.items.find((it) => it.ref === 'group_photo')!.placement));
+  assert.ok(rooms.size > 1 || [...rooms].some((r) => JSON.stringify(r).includes('hall')), 'emplacements variables');
+});

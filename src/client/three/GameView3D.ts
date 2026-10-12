@@ -16,7 +16,7 @@ import { objectModel } from './objects3d';
 import { voice } from '../voice';
 import { loadEnvironment } from './materials';
 import { createPostFx, type PostFx } from './postfx';
-import { LEVEL_HEIGHT, allFurniture, buildWorldGrid, doorAt, elevationAt, gridX, localX, roomAt, type Level } from '@shared/content/villa';
+import { DOORS, LEVEL_HEIGHT, allFurniture, buildWorldGrid, doorAt, elevationAt, gridX, localX, roomAt, type Level } from '@shared/content/villa';
 import { GAME_CONFIG } from '@shared/config';
 import { advance, steer } from '@shared/content/locomotion';
 
@@ -50,6 +50,9 @@ const QUALITY = [
   { pixelRatio: 0.75, bloom: false, shadows: false, rain: 0.35 },
 ] as const;
 const QUALITY_KEY = 'ehas.quality';
+/** 'auto' = ajustement selon la fluidité ; sinon niveau imposé par le joueur (paramètres) */
+export type QualityMode = 'auto' | 0 | 1 | 2;
+const QUALITY_NAME = ['élevée', 'moyenne', 'basse'];
 
 const MOVE_KEYS: Record<string, [number, number]> = {
   KeyW: [0, 1], KeyZ: [0, 1], ArrowUp: [0, 1],
@@ -86,6 +89,10 @@ export class GameView3D {
   private slowWindows = 0;
   private fastWindows = 0;
   private lastFrameAt = performance.now();
+  private qualityMode: QualityMode = 'auto';
+  private fpsEl: HTMLDivElement | null = null;
+  private fpsFrames = 0;
+  private fpsSince = performance.now();
   /** position prédite localement de notre personnage (réponse immédiate aux touches) */
   private pred: THREE.Vector3 | null = null;
 
@@ -140,13 +147,17 @@ export class GameView3D {
   }
   onReveal: (active: boolean) => void = () => {};
 
-  constructor(private container: HTMLElement, opts: { reducedMotion?: boolean } = {}) {
+  constructor(private container: HTMLElement, opts: { reducedMotion?: boolean; quality?: QualityMode; showFps?: boolean } = {}) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    try {
-      this.quality = Math.min(QUALITY.length - 1, Math.max(0, Number(localStorage.getItem(QUALITY_KEY) ?? 0) || 0));
-    } catch {
-      this.quality = 0;
-    }
+    this.qualityMode = opts.quality ?? 'auto';
+    if (this.qualityMode !== 'auto') this.quality = this.qualityMode;
+    else
+      try {
+        this.quality = Math.min(QUALITY.length - 1, Math.max(0, Number(localStorage.getItem(QUALITY_KEY) ?? 0) || 0));
+      } catch {
+        this.quality = 0;
+      }
+    if (opts.showFps) this.setFpsVisible(true);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     // statistiques cumulées sur toute l'image (passes de post-traitement comprises), remises à zéro à chaque image
@@ -997,6 +1008,10 @@ export class GameView3D {
       if (Math.hypot(cx - meV.pos.x, cy - meV.pos.y) > R) continue;
       cands.push({ key: `f:${f.id}`, c: at(f.x + f.w / 2, f.y + f.h / 2, 0.55), r: Math.max(0.45, Math.min(1.1, Math.max(f.w, f.h) * 0.55)) });
     }
+    // portes verrouillées (cave, garage) du niveau courant, côté joueur
+    for (const d of DOORS)
+      if (d.lockedBy && !v.unlockedDoors.includes(d.id) && d.rooms.includes(meV.roomId ?? '') && near(d.x + 0.5, d.y + 0.5, 0.5))
+        cands.push({ key: `d:${d.id}`, c: at(d.x + 0.5, d.y + 0.5, 1.1), r: 0.6 });
     if (v.inventory.some((o) => o.type === 'cloth'))
       for (const t of v.traces) if (t.roomId === meV.roomId && near(t.pos.x, t.pos.y, 0.4)) cands.push({ key: `t:${t.id}`, c: at(t.pos.x, t.pos.y, 0.05), r: 0.3 });
     if (!cands.length) return null;
@@ -1057,6 +1072,43 @@ export class GameView3D {
     this.resize();
   }
 
+  /** Qualité imposée par le joueur, ou retour à l'ajustement automatique. */
+  setQualityMode(mode: QualityMode) {
+    if (mode === this.qualityMode) return;
+    this.qualityMode = mode;
+    this.slowWindows = 0;
+    this.fastWindows = 0;
+    if (mode !== 'auto' && mode !== this.quality) {
+      this.quality = mode;
+      this.applyQuality();
+    }
+  }
+
+  /** Compteur d'images (paramètres ou touche F3) : images/s, appels de dessin, triangles, niveau de qualité. */
+  setFpsVisible(on: boolean) {
+    if (on && !this.fpsEl) {
+      this.fpsEl = document.createElement('div');
+      this.fpsEl.className = 'fps-counter';
+      this.container.appendChild(this.fpsEl);
+      this.fpsFrames = 0;
+      this.fpsSince = performance.now();
+    } else if (!on && this.fpsEl) {
+      this.fpsEl.remove();
+      this.fpsEl = null;
+    }
+  }
+
+  private updateFps(now: number) {
+    if (!this.fpsEl) return;
+    this.fpsFrames++;
+    if (now - this.fpsSince < 500) return;
+    const fps = (this.fpsFrames * 1000) / (now - this.fpsSince);
+    const r = this.renderer.info.render;
+    this.fpsEl.textContent = `${fps.toFixed(0)} i/s · ${r.calls} appels · ${(r.triangles / 1000).toFixed(0)}k tri · qualité ${QUALITY_NAME[this.quality]}${this.qualityMode === 'auto' ? ' (auto)' : ''}`;
+    this.fpsFrames = 0;
+    this.fpsSince = now;
+  }
+
   /**
    * Fenêtres de 2 s : si l'image dépasse ~28 ms en moyenne deux fois de suite, on baisse d'un cran ;
    * si tout reste très fluide (< 12 ms) pendant 10 s, on remonte d'un cran.
@@ -1065,7 +1117,8 @@ export class GameView3D {
     const now = performance.now();
     const dt = (now - this.lastFrameAt) / 1000; // durée réelle (non bornée) de l'image
     this.lastFrameAt = now;
-    if (document.hidden || dt > 1) return; // onglet en arrière-plan : mesure ignorée
+    this.updateFps(now);
+    if (document.hidden || dt > 1 || this.qualityMode !== 'auto') return; // onglet en arrière-plan ou qualité imposée
     this.frameTimes.push(dt);
     const total = this.frameTimes.reduce((a, b) => a + b, 0);
     if (total < 2) return;

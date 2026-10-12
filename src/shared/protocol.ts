@@ -64,7 +64,8 @@ export type GameAction =
   | { type: 'share'; knowledgeId: string; to: 'board' | 'player' | 'allies'; targetId?: string }
   | { type: 'claim'; text: string }
   | { type: 'tool'; toolId: string; targetId?: string }
-  | { type: 'testimony'; requestId: string; roomId: string; text: string };
+  /** interrogatoire : refuser de répondre (le silence est public) */
+  | { type: 'testimony'; requestId: string; decline: true };
 
 export interface ClientToServerEvents {
   // Amis & notifications

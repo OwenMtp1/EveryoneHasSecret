@@ -82,7 +82,7 @@ export interface GameInit {
   manual?: boolean;
 }
 
-const FEED_LIMIT = 80;
+const FEED_LIMIT = 200;
 const CHAT_LIMIT = 300;
 const SIGHTING_COOLDOWN_MIN = 15;
 
@@ -640,6 +640,9 @@ export class GameInstance {
       case 'present':
         msg = this.caseSystem.present(p, String(a.objectId), a.againstId ? String(a.againstId) : undefined);
         break;
+      case 'testimony':
+        msg = this.caseSystem.declineTestimony(p, String(a.requestId));
+        break;
       case 'stance':
         msg = this.caseSystem.chooseStance(p, a.choice);
         break;
@@ -678,7 +681,7 @@ export class GameInstance {
       const t = this.players.get(r);
       if (!t) continue;
       this.know(r, 'received', k.text, { sourceId: p.id, important: k.important });
-      this.feed(r, 'whisper', `${p.name} vous transmet une information. (Carnet)`);
+      this.feed(r, 'whisper', `${p.name} vous transmet une information (Dossier → Journal).`);
     }
     this.log('KNOWLEDGE_SHARED', { actorId: p.id, data: { to, recipients }, text: `${p.name} transmet à ${recipients.map((r) => this.nameOf(r)).join(', ')} : ${k.text}` });
     return 'Information transmise.';
@@ -879,7 +882,7 @@ export class GameInstance {
         ? { requestId: p.pendingTestimony.requestId, question: p.pendingTestimony.question, fromName: p.pendingTestimony.fromName }
         : null,
       arrested: [...this.players.values()].filter((x) => x.arrested).map((x) => x.id),
-      lockedFurniture: [...cs.furnitureLocks.entries()].map(([id, l]) => ({ id, kind: l.kind })),
+      lockedFurniture: [...cs.furnitureLocks.entries()].map(([id, l]) => ({ id, kind: l.kind, hint: l.hint })),
     };
   }
 

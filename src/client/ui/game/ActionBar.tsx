@@ -26,6 +26,7 @@ export function ActionBar() {
           </>
         )}
       </div>
+      {t.hint && <div className="interact-hint">{t.hint}</div>}
       <div className="interact-keys">
         <span>
           <kbd>E</kbd> {t.actions[0].label}

@@ -38,6 +38,10 @@ export function DossierTab() {
   const free = game.alive && !d.arrested && !game.epilogue;
 
   const present = (e: EvidenceView) =>
+    e.exposes?.length
+      ? ask(`Cette pièce rendra public le secret de ${e.exposes.join(', ')}`, [{ id: 'yes', label: 'Verser quand même', hint: 'irréversible : tout le monde le saura' }, { id: 'no', label: 'Annuler' }], (c) => c === 'yes' && setTimeout(() => choose(e), 0))
+      : choose(e);
+  const choose = (e: EvidenceView) =>
     ask('Verser au dossier commun', [{ id: '', label: '📂 Sans viser personne (information)' }, ...others.map((p) => ({ id: p.id, label: `⚠ Contre ${p.name}`, hint: 'dénonciation formelle : opposition officielle irrévocable' }))], (against) =>
       act({ type: 'present', objectId: e.objectId, againstId: against || undefined }),
     );

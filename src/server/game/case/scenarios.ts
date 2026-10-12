@@ -114,7 +114,7 @@ const pacte: ScenarioDef = {
       text: () => `Cette nuit-là, vous avez ramassé le téléphone de Théo au bord de la falaise et vous l’avez jeté à la mer, paniqué·e. Personne ne le sait.`,
       reveal: () => 'avait fait disparaître le téléphone de Théo la nuit de sa chute',
       givesMotive: true,
-      proof: (_c, p) => ({ type: 'letter', name: 'Lettre de la sœur de Théo', content: { title: 'Lettre de Clara Marchal', lines: [`« Le téléphone de Théo n’a jamais été retrouvé. ${p.first} était le seul à être redescendu au bord avant les secours, je l’ai vu de loin. Pourquoi ne m’en a-t-il jamais parlé ? »`.replace('il', p.feminine ? 'elle' : 'il')] } }),
+      proof: (_c, p) => ({ type: 'letter', name: 'Lettre de la sœur de Théo', content: { title: 'Lettre de Clara Marchal', lines: [`« Le téléphone de Théo n’a jamais été retrouvé. ${p.first} était ${e(p, 'le seul', 'la seule')} à être redescendu${a(p)} au bord avant les secours, je l’ai vu${a(p)} de loin. Pourquoi ne m’en a-t-${e(p, 'il', 'elle')} jamais parlé ? »`] } }),
     },
     {
       id: 'deleted_photos',
@@ -204,7 +204,7 @@ const mensonges: ScenarioDef = {
   weapons: ['candlestick', 'letter_opener', 'statuette'],
   victimBio: ({ v }) => `${v.full}, la confidente du groupe : tout le monde lui racontait tout. ${e(v, 'Il', 'Elle')} gardait les secrets… jusqu’à ce soir.`,
   publicBrief: ({ v }) =>
-    `Il y a huit mois, une vidéo publiée par un compte anonyme, « @verite_nue », a fait le tour du groupe : on y voyait ${EX.masc.split(' ')[0]}/${EX.fem.split(' ')[0]} Vidal embrasser quelqu’un d’autre à une soirée. ` +
+    `Il y a huit mois, une vidéo publiée par un compte anonyme, « @verite_nue », a fait le tour du groupe : on y voyait ${EX.masc} embrasser quelqu’un d’autre à une soirée. ` +
     `Le couple a explosé, le mariage a été annulé. Personne n’a jamais su qui avait filmé ni qui avait publié. ` +
     `Ce week-end, ${v.full} vous avait réunis à la villa. ${e(v, 'Il', 'Elle')} avait confié à plusieurs d’entre vous : « Je sais qui a publié la vidéo. » ` +
     `À 20h45, vous êtes sortis en ville ; ${v.first} est resté${a(v)}. À votre retour, vers 22h, ${e(v, 'il', 'elle')} était mort${a(v)}. La route est coupée : personne ne partira avant l’aube.`,
@@ -234,7 +234,7 @@ const mensonges: ScenarioDef = {
     {
       id: 'kisser',
       slot: 'kisser',
-      text: () => `C’est vous qu’on voit embrasser ${EX.masc.split(' ')[0]}/${EX.fem.split(' ')[0]} Vidal sur la vidéo — de dos, personne n’a reconnu votre visage. Si cela se sait, vous perdez vos amis.`,
+      text: () => `C’est vous qu’on voit embrasser ${EX.masc} sur la vidéo — de dos, personne n’a reconnu votre visage. Si cela se sait, vous perdez vos amis.`,
       reveal: () => 'était la personne qu’on voit de dos sur la vidéo',
       givesMotive: true,
       proof: (c, p) => ({ type: 'photo', name: 'Capture de la vidéo', content: { title: 'Capture d’écran de la vidéo', lines: [`Le baiser, de dos. Au poignet, un bracelet reconnaissable : celui que porte toujours ${p.first}.`], photos: [{ castIds: [p.castId], scene: 'party', caption: 'Capture — 0:14', seed: c.seed() }] } }),
@@ -257,7 +257,7 @@ const mensonges: ScenarioDef = {
     },
     {
       id: 'affair_ex',
-      text: () => `Depuis la rupture, vous voyez en secret ${EX.masc.split(' ')[0]}/${EX.fem.split(' ')[0]} Vidal, l’ex-fiancé·e.`,
+      text: () => `Depuis la rupture, vous voyez en secret ${EX.masc}, l’ex-fiancé.`,
       reveal: () => 'entretenait une liaison secrète avec l’ex-fiancé·e',
       givesMotive: false,
       proof: (c, p) => ({ type: 'photo', name: 'Photo froissée', content: { title: 'Photo d’un dîner aux chandelles', lines: [`${p.first}, souriant${a(p)}, à un dîner en tête-à-tête. Au dos : « Notre premier vrai rendez-vous. Personne ne doit savoir. »`], photos: [{ castIds: [p.castId], scene: 'restaurant', caption: 'Mars', seed: c.seed() }] } }),
@@ -315,11 +315,11 @@ const testament: ScenarioDef = {
   subtitle: '180 000 euros disparus',
   murderRooms: ['office', 'library'],
   weapons: ['letter_opener', 'statuette', 'candlestick'],
-  victimBio: ({ v }) => `${v.full}, trésorier·ère des « Ateliers du Phare », l’association que vous aviez fondée avec Bernard Aubert, votre mentor à tous.`,
+  victimBio: ({ v }) => `${v.full}, ${e(v, 'trésorier', 'trésorière')} des « Ateliers du Phare », l’association que vous aviez fondée avec Bernard Aubert, votre mentor à tous.`,
   publicBrief: ({ v }) =>
     `Il y a six mois, Bernard Aubert, fondateur des « Ateliers du Phare » et mentor de toute la bande, est mort d’une crise cardiaque. ` +
     `Cinq jours plus tard, 180 000 € ont disparu du fonds de l’association : un virement vers l’étranger, signé de son nom. La banque a parlé d’une erreur ; l’affaire a été classée. ` +
-    `${v.full}, co-trésorier·ère, n’y a jamais cru. Ce week-end, ${e(v, 'il', 'elle')} vous avait réunis : « Lundi, je vais à la police. » ` +
+    `${v.full}, ${e(v, 'co-trésorier', 'co-trésorière')}, n’y a jamais cru. Ce week-end, ${e(v, 'il', 'elle')} vous avait réunis : « Lundi, je vais à la police. » ` +
     `À 20h45, vous êtes sortis en ville ; ${v.first} est resté${a(v)}. À votre retour vers 22h, ${e(v, 'il', 'elle')} était mort${a(v)}. La route est coupée jusqu’au matin.`,
   murdererSecret: ({ v }) => ({
     text:

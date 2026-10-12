@@ -21,6 +21,11 @@ il retrouve son personnage, son rôle, son dossier et sa position. Les morts et 
 ou suivi d’un joueur au choix (F). Échap ouvre un panneau à gauche (sa version de
 l’histoire, rôle, objectif, secret, premier choix amitié/trahison, réglages, quitter) sans interrompre la partie.
 
+Aide au joueur : une **carte de rôle** s’affiche une fois après le plan sur le corps (camp, objectif, secret, spécialité) ;
+un panneau **Pistes** (haut gauche, repliable) propose l’étape suivante de la chaîne d’enquête, déduite uniquement des
+pièces que le joueur a déjà lues (rien n’est révélé) ; le bandeau affiche le compte à rebours avant la police et les
+accusations restantes ; l’onglet **Chronique** (touche 5) garde tout le fil de la soirée, filtrable.
+
 ## 3. Rôles secrets (distribués par le serveur, indépendamment de l’apparence)
 
 | Camp | Qui | Sait | Gagne si |
@@ -31,13 +36,17 @@ l’histoire, rôle, objectif, secret, premier choix amitié/trahison, réglages
 
 Chaque joueur reçoit aussi une **spécialité d’enquête** (le meurtrier aussi, et il peut mentir sur ses résultats) :
 médecin légiste (autopsie : heure, arme, fibres), scientifique (empreintes), inspecteur·rice (traces, semelles),
-analyste numérique (contourne un verrou), enquêteur·rice (exige / vérifie un alibi), profileur·se (tensions sociales).
+analyste numérique (contourne un verrou), enquêteur·rice (exige un témoignage — le témoin peut garder le silence, ce qui est
+annoncé — et recoupe un alibi avec les souvenirs des témoins), profileur·se (tensions sociales). Les résultats d’outils sont
+versés au dossier personnel comme des pièces (horodatées) et peuvent être présentés au dossier commun.
 
 ## 4. Les trois scénarios (vérité générée une fois, stable toute la partie)
 
 Commun : à 20h45 le groupe part en ville, la victime reste seule à la villa. Le meurtrier quitte son groupe vers
 21h10 (« cigarettes »), passe à la station-service du col, tue la victime vers 21h25–21h36, cache l’arme, se lave les
-mains et rentre vers 21h50, chaussures boueuses. À 22h, tout le monde rentre et découvre le corps.
+mains et rentre vers 21h50, chaussures boueuses (la boue sèche : seul un examen rapide la remarque).
+Un autre membre de son groupe s’absente aussi un moment (fausse piste) : une absence vue ne suffit pas à conclure.
+Les cachettes (évier où l’arme est lavée, meubles, pièces des objets clés) sont tirées au hasard à chaque partie. À 22h, tout le monde rentre et découvre le corps.
 
 | | A — Le Pacte / Le Prix du Silence | B — La Nuit des mensonges / Les Dernières Confidences | C — Le Dernier Testament / 180 000 euros disparus |
 |---|---|---|---|
@@ -53,7 +62,7 @@ de l’absence du meurtrier, absences d’innocents qui servent de fausses piste
 
 - **corps** → clé dorée → **boîte cadenassée** (chambre de la victime) → **journal** : code du téléphone, mot de passe de l’ordinateur, code du coffre-fort
 - **téléphone** (code) → messages signés de **surnoms** → **photo de groupe** (surnoms au dos) → identité de l’expéditeur
-- **tiroir du bureau** (clé sur le corps) → **ordinateur** (mot de passe) → notes sur chacun + code du coffret → **malle du grenier** (clé cachée) → **coffret** → **clé USB** → (lue dans l’ordinateur) **mobile**
+- **tiroir du bureau** (clé sur le corps) → **ordinateur** (mot de passe) → notes vagues sur chacun (« j’ai la preuve… », sans le secret) + code du coffret + où est rangée la clé de la malle → **malle du grenier** (clé cachée) → **coffret** → **clé USB** → (lue dans l’ordinateur) **mobile**
 - **coffre-fort** (code du journal) → documents de l’histoire passée (impliquent plusieurs personnes)
 - **appareil photo + carte mémoire** → photo horodatée du groupe du meurtrier… sans lui (rendue avec les vrais personnages)
 - **tickets** → station-service à 21h1x au nom du meurtrier ; additions et selfies qui confirment les alibis des autres
@@ -87,6 +96,9 @@ Ses alliés qui ne l’ont jamais dénoncé ne peuvent pas être visés.
 | Limites | 2 accusations par joueur, 75 s entre deux, un seul vote à la fois, aucune pendant la découverte du corps | — |
 
 Votes définitifs. Égalité au vote d’accusation = relâché·e. Déconnexions : le vote se termine au délai.
+Les morts et les arrêtés ne votent pas ; un joueur tué ou arrêté pendant un vote en est retiré (le vote est annulé si
+c’était l’accusé·e). Aucune occasion d’élimination pendant un vote. À trois joueurs libres ou moins, l’interface
+prévient qu’une arrestation à tort donnerait la victoire au meurtrier.
 
 ## 9. Objets
 

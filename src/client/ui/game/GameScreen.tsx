@@ -9,13 +9,14 @@ import { audio, music } from '../../audio';
 import { PHASE_LABEL, useChatFocus, usePicker, useTarget } from './helpers';
 import { ActionBar, triggerTarget } from './ActionBar';
 import { ChatPanel } from './ChatPanel';
-import { Announcement } from './FeedPanel';
+import { Announcement, ChronicleTab } from './FeedPanel';
 import { EveningBanner } from './EveningBanner';
 import { Notifications } from './Notifications';
 import { VoiceControls } from './VoiceControls';
 import { InventoryTab } from './InventoryTab';
 import { RelationsTab } from './RelationsTab';
 import { DossierTab } from './DossierTab';
+import { RoleCard, LeadsPanel } from './Guidance';
 import { InvestigationTab } from '../investigation/InvestigationTab';
 import { OpportunityPrompt, VoteModal, TestimonyModal, Epilogue, Picker, PauseMenu } from './Overlays';
 
@@ -45,7 +46,8 @@ export function GameScreen() {
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const v = new GameView3D(wrap, { reducedMotion: useStore.getState().settings.reducedMotion });
+    const st = useStore.getState().settings;
+    const v = new GameView3D(wrap, { reducedMotion: st.reducedMotion, quality: st.quality, showFps: st.showFps });
     viewRef.current = v;
     const dbg = (window as unknown as { __ehas?: Record<string, unknown> }).__ehas;
     if (dbg) dbg.view3d = v; // accroche de test (?debug)
@@ -61,6 +63,10 @@ export function GameScreen() {
     const g0 = liveGame.current ?? useStore.getState().game;
     if (g0) v.setView(g0);
     const unsub = liveGame.subscribe((g) => v.setView(g));
+    const unsubSettings = useStore.subscribe((s, prev) => {
+      if (s.settings.quality !== prev.settings.quality) v.setQualityMode(s.settings.quality);
+      if (s.settings.showFps !== prev.settings.showFps) v.setFpsVisible(s.settings.showFps);
+    });
     const ro = new ResizeObserver(() => v.refreshSize());
     ro.observe(wrap);
     // Échap en souris capturée : le navigateur libère la souris et n'envoie pas la touche → on ouvre directement le menu
@@ -83,6 +89,7 @@ export function GameScreen() {
     return () => {
       clearInterval(t);
       unsub();
+      unsubSettings();
       ro.disconnect();
       document.removeEventListener('pointerlockchange', onLock);
       v.dispose();
@@ -118,6 +125,14 @@ export function GameScreen() {
   }, [introOpen, hasGame]);
 
 
+  // carte de rôle : une fois la cinématique et le plan sur le corps terminés
+  const [roleReady, setRoleReady] = useState(false);
+  useEffect(() => {
+    if (introOpen || !hasGame || revealing) return setRoleReady(false);
+    const t = setTimeout(() => setRoleReady(true), 1500);
+    return () => clearTimeout(t);
+  }, [introOpen, hasGame, revealing]);
+
   // Clavier → intentions (relatives à la caméra) ; le serveur simule
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -148,9 +163,13 @@ export function GameScreen() {
         if (document.pointerLockElement) document.exitPointerLock();
         viewRef.current?.releaseAll();
         useChatFocus.getState().setChatOpen(true);
-      } else if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
+      } else if (['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(e.code)) {
         if (document.pointerLockElement) document.exitPointerLock();
         toggleTab(Number(e.code.slice(-1)) - 1);
+      } else if (e.code === 'F3') {
+        e.preventDefault();
+        const st = useStore.getState();
+        st.updateSettings({ showFps: !st.settings.showFps });
       } else if (e.code === 'KeyM') {
         setShowMap((m) => !m);
       } else if (e.code === 'Escape') {
@@ -188,6 +207,7 @@ export function GameScreen() {
     { icon: '🎒', label: 'Inventaire', badge: game.inventory.length || null },
     { icon: '🔎', label: 'Enquête', badge: game.publicEvidence.length || null, alert: investigation && !!game.vote },
     { icon: '👥', label: 'Relations', badge: pendingRelations || null, alert: pendingRelations > 0 },
+    { icon: '📜', label: 'Chronique', badge: null, alert: false },
   ];
 
   return (
@@ -198,6 +218,7 @@ export function GameScreen() {
         <div className="game-title">{game.title}</div>
         <div className="game-clock">{formatClock(game.clock)}</div>
         <div className={`phase phase-${game.phase.toLowerCase()}`}>{PHASE_LABEL[game.phase]}</div>
+        <HudTimer />
         <div className="game-room">{room ? roomName(room) : '—'}</div>
         {game.blackout && <div className="chip chip-danger">⚡ Coupure de courant</div>}
         {game.muddy && <div className="chip">🥾 Chaussures boueuses</div>}
@@ -208,7 +229,7 @@ export function GameScreen() {
       </header>
 
       <div className="cam-hint" hidden={!!ghost}>
-        {camMode === 'third' ? '3e personne' : '1re personne'} · <kbd>V</kbd> vue · {locked ? "souris capturée" : "clic : orienter la caméra"} · <kbd>ZQSD</kbd> bouger · <kbd>Maj</kbd> courir · <kbd>E</kbd> interagir · <kbd>F</kbd> plus · <kbd>Entrée</kbd> chat · <kbd>1</kbd>–<kbd>4</kbd> panneaux · <kbd>Échap</kbd> menu
+        <kbd>ZQSD</kbd> bouger · <kbd>E</kbd> interagir · <kbd>1</kbd>–<kbd>5</kbd> panneaux · <kbd>Échap</kbd> menu{!locked && camMode === 'third' ? ' · clic : orienter la caméra' : ''}
       </div>
 
       {revealing && game.caseInfo && <RevealCaption caseInfo={game.caseInfo} />}
@@ -224,6 +245,7 @@ export function GameScreen() {
         </div>
       )}
       <Announcement />
+      {!revealing && !ghost && <LeadsPanel />}
       <OpportunityPrompt />
       <ActionBar />
       <ChatPanel />
@@ -254,6 +276,7 @@ export function GameScreen() {
             {tab === 1 && <InventoryTab />}
             {tab === 2 && <InvestigationTab />}
             {tab === 3 && <RelationsTab />}
+            {tab === 4 && <ChronicleTab />}
           </div>
         </aside>
       )}
@@ -262,6 +285,7 @@ export function GameScreen() {
       <TestimonyModal />
       <Picker />
       <PauseMenu />
+      <RoleCard ready={roleReady && !game.epilogue} />
       <Epilogue />
     </div>
   );
@@ -336,6 +360,31 @@ function RevealCaption({ caseInfo }: { caseInfo: NonNullable<ReturnType<typeof u
         </>
       )}
       <div className="reveal-skip">Espace : passer</div>
+    </div>
+  );
+}
+
+/** Bandeau : compte à rebours avant la police (ou fin du vote en cours) et accusations restantes. */
+function HudTimer() {
+  const endsAt = useStore((s) => s.game?.caseInfo?.endsAt);
+  const phase = useStore((s) => s.game?.phase);
+  const vote = useStore((s) => s.game?.vote);
+  const left = useStore((s) => s.game?.caseInfo?.accusationsLeft);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const fmt = (ms: number) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  if (vote) return <div className="chip chip-danger hud-timer">🗳 Vote · {fmt(vote.endsAt - Date.now())}</div>;
+  if (phase !== 'INVESTIGATION' || !endsAt) return null;
+  return (
+    <div className="chip hud-timer" title="Avant l’arrivée de la police et la délibération finale">
+      🚓 {fmt(endsAt - Date.now())}
+      {left !== undefined && <span className="muted"> · {left} accusation{left > 1 ? 's' : ''}</span>}
     </div>
   );
 }

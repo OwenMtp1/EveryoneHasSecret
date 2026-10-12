@@ -296,6 +296,8 @@ export interface CaseView {
   /** une accusation peut-elle être déposée maintenant */
   canAccuse: boolean;
   accuseBlockedReason?: string;
+  /** petites tables : une arrestation à tort ferait gagner le meurtrier */
+  parityWarning?: string;
   accusationsLeft: number;
 }
 
@@ -321,6 +323,11 @@ export interface EvidenceView {
   lines: string[];
   photos?: PhotoView[];
   at: number;
+  /** la verser au dossier rendrait public le secret de ces personnes (avertissement) */
+  exposes?: string[];
+  /** nature de la pièce (type d'objet, repère de l'affaire) : sert aux pistes guidées, ne révèle rien */
+  kind?: string;
+  ref?: string;
 }
 
 /** Pièce versée au dossier commun : texte authentique tiré de la preuve, recoupements automatiques. */
@@ -441,7 +448,7 @@ export interface GameSelfView {
   /** joueurs arrêtés (hors jeu, spectateurs) */
   arrested: string[];
   /** meubles encore verrouillés */
-  lockedFurniture: { id: string; kind: 'code' | 'key' }[];
+  lockedFurniture: { id: string; kind: 'code' | 'key'; hint?: string }[];
 }
 
 /** Snapshot léger envoyé à haute fréquence. */

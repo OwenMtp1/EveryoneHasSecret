@@ -13,9 +13,9 @@ export function JoinGame() {
     if (lobby) useStore.setState(useStore.getState().inGame ? { lobby } : { lobby, screen: 'lobby' });
   };
   return (
-    <MenuScreen title="JOIN GAME" back="play">
+    <MenuScreen title="REJOINDRE UNE PARTIE" back="play">
       <form className="panel form-panel join-panel" onSubmit={submit}>
-        <div className="field-label">ENTER CODE</div>
+        <div className="field-label">CODE DE LA PARTIE</div>
         <input
           className="code-input"
           value={code}
@@ -26,7 +26,7 @@ export function JoinGame() {
           name="code"
         />
         <button className="btn btn-primary btn-lg" disabled={code.length !== META_CONFIG.lobbyCodeLength}>
-          JOIN
+          ENTRER
         </button>
       </form>
     </MenuScreen>

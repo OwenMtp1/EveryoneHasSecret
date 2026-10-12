@@ -106,9 +106,11 @@ ou fait dans les vues, pour les 3 scénarios et 3 à 8 joueurs) et par inspectio
 - Client : qualité adaptative en 3 niveaux — 0 : occlusion ambiante + halo + étalonnage ; 1 : étalonnage ; 2 : rendu direct —
   (ombres, résolution), niveaux éloignés masqués, lumières du seul niveau du joueur,
   géométries/matériaux partagés entre personnages, chargement des modèles à la demande, envoi des entrées ≤ 30/s.
+  Le joueur peut imposer un niveau (Paramètres → Qualité graphique) ; F3 affiche images/s, appels de dessin et triangles.
 - Villa : ombres de contact précalculées (sols, pied des murs, plafonds) en multiplication, valables à tous les niveaux ;
   lumière de la pièce = projecteur ombré + lumière de rebond sous le plafond ; forêt et herbe instanciées.
-- Le bundle principal fait ~1,5 Mo (≈ 425 Ko gzip), Three.js compris.
+- Bundle découpé (`vite.config.ts`, `App.tsx`) : index ≈ 298 Ko, three ≈ 683 Ko, react ≈ 187 Ko, réseau ≈ 262 Ko
+  (bibliothèques mises en cache d'une version à l'autre) ; l'écran de jeu (≈ 111 Ko) est chargé à part, préchargé dès le salon.
 
 ## 6. Étendre le jeu
 

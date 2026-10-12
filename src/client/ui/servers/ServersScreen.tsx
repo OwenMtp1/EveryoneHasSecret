@@ -31,7 +31,7 @@ export function ServersScreen() {
   };
 
   return (
-    <MenuScreen title="SERVERS" back="menu" wide>
+    <MenuScreen title="SERVEURS" back="menu" wide>
       <div className="filters">
         <div className="seg">
           <button className={filters.availability === 'all' ? 'active' : ''} onClick={() => setFilters({ ...filters, availability: 'all' })}>Toutes</button>

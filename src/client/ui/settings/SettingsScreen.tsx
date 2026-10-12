@@ -20,15 +20,30 @@ export function SettingsScreen() {
           <input type="checkbox" checked={s.reducedMotion} onChange={(e) => update({ reducedMotion: e.target.checked })} />
           Réduire les animations
         </label>
+        <label>
+          Qualité graphique
+          <select value={String(s.quality)} onChange={(e) => update({ quality: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 0 | 1 | 2) })}>
+            <option value="auto">Automatique (selon la fluidité)</option>
+            <option value="0">Élevée — occlusion, halo, ombres</option>
+            <option value="1">Moyenne — sans halo ni occlusion</option>
+            <option value="2">Basse — sans ombres, résolution réduite</option>
+          </select>
+        </label>
+        <label className="inline check">
+          <input type="checkbox" checked={s.showFps} onChange={(e) => update({ showFps: e.target.checked })} />
+          Afficher le compteur d’images (<kbd>F3</kbd>)
+        </label>
         <div className="field-label">Contrôles en partie</div>
         <ul className="controls-help">
           <li><kbd>Z Q S D</kbd> / <kbd>W A S D</kbd> / flèches — se déplacer (relatif à la caméra)</li>
-          <li>Souris — cliquer dans la vue pour orienter la caméra, <kbd>Échap</kbd> pour libérer · molette : distance</li>
+          <li>Souris — cliquer dans la vue pour orienter la caméra · molette : distance</li>
           <li><kbd>V</kbd> — troisième personne ↔ première personne</li>
-          <li><kbd>E</kbd> — interagir avec l’élément le plus proche</li>
+          <li><kbd>E</kbd> — action principale sur ce que vous visez · <kbd>F</kbd> — autres actions · <kbd>←</kbd> <kbd>→</kbd> — objets empilés</li>
           <li><kbd>Entrée</kbd> — écrire dans le chat</li>
-          <li><kbd>M</kbd> — plan 2D de la villa</li>
-          <li><kbd>1</kbd>–<kbd>4</kbd> — onglets (Inventaire, Relations, Carnet, Enquête)</li>
+          <li><kbd>M</kbd> — plan 2D de la villa · <kbd>F3</kbd> — compteur d’images</li>
+          <li><kbd>1</kbd>–<kbd>4</kbd> — Dossier, Inventaire, Enquête, Relations · <kbd>5</kbd> — Chronique</li>
+          <li><kbd>N</kbd> — couper ou rétablir le micro · <kbd>Échap</kbd> — votre histoire, réglages, quitter</li>
+          <li>Fantôme : <kbd>Espace</kbd> / <kbd>C</kbd> monter et descendre, <kbd>F</kbd> suivre un joueur</li>
         </ul>
       </div>
     </MenuScreen>

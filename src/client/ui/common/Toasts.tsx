@@ -42,8 +42,8 @@ export function Toasts() {
           <div className="toast-body">{t.body}</div>
           {t.type === 'GAME_INVITE' && (
             <div className="toast-actions">
-              <button className="btn btn-primary btn-sm" onClick={() => respondInvite(t.id, true)}>ACCEPT</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => respondInvite(t.id, false)}>DECLINE</button>
+              <button className="btn btn-primary btn-sm" onClick={() => respondInvite(t.id, true)}>ACCEPTER</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => respondInvite(t.id, false)}>REFUSER</button>
             </div>
           )}
           {t.type === 'FRIEND_REQUEST' && typeof t.payload?.userId === 'string' && (

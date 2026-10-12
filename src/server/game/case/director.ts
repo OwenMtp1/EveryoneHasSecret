@@ -31,13 +31,17 @@ export interface DirectorInput {
 const T = (h: number, m: number) => h * 60 + m;
 const between = (rnd: () => number, lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1));
 
-/** Première pièce existante parmi des candidates (la villa peut évoluer). */
+/** Tirage de la partie en cours : les emplacements varient d'une partie à l'autre (rejouabilité). */
+let placeRnd: () => number = Math.random;
+/** Une pièce existante tirée au hasard parmi des candidates plausibles (la villa peut évoluer). */
 function room(candidates: string[], fallback = 'living'): string {
-  return candidates.find((r) => roomById(r)) ?? fallback;
+  const ok = candidates.filter((r) => roomById(r));
+  return ok.length ? ok[Math.floor(placeRnd() * ok.length)] : fallback;
 }
 
 export function buildCase(input: DirectorInput): CaseTruth {
   const { rnd } = input;
+  placeRnd = rnd;
   if (input.players.length < 2) throw new Error('Une affaire exige au moins deux joueurs.');
   const scenario: ScenarioDef = (input.scenarioId && scenarioById(input.scenarioId)) || pick(SCENARIOS, rnd);
   const vc = castById(input.victimCastId)!;
@@ -87,7 +91,17 @@ export function buildCase(input: DirectorInput): CaseTruth {
 
   // ── absences : la moitié des innocents s'est éclipsée (fausses pistes à démontrer) ──
   const absent = new Map<string, { from: number; to: number; place: PlaceId; proof: 'photo' | 'receipt' }>();
-  for (const p of shuffle(innocents, rnd).slice(0, Math.max(1, Math.floor(innocents.length / 2)))) {
+  // le compagnon du meurtrier ne voit jamais UNE seule absence : un autre convive s'éclipse vers la même heure
+  let decoy = innocents.find((p) => p !== companion && !protectors.includes(p) && placeOf.get(p.id) === mPlace);
+  if (!decoy) {
+    decoy = innocents.find((p) => p !== companion && !protectors.includes(p)) ?? innocents.find((p) => p !== companion);
+    if (decoy) placeOf.set(decoy.id, mPlace);
+  }
+  if (decoy) {
+    const from = between(rnd, leaveAt - 3, leaveAt + 6);
+    absent.set(decoy.id, { from, to: from + between(rnd, 18, 30), place: pick(['plage', 'epicerie', 'belvedere'] as PlaceId[], rnd), proof: rnd() < 0.5 ? 'photo' : 'receipt' });
+  }
+  for (const p of shuffle(innocents.filter((x) => x !== decoy), rnd).slice(0, Math.max(0, Math.floor(innocents.length / 2) - absent.size))) {
     const from = between(rnd, T(21, 14), T(21, 22));
     absent.set(p.id, { from, to: from + between(rnd, 15, 24), place: pick(['plage', 'epicerie', 'belvedere'] as PlaceId[], rnd), proof: rnd() < 0.5 ? 'photo' : 'receipt' });
   }
@@ -106,7 +120,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
     mem.push(`20h45 — vous quittez la villa avec les autres. ${v.first} reste seul${a(v)}, « fatigué${a(v)} ».`);
     mem.push(group.length ? `21h00 — vous êtes à ${placeName(pl)} avec ${group.map((o) => o.full).join(', ')}.` : `21h00 — vous êtes à ${placeName(pl)}, seul${a(p)}.`);
     for (const o of group) {
-      if (o.id === m.id && p.id !== m.id) mem.push(`Vers ${formatClock(leaveAt)}, ${o.first} est sorti${a(o)} en disant « je vais chercher des cigarettes ». ${e(o, 'Il', 'Elle')} n’est revenu${a(o)} que vers ${formatClock(backAt)}, les chaussures pleines de boue.`);
+      if (o.id === m.id && p.id !== m.id) mem.push(`Vers ${formatClock(leaveAt)}, ${o.first} est sorti${a(o)} en disant « je vais chercher des cigarettes ». ${e(o, 'Il', 'Elle')} n’est revenu${a(o)} que vers ${formatClock(backAt)}.`);
       const ab = absent.get(o.id);
       if (ab) mem.push(`Vers ${formatClock(ab.from)}, ${o.first} s’est éclipsé${a(o)} « prendre l’air » ; ${e(o, 'il', 'elle')} est revenu${a(o)} vers ${formatClock(ab.to)}.`);
     }
@@ -151,7 +165,7 @@ export function buildCase(input: DirectorInput): CaseTruth {
     lock: { kind: 'code', code: pin, hint: 'Code à quatre chiffres' },
     content: {
       title: `Téléphone de ${v.full} — messages`,
-      lines: [...herrings, ...victimMessages, `${formatClock(murderAt - 2)} — Appel entrant de « ${nick.get(m.id)} » (non décroché).`],
+      lines: [...herrings, ...victimMessages, `${formatClock(stationAt + 1)} — Appel entrant de « ${nick.get(m.id)} » (non décroché).`],
       facts: [{ kind: 'motive', playerId: m.id }],
       weight: 'key',
     },
@@ -194,7 +208,6 @@ export function buildCase(input: DirectorInput): CaseTruth {
   });
 
   // ── 4. ordinateur → coffret → clé USB (mobile) ──
-  const secretFacts: Fact[] = innocents.map((p) => ({ kind: 'secret', playerId: p.id }));
   add({
     ref: 'laptop',
     type: 'laptop',
@@ -206,9 +219,10 @@ export function buildCase(input: DirectorInput): CaseTruth {
       lines: [
         ...scenario.laptopLines(ctx, secretHolders),
         `Fichier « à ne pas oublier.txt » : « La clé USB est dans le coffret à code. Code : ${boxCode}. »`,
-        ...innocents.map((p) => `Note sur ${p.first} : ${truthOf.get(p.id)!.secret.reveal.replace(/^./, (c) => c.toUpperCase())} — « à lui faire avouer avant lundi ».`),
+        // des pistes, pas les secrets eux-mêmes : chaque preuve reste à trouver dans la villa
+        ...innocents.map((p) => `Note sur ${p.first} : « J’ai la preuve de ce qu’${p.feminine ? 'elle' : 'il'} cache. Le papier est rangé quelque part dans la villa — à lui faire avouer avant lundi. »`),
       ],
-      facts: [...secretFacts, { kind: 'code', targetId: 'usb_box' }],
+      facts: [{ kind: 'code', targetId: 'usb_box' }],
       weight: 'key',
     },
   });
@@ -218,11 +232,15 @@ export function buildCase(input: DirectorInput): CaseTruth {
 
   // ── 5. appareil photo + carte : la soirée en images ──
   const shooter = companion;
-  const presentAtM = all.filter((p) => placeOf.get(p.id) === mPlace && p.id !== m.id);
   const photoAt = between(rnd, Math.max(murderAt - 6, leaveAt + 8), murderAt + 4);
-  const cardLines = [`${formatClock(photoAt)} — ${PLACES[mPlace].name} : ${presentAtM.map((p) => p.first).join(', ')} trinquent. La chaise de ${m.first} est vide.`];
+  const awayAt = (p: Who) => p.id === m.id || (!!absent.get(p.id) && photoAt >= absent.get(p.id)!.from && photoAt <= absent.get(p.id)!.to);
+  const presentAtM = all.filter((p) => placeOf.get(p.id) === mPlace && !awayAt(p));
+  const emptyChairs = all.filter((p) => placeOf.get(p.id) === mPlace && awayAt(p));
+  const cardLines = [
+    `${formatClock(photoAt)} — ${PLACES[mPlace].name} : ${presentAtM.map((p) => p.first).join(', ') || 'personne'} trinque${presentAtM.length > 1 ? 'nt' : ''}. ${emptyChairs.length > 1 ? `Les chaises de ${emptyChairs.map((p) => p.first).join(' et ')} sont vides.` : `La chaise de ${m.first} est vide.`}`,
+  ];
   const cardPhotos = [{ castIds: presentAtM.map((p) => p.castId), scene: PLACES[mPlace].photoScene, caption: `${formatClock(photoAt)}`, seed: ctx.seed() }];
-  const cardFacts: Fact[] = [...presentAtM.map((p) => ({ kind: 'place' as const, playerId: p.id, place: mPlace, at: photoAt })), { kind: 'absent', playerId: m.id, place: mPlace, at: photoAt }];
+  const cardFacts: Fact[] = [...presentAtM.map((p) => ({ kind: 'place' as const, playerId: p.id, place: mPlace, at: photoAt })), ...emptyChairs.map((p) => ({ kind: 'absent' as const, playerId: p.id, place: mPlace, at: photoAt }))];
   add({ ref: 'camera', type: 'camera', name: `Appareil photo de ${shooter.first}`, placement: { kind: 'hidden', roomId: room(['living', 'guestroom', 'hall']), furnitureHint: ['armoire', 'placard', 'commode', 'penderie', 'manteau'] }, insertedRef: 'card' });
   add({
     ref: 'card',

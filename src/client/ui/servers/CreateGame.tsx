@@ -21,7 +21,7 @@ export function CreateGame() {
   };
 
   return (
-    <MenuScreen title="CREATE GAME" back="play">
+    <MenuScreen title="CRÉER UNE PARTIE" back="play">
       <div className="panel form-panel">
         <label>
           Nom de la partie
@@ -38,8 +38,8 @@ export function CreateGame() {
         <p className="hint">Idéal : 4 à 6 joueurs. Minimum pour lancer : {META_CONFIG.minPlayersToStart}.</p>
         <div className="field-label">Visibilité</div>
         <div className="seg">
-          <button className={visibility === 'PUBLIC' ? 'active' : ''} onClick={() => setVis('PUBLIC')}>PUBLIC</button>
-          <button className={visibility === 'PRIVATE' ? 'active' : ''} onClick={() => setVis('PRIVATE')}>PRIVATE</button>
+          <button className={visibility === 'PUBLIC' ? 'active' : ''} onClick={() => setVis('PUBLIC')}>PUBLIQUE</button>
+          <button className={visibility === 'PRIVATE' ? 'active' : ''} onClick={() => setVis('PRIVATE')}>PRIVÉE</button>
         </div>
         <p className="hint">{visibility === 'PRIVATE' ? 'Seules les personnes ayant le code pourront entrer.' : 'Visible dans la liste des serveurs.'}</p>
         <div className="field-label">Durée de la nuit</div>

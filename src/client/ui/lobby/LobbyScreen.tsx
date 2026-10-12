@@ -75,7 +75,7 @@ export function LobbyScreen() {
               <span className="grow">
                 {p.character ? `${p.character.firstName} ${p.character.lastName}` : 'Personnage à choisir'} <span className="muted small">@{p.username}</span>
               </span>
-              <span className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'READY ✓' : 'NOT READY'}</span>
+              <span className={`lobby-ready ${p.ready || p.isHost ? 'ok' : ''}`}>{p.isHost ? 'HÔTE' : p.ready ? 'PRÊT·E ✓' : 'PAS PRÊT·E'}</span>
               {isHost && !p.isHost && lobby.status === 'WAITING' && (
                 <button className="kick" title="Expulser" onClick={() => confirm(`Expulser ${p.username} ?`) && attempt(call('lobby:kick', p.userId))}>✕</button>
               )}
@@ -162,7 +162,7 @@ function LobbySettings() {
       </div>
       <div className="seg">
         {(['PUBLIC', 'PRIVATE'] as const).map((v) => (
-          <button key={v} className={lobby.visibility === v ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { visibility: v }))}>{v}</button>
+          <button key={v} className={lobby.visibility === v ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { visibility: v }))}>{v === 'PUBLIC' ? 'PUBLIQUE' : 'PRIVÉE'}</button>
         ))}
       </div>
       <button className="btn btn-primary btn-sm" onClick={() => attempt(call('lobby:settings', { name }), 'Paramètres enregistrés.')}>Renommer</button>

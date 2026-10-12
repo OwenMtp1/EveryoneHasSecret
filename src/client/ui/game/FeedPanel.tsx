@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatClock } from '@shared/config';
 import type { FeedMessage } from '@shared/types';
 import { useStore } from '../../store';
@@ -13,6 +13,45 @@ export function FeedPanel() {
   return (
     <div className="panel feed-panel" ref={ref}>
       {feed.map((m) => (
+        <div key={m.id} className={`feed-line feed-${m.style}`}>
+          <span className="feed-time">{formatClock(m.at)}</span> {m.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const FILTERS = [
+  { id: 'all', label: 'Tout' },
+  { id: 'danger', label: 'Accusations et votes' },
+  { id: 'public', label: 'Annonces' },
+  { id: 'me', label: 'Pour moi' },
+] as const;
+
+/**
+ * Chronique de la nuit : tout ce qui a été annoncé (accusations, défenses, alibis, pièces versées, révélations,
+ * bruits, messages personnels), consultable à tout moment, du plus récent au plus ancien.
+ */
+export function ChronicleTab() {
+  const EMPTY: never[] = [];
+  const feed = useStore((s) => s.game?.feed) ?? EMPTY;
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]['id']>('all');
+  const lines = useMemo(() => {
+    const keep = (m: FeedMessage) =>
+      filter === 'all' ? true : filter === 'danger' ? m.style === 'danger' : filter === 'public' ? m.style === 'announce' || m.style === 'narration' : m.style === 'whisper' || m.style === 'system';
+    return [...feed].filter(keep).reverse();
+  }, [feed, filter]);
+  return (
+    <div className="chronicle">
+      <div className="chips-row">
+        {FILTERS.map((f) => (
+          <button key={f.id} className={`chip-btn ${filter === f.id ? 'active' : ''}`} onClick={() => setFilter(f.id)}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {!lines.length && <div className="empty small">Rien pour l’instant.</div>}
+      {lines.map((m) => (
         <div key={m.id} className={`feed-line feed-${m.style}`}>
           <span className="feed-time">{formatClock(m.at)}</span> {m.text}
         </div>

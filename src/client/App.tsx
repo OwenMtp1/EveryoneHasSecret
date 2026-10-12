@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { GAME_NAME } from '@shared/config';
 import { useStore } from './store';
 import { audio } from './audio';
@@ -15,7 +15,9 @@ import { ProfileScreen } from './ui/profile/ProfileScreen';
 import { SettingsScreen } from './ui/settings/SettingsScreen';
 import { LobbyScreen } from './ui/lobby/LobbyScreen';
 import { IntroScreen } from './game/intro/IntroScreen';
-import { GameScreen } from './ui/game/GameScreen';
+// l'écran de jeu (vue 3D de la villa, personnages, interface d'enquête) est chargé à part, en arrière-plan dès le salon
+const loadGameScreen = () => import('./ui/game/GameScreen');
+const GameScreen = lazy(() => loadGameScreen().then((m) => ({ default: m.GameScreen })));
 
 export function App() {
   const screen = useStore((s) => s.screen);
@@ -33,6 +35,9 @@ export function App() {
   }, [boot]);
 
   const inGame = screen === 'game';
+  useEffect(() => {
+    if (screen === 'lobby' || screen === 'game') void loadGameScreen();
+  }, [screen]);
   return (
     <div className={`app screen-${screen}`}>
       {!inGame && <MenuBackground3D dim={screen !== 'menu' && screen !== 'auth' && screen !== 'boot'} />}
@@ -54,7 +59,11 @@ export function App() {
       {screen === 'profile' && <ProfileScreen />}
       {screen === 'settings' && <SettingsScreen />}
       {screen === 'lobby' && <LobbyScreen />}
-      {inGame && <GameScreen />}
+      {inGame && (
+        <Suspense fallback={<div className="center-message">Chargement de la villa…</div>}>
+          <GameScreen />
+        </Suspense>
+      )}
       <IntroScreen />
       <Toasts />
       <ActionFlash />

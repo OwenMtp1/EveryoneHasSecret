@@ -60,6 +60,26 @@ export const CASE_TIMING = {
   eliminationCooldownSec: 60,
 };
 
+/** Repères de l'affaire transmis avec une pièce lue (pistes guidées) : jamais d'identifiant de joueur. */
+const LEAD_REFS = new Set(['diary', 'victim_phone', 'group_photo', 'laptop', 'usb', 'card', 'm_receipt']);
+
+/** Où chercher la clé ou le code d'un objet verrouillé de l'affaire (affiché quand on le vise). */
+const LOCK_HINTS: Record<string, string> = {
+  victim_phone: 'Code à quatre chiffres. La victime oubliait toujours son code… et le notait quelque part.',
+  laptop: 'Mot de passe. Il est sans doute noté avec les autres codes de la victime.',
+  diary_box: 'Fermée à clé. Une petite clé dorée, peut-être sur la victime ?',
+  usb_box: 'Molette à quatre chiffres. Le code est dans un fichier de l’ordinateur de la victime.',
+};
+
+/** Outils dont le résultat devient une pièce du dossier (titre de la pièce). */
+const TOOL_REPORTS: Record<string, string> = {
+  analyze_prints: 'Analyse d’empreintes',
+  take_prints: 'Relevé d’empreintes',
+  examine_body: 'Rapport d’autopsie',
+  inspect_room: 'Inspection de la pièce',
+  examine_shoes: 'Examen des semelles',
+};
+
 /** accord en genre selon le personnage incarné */
 const ag = (p: PlayerState | undefined) => (p?.character.appearance === 'feminine' ? 'e' : '');
 
@@ -103,6 +123,8 @@ export class CaseSystem {
   private freedProtectors = new Set<string>();
   /** premier choix de chacun : amitié ou trahison (définitif, privé sauf l'amitié qui se voit) */
   private stances = new Map<string, 'friendship' | 'betrayal'>();
+  /** nombre d'interrogatoires subis par joueur */
+  private questioned = new Map<string, number>();
   private votesHistory: EpilogueView['votes'] = [];
   private arrestedOrder: string[] = [];
   private lastAccusationAt = -Infinity;
@@ -111,7 +133,7 @@ export class CaseSystem {
   private blackoutAt = 0;
   private victimBodyId = 'b_victim';
   /** meubles verrouillés (coffre-fort à code, tiroir et malle à clé) : verrou réel côté serveur */
-  furnitureLocks = new Map<string, { kind: 'code'; code: string; fails: number; until: number } | { kind: 'key'; keyId: string }>();
+  furnitureLocks = new Map<string, ({ kind: 'code'; code: string; fails: number; until: number } | { kind: 'key'; keyId: string }) & { hint?: string }>();
 
   constructor(private g: GameInstance) {}
 
@@ -170,7 +192,9 @@ export class CaseSystem {
         ev.clock = t.murderAt - 3;
       }
     }
-    const sink = allFurniture().find((f) => f.kind === 'sink');
+    // lavabo tiré au hasard (pas toujours la cuisine) parmi ceux du rez-de-chaussée et de l'étage
+    const sinks = allFurniture().filter((f) => f.kind === 'sink' && roomById(f.roomId) && !roomById(f.roomId)!.outdoor);
+    const sink = sinks.length ? pick(sinks, g.rnd) : undefined;
     if (sink) g.addEvidence('diluted_blood', sink.roomId, { x: sink.x + 0.5, y: sink.y + 0.5 }, { sinkId: sink.id }, false, m.id).clock = t.murderAt + 5;
 
     // spécialités d'enquête (le meurtrier en reçoit une aussi)
@@ -191,7 +215,7 @@ export class CaseSystem {
       for (const mem of pt.memories) g.know(p.id, 'self', mem);
     }
     g.feedAll('announce', `${t.scenarioTitle.toUpperCase()} — ${t.victim.name} est mort${t.victim.feminine ? 'e' : ''}. ${roomName(t.victim.roomId)}.`);
-    g.feedAll('narration', 'Ouvrez votre dossier (Tab). Fouillez, recoupez, déclarez votre alibi. Une accusation formelle déclenche un vote.');
+    g.feedAll('narration', 'Votre rôle est dans votre dossier (touche 1). Fouillez, recoupez, déclarez votre alibi (touche 3). Une accusation formelle déclenche un vote.');
     g.addBoard('system', null, t.publicBrief, true);
 
     const scale = g.timeScale;
@@ -215,13 +239,13 @@ export class CaseSystem {
     const desk = furn('f_office_desk');
     if (desk) {
       const key = this.spawnExtra('key', 'Petite clé de bureau', 'Une petite clé plate, trouvée dans la poche de la victime. « Bureau ».', { kind: 'hidden', roomId: this.truth.victim.roomId, furnitureId: `body:${this.victimBodyId}`, pos: { ...bodyPos } });
-      this.furnitureLocks.set(desk.id, { kind: 'key', keyId: key.id });
+      this.furnitureLocks.set(desk.id, { kind: 'key', keyId: key.id, hint: 'Fermé à clé. La victime gardait ses petites clés sur elle.' });
       put(this.refs.get('laptop'), desk);
     }
     const safe = furn('f_office_safe');
     if (safe) {
       const code = String(1000 + Math.floor(g.rnd() * 9000));
-      this.furnitureLocks.set(safe.id, { kind: 'code', code, fails: 0, until: 0 });
+      this.furnitureLocks.set(safe.id, { kind: 'code', code, fails: 0, until: 0, hint: 'Code à quatre chiffres. La victime notait tous ses codes dans un journal intime.' });
       for (const [ref, o] of this.refs) if (ref.startsWith('story_')) put(o, safe);
       const diary = this.content(this.refs.get('diary')!);
       diary?.lines.splice(2, 0, `« Le coffre-fort du bureau : ${code}. J’y ai mis tout ce que j’ai retrouvé sur cette histoire. »`);
@@ -231,8 +255,12 @@ export class CaseSystem {
       const spots = allFurniture().filter((f) => f.hiding && !f.lock && ['garage', 'basement', 'laundry', 'mudroom', 'kidsroom', 'gamesroom'].includes(f.roomId));
       const spot = spots.length ? pick(spots, g.rnd) : null;
       const key = this.spawnExtra('key', 'Clé de la malle du grenier', 'Une grosse clé ancienne avec une étiquette : « Malle — grenier ».', spot ? { kind: 'hidden', roomId: spot.roomId, furnitureId: spot.id, pos: { x: spot.x + spot.w / 2, y: spot.y + spot.h / 2 } } : { kind: 'floor', roomId: 'hall', pos: randomFreeTile(g.grid, 'hall', g.rnd) });
-      this.furnitureLocks.set(trunk.id, { kind: 'key', keyId: key.id });
+      this.furnitureLocks.set(trunk.id, { kind: 'key', keyId: key.id, hint: 'Cadenassée. Une grosse clé ancienne doit traîner quelque part dans la maison.' });
       put(this.refs.get('usb_box'), trunk);
+      // l'ordinateur dit où chercher : la chaîne ne se bloque jamais faute d'indice
+      const lap = this.content(this.refs.get('laptop')!);
+      const where = spot ? roomName(spot.roomId).toLowerCase() : 'le hall';
+      if (lap) lap.lines.push(`Fichier « rangement.txt » : « Coffret rangé dans la malle du grenier. La clé de la malle est cachée côté ${where}. »`);
     }
   }
 
@@ -380,7 +408,8 @@ export class CaseSystem {
     for (const it of items) {
       const c = this.content(it)!;
       if (!mine.has(it.id)) {
-        mine.set(it.id, { objectId: it.id, title: c.title, lines: c.lines, photos: c.photos as PhotoView[] | undefined, at: g.clock() });
+        const exposes = c.facts.filter((f) => f.kind === 'secret').map((f) => g.nameOf((f as { playerId: string }).playerId));
+        mine.set(it.id, { objectId: it.id, title: c.title, lines: c.lines, photos: c.photos as PhotoView[] | undefined, at: g.clock(), exposes: exposes.length ? exposes : undefined, kind: it.type, ref: LEAD_REFS.has(it.props.ref as string) ? (it.props.ref as string) : undefined });
         g.know(p.id, 'evidence', `${c.title} — ${c.lines.join(' ')}`, { important: c.weight === 'key' });
         g.log('EVIDENCE_READ', { actorId: p.id, objectId: it.id, text: `${p.name} lit : ${c.title}` });
         if (c.weight === 'key' || c.weight === 'herring') p.metrics.examinations++;
@@ -537,8 +566,8 @@ export class CaseSystem {
       throw new UserError('Pièce déjà versée au dossier.');
     const against = againstId ? g.players.get(againstId) : undefined;
     if (againstId && (!against || against.id === p.id)) throw new UserError('Personne visée invalide.');
-    const o = g.objects.get(objectId)!;
-    const facts = this.content(o)?.facts ?? [];
+    const o = g.objects.get(objectId);
+    const facts = (o && this.content(o)?.facts) || [];
     const pe: PublicEvidence = { id: objectId, authorId: p.id, authorName: p.name, title: ev.title, lines: ev.lines, photos: ev.photos, againstName: against?.name, againstId: against?.id, checks: [], at: g.clock(), facts };
     this.publicEvidence.push(pe);
     g.log('EVIDENCE_PRESENTED', { actorId: p.id, objectId, targetId: against?.id, text: `${p.name} verse au dossier : ${ev.title}${against ? ` (contre ${against.name})` : ''}` });
@@ -622,6 +651,11 @@ export class CaseSystem {
     return null;
   }
 
+  /** Avertissement des petites tables : une arrestation à tort ferait gagner le meurtrier. */
+  parityWarning(): string | undefined {
+    return this.freePlayers().length <= 3 ? 'Il ne reste que trois personnes libres : si vous faites arrêter un innocent, le meurtrier gagne aussitôt.' : undefined;
+  }
+
   accuse(p: PlayerState, targetId: string, evidenceIds: string[], textIn: string): string {
     const g = this.g;
     const block = this.accuseBlock(p);
@@ -668,6 +702,7 @@ export class CaseSystem {
   ballot(p: PlayerState, choice: string): string {
     const v = this.vote;
     if (!v) throw new UserError('Aucun vote en cours.');
+    if (!p.alive || p.arrested) throw new UserError('Les morts et les personnes arrêtées ne votent pas.');
     if (!v.eligible.has(p.id)) throw new UserError('Vous ne participez pas à ce vote.');
     if (v.ballots.has(p.id)) throw new UserError('Vote déjà enregistré (définitif).');
     const g = this.g;
@@ -684,6 +719,21 @@ export class CaseSystem {
     if ([...v.eligible].every((id) => v.ballots.has(id) || !g.players.get(id)?.connected)) this.closeVote();
     g.markAllDirty();
     return 'Vote enregistré.';
+  }
+
+  /** Un joueur tué ou arrêté quitte le vote en cours (son bulletin ne compte plus) ; l'accusé disparu annule le vote. */
+  removeFromVote(id: string) {
+    const v = this.vote;
+    if (!v) return;
+    if (v.accusedId === id) {
+      this.vote = null;
+      this.g.feedAll('announce', `Le vote contre ${this.g.nameOf(id)} est annulé.`);
+      this.g.markAllDirty();
+      return;
+    }
+    v.eligible.delete(id);
+    v.ballots.delete(id);
+    if (v.eligible.size === 0 || [...v.eligible].every((x) => v.ballots.has(x) || !this.g.players.get(x)?.connected)) this.closeVote();
   }
 
   freePlayers() {
@@ -737,6 +787,7 @@ export class CaseSystem {
     p.arrested = true;
     p.input = { x: 0, y: 0 };
     this.arrestedOrder.push(p.id);
+    if (this.vote) this.removeFromVote(p.id);
     g.log('PLAYER_ARRESTED', { targetId: p.id, text: `${p.name} est arrêté${ag(p)} (${trigger})` });
     if (p.id === this.truth.murdererId) {
       this.finish('innocents', `${p.name} est arrêté${ag(p)}. C’était bien ${ag(p) ? 'la meurtrière' : 'le meurtrier'}.`);
@@ -764,7 +815,8 @@ export class CaseSystem {
     const g = this.g;
     if (!this.truth || p.id !== this.truth.murdererId || !p.alive || p.arrested || this.epilogue || g.phase === 'ARRIVAL') return null;
     if (g.now() - this.lastEliminationAt < CASE_TIMING.eliminationCooldownSec * 1000 * g.voteScale) return null;
-    if (this.vote?.accusedId === p.id) return null;
+    // pendant un vote, tous les regards sont tournés vers l'accusé·e : aucune occasion
+    if (this.vote) return null;
     const weapon = p.inventory.map((id) => g.objects.get(id)!).find((o) => o.def.tags.includes('weapon') && o.def.tags.includes('lethal'));
     if (!weapon) return null;
     for (const t of this.freePlayers()) {
@@ -776,8 +828,9 @@ export class CaseSystem {
     return null;
   }
 
-  onElimination() {
+  onElimination(victimId?: string) {
     this.lastEliminationAt = this.g.now();
+    if (victimId) this.removeFromVote(victimId);
     this.checkMurdererWin();
   }
 
@@ -794,6 +847,12 @@ export class CaseSystem {
     if (tool.maxUses !== undefined && used >= tool.maxUses) throw new UserError('Vous avez épuisé cet outil.');
     const result = this.runTool(p, toolId, targetId);
     p.toolUses[toolId] = used + 1;
+    // les constats d'expertise deviennent des pièces authentiques : versables au dossier, joignables à une accusation
+    const title = TOOL_REPORTS[toolId];
+    if (title) {
+      const id = `rapport_${toolId}_${p.id}_${used + 1}`;
+      this.read.get(p.id)!.set(id, { objectId: id, title: `${title} (${formatClock(g.clock())})`, lines: [result], at: g.clock() });
+    }
     g.log('TOOL_USED', { actorId: p.id, targetId, data: { toolId }, text: `${p.name} utilise « ${tool.name} »` });
     g.know(p.id, 'role', result, { important: true });
     p.dirty = true;
@@ -862,19 +921,17 @@ export class CaseSystem {
           if (ev.kind === 'blood_pool') found.push('une flaque de sang');
         }
         for (const [k, n] of foot) found.push(`${n} empreinte${n > 1 ? 's' : ''} de boue (${k})`);
+        // meubles manipulés pendant la soirée (un joueur y a caché ou fouillé quelque chose) : signalés, sans dire quoi
         for (const f of allFurniture().filter((x) => x.roomId === p.roomId && x.hiding && !this.furnitureLocks.has(x.id))) {
-          const hidden = [...g.objects.values()].filter((o) => o.location.kind === 'hidden' && o.location.furnitureId === f.id);
-          if (hidden.length) {
-            hidden.forEach((o) => o.knownBy.add(p.id));
-            found.push(`${f.name} a été dérangé·e : ${hidden.map((o) => o.name.toLowerCase()).join(', ')}`);
-          }
+          const touched = [...g.objects.values()].some((o) => o.location.kind === 'hidden' && o.location.furnitureId === f.id && o.knownBy.size > 0);
+          if (touched) found.push(`${f.name.toLowerCase()} a été ouvert·e récemment`);
         }
         p.dirty = true;
         return found.length ? `Inspection — ${roomName(p.roomId)} : ${found.join(' ; ')}.` : `Inspection — ${roomName(p.roomId)} : rien d’anormal.`;
       }
       case 'examine_shoes': {
         const x = this.nearPlayer(p, targetId);
-        return `Semelles de ${x.name} : motif ${x.shoe.pattern}, pointure ${x.shoe.size}${x.muddyUntil > g.now() || x.id === t.murdererId ? ', avec des restes de boue séchée' : ''}.`;
+        return `Semelles de ${x.name} : motif ${x.shoe.pattern}, pointure ${x.shoe.size}${x.muddyUntil > g.now() ? ', encore boueuses' : ''}.`;
       }
       case 'bypass_lock': {
         const o = g.actions.reachable(p, targetId ?? '');
@@ -884,8 +941,11 @@ export class CaseSystem {
       case 'request_testimony': {
         const x = g.players.get(targetId ?? '');
         if (!x || !x.alive || x.arrested || x.id === p.id) throw new UserError('Choisissez un joueur libre.');
+        if (x.pendingTestimony) throw new UserError(`${x.name} doit déjà répondre à une question.`);
+        if (this.alibis.has(x.id) && (this.questioned.get(x.id) ?? 0) >= 1) throw new UserError(`${x.name} a déjà déclaré un alibi : consultez-le dans l’onglet Enquête.`);
+        this.questioned.set(x.id, (this.questioned.get(x.id) ?? 0) + 1);
         x.pendingTestimony = { requestId: shortId('q_'), question: 'Où étiez-vous entre 21h00 et 22h00 ? (déclaration publique)', fromId: p.id, fromName: p.name };
-        g.feed(x.id, 'announce', `${p.name} exige votre alibi. Déclarez-le (dossier → Alibi).`);
+        g.feed(x.id, 'announce', `${p.name} exige votre alibi. Répondez, ou gardez le silence (cela se saura).`);
         g.feedAll('narration', `${p.name} demande publiquement à ${x.name} où ${x.character.appearance === 'feminine' ? 'elle' : 'il'} était entre 21h et 22h.`);
         g.markAllDirty();
         return `Question posée à ${x.name}.`;
@@ -894,9 +954,19 @@ export class CaseSystem {
         const x = g.players.get(targetId ?? '');
         const al = x ? this.alibis.get(x.id) : undefined;
         if (!x || !al) throw new UserError('Ce joueur n’a pas encore déclaré d’alibi.');
+        // recoupement avec les témoins : ce dont se souviennent ceux qui étaient VRAIMENT à ce lieu (pas d'oracle :
+        // un témoin peut mentir ensuite, et une absence ne dit ni quand ni pourquoi)
         const tr = t.players.get(x.id)!;
-        const verdict = al.place !== tr.place ? 'FAUSSE' : tr.absence ? `PARTIELLEMENT EXACTE : présent${ag(x)} à ce lieu, mais absent${ag(x)} de ${formatClock(tr.absence.from)} à ${formatClock(tr.absence.to)}` : 'EXACTE';
-        return `Vérification de l’alibi de ${x.name} (« ${al.placeName} ») : ${verdict}.`;
+        const witnesses = [...g.players.values()].filter((w) => w.id !== x.id && w.id !== p.id && t.players.get(w.id)?.place === al.place);
+        if (!witnesses.length) return `Recoupement de l’alibi de ${x.name} (« ${al.placeName} ») : aucun autre témoin n’y était. Impossible de confirmer.`;
+        const there = tr.place === al.place;
+        const names = witnesses.map((w) => w.name.split(' ')[0]).join(', ');
+        const line = !there
+          ? `${names} ne se souvien${witnesses.length > 1 ? 'nent' : 't'} pas d’y avoir vu ${x.name}`
+          : tr.absence
+            ? `${names} se souvien${witnesses.length > 1 ? 'nent' : 't'} de ${x.name}, qui s’est éclipsé${ag(x)} un moment`
+            : `${names} se souvien${witnesses.length > 1 ? 'nent' : 't'} de ${x.name}, resté${ag(x)} toute la soirée`;
+        return `Recoupement de l’alibi de ${x.name} (« ${al.placeName} ») : ${line}.`;
       }
       case 'social_profile': {
         const lines = g.social.filter((s) => s.public).slice(-10).map((s) => `${formatClock(s.clock)} ${s.text}`);
@@ -927,6 +997,16 @@ export class CaseSystem {
     g.relationships.social('betrayed', p.id, p.id, `${p.name} a choisi de jouer seul${ag(p)}`, false);
     g.log('STANCE', { actorId: p.id, data: { choice }, text: `${p.name} choisit la trahison` });
     return 'Vous jouez seul·e. Personne ne le sait… pour l’instant. Une alliance peut servir — et se rompre au bon moment.';
+  }
+
+  /** Interrogatoire : garder le silence (annoncé à tous, ce qui ne prouve rien… mais se remarque). */
+  declineTestimony(p: PlayerState, requestId: string): string {
+    const q = p.pendingTestimony;
+    if (!q || q.requestId !== requestId) throw new UserError('Aucune question en attente.');
+    p.pendingTestimony = null;
+    this.g.feedAll('narration', `${p.name} refuse de répondre à ${q.fromName}.`);
+    this.g.markAllDirty();
+    return 'Vous gardez le silence. Tout le monde l’a remarqué.';
   }
 
   // ───────────────────────── fin ─────────────────────────
@@ -989,6 +1069,7 @@ export class CaseSystem {
       endsAt: Date.now() + Math.max(0, this.investigationEndsAt - g.now()),
       canAccuse: !block,
       accuseBlockedReason: block ?? undefined,
+      parityWarning: this.parityWarning(),
       accusationsLeft: Math.max(0, CASE_TIMING.accusationsPerPlayer - p.accusationsUsed),
     };
   }
@@ -1095,7 +1176,7 @@ export class CaseSystem {
       endsAt: Date.now() + Math.max(0, v.endsAt - g.now()),
       rules:
         v.kind === 'accusation'
-          ? `Arrestation si plus de la moitié des ${v.eligible.size} votants possibles votent « coupable ». Voter « coupable » vous oppose officiellement à l’accusé·e. Vote définitif.`
+          ? `Arrestation si plus de la moitié des ${v.eligible.size} votants possibles votent « coupable ». Voter « coupable » vous oppose officiellement à l’accusé·e. Vote définitif.${this.freePlayers().length <= 3 ? ' ⚠ Attention : si l’accusé·e est innocent·e, il ne restera que deux personnes libres et le meurtrier l’emportera.' : ''}`
           : 'Majorité relative : la personne la plus désignée est livrée à la police. Égalité : personne. Vote définitif.',
     };
   }
@@ -1122,6 +1203,6 @@ export class CaseSystem {
     const knownIds = [o.id, ...(((o.props.inserted as string[]) ?? []))];
     const known = knownIds.some((id) => this.hasRead(viewer, id));
     if (known) caps.push('present');
-    return { locked, known, caps, lockHint: locked && lock?.kind === 'code' ? lock.hint : undefined, worn: o.def.tags.includes('gloves') && viewer.gloves && o.location.kind === 'player' && o.location.playerId === viewer.id };
+    return { locked, known, caps, lockHint: locked ? (LOCK_HINTS[o.props.ref as string] ?? (lock?.kind === 'code' ? lock.hint : undefined)) : undefined, worn: o.def.tags.includes('gloves') && viewer.gloves && o.location.kind === 'player' && o.location.playerId === viewer.id };
   }
 }

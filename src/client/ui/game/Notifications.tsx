@@ -18,7 +18,7 @@ const LIFETIME = 7000;
 /**
  * Notifications de jeu (remplacent les panneaux latéraux) : ce que vous voyez, entendez,
  * les annonces et les messages du chat apparaissent quelques secondes puis s'effacent.
- * Tout reste consultable dans le Carnet (3) et le chat (Entrée).
+ * Tout reste consultable dans la Chronique (5), le Journal du dossier (1) et le chat (Entrée).
  */
 export function Notifications() {
   const game = useStore((s) => s.game);

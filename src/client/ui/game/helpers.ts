@@ -1,3 +1,4 @@
+import { DOORS } from '@shared/content/villa';
 import { create } from 'zustand';
 import type { GameAction } from '@shared/protocol';
 import type { GameSelfView, ObjectView, Phase, RelationType } from '@shared/types';
@@ -89,7 +90,7 @@ const destructibles = (inv: ObjectView[]) => inv.filter((o) => o.caps?.includes(
  * Actions possibles sur la cible visée : la première est l'action principale (touche E),
  * les autres sont proposées par la touche F (menu contextuel).
  */
-export function targetActions(g: GameSelfView, key: string | null): { title: string; actions: TargetAction[] } | null {
+export function targetActions(g: GameSelfView, key: string | null): { title: string; hint?: string; actions: TargetAction[] } | null {
   if (!key || !g.alive || g.epilogue || g.arrested.includes(g.you)) return null;
   const [kind, id] = [key.slice(0, 1), key.slice(2)];
   const tool = (t: string) => g.role?.tools.find((x) => x.id === t && (x.usesLeft === undefined || x.usesLeft > 0));
@@ -107,7 +108,19 @@ export function targetActions(g: GameSelfView, key: string | null): { title: str
     if (tool('analyze_prints')) out.push({ label: 'Analyser les empreintes', run: () => act({ type: 'tool', toolId: 'analyze_prints', targetId: o.id }) });
     if (tool('bypass_lock') && o.locked) out.push({ label: 'Contourner le verrou', run: () => act({ type: 'tool', toolId: 'bypass_lock', targetId: o.id }) });
     if (cloth) out.push({ label: 'Essuyer', run: () => act({ type: 'clean', toolId: cloth.id, targetKind: 'object', targetId: o.id }) });
-    return { title: `${o.icon} ${o.name}`, actions: out };
+    return { title: `${o.icon} ${o.name}`, hint: o.locked ? o.lockHint : undefined, actions: out };
+  }
+  if (kind === 'd') {
+    // porte verrouillée (cave, garage) : la bonne clé en poche l'ouvre
+    const d = DOORS.find((x) => x.id === id);
+    if (!d || !d.lockedBy || g.unlockedDoors.includes(d.id)) return null;
+    const key = inv.find((o) => o.type === d.lockedBy);
+    out.push(
+      key
+        ? { label: `Déverrouiller (${key.name.toLowerCase()})`, run: () => act({ type: 'use', objectId: key.id }) }
+        : { label: 'Fermée à clé — il vous faut la bonne clé', run: () => {} },
+    );
+    return { title: `🔒 ${d.label ?? 'Porte verrouillée'}`, actions: out };
   }
   if (kind === 'b') {
     const b = g.bodies.find((x) => x.id === id);
@@ -137,9 +150,9 @@ export function targetActions(g: GameSelfView, key: string | null): { title: str
     const f = furnitureById(id);
     if (!f) return null;
     const lock = g.lockedFurniture.find((l) => l.id === f.id);
-    if (lock?.kind === 'code') out.push({ label: 'Saisir le code', run: () => picker.askText(f.name, 'Code à quatre chiffres', (code) => act({ type: 'unlock_furniture', furnitureId: f.id, code })) });
+    if (lock?.kind === 'code') out.push({ label: 'Saisir le code', run: () => picker.askText(f.name, lock.hint ?? 'Code à quatre chiffres', (code) => act({ type: 'unlock_furniture', furnitureId: f.id, code })) });
     if (lock?.kind === 'key') out.push({ label: 'Ouvrir avec une clé', run: () => act({ type: 'unlock_furniture', furnitureId: f.id }) });
-    if (lock) return { title: `🔒 ${f.name}`, actions: out };
+    if (lock) return { title: `🔒 ${f.name}`, hint: lock.hint, actions: out };
     if (f.hiding) out.push({ label: 'Fouiller', run: () => act({ type: 'search', furnitureId: f.id }) });
     if (f.kind === 'sink') out.push({ label: 'Se laver les mains', run: () => act({ type: 'wash' }) });
     if (f.kind === 'fireplace' && destructibles(inv).length)

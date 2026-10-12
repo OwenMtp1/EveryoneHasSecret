@@ -40,8 +40,8 @@ export const ROLES: RoleDef[] = [
     priority: 1,
     affinity: { socialActions: 2 },
     tools: [
-      { id: 'request_testimony', name: 'Interroger', description: 'Exige d’un joueur une déclaration publique d’alibi pour 21h00–22h00.', target: 'player' },
-      { id: 'verify_testimony', name: 'Vérifier un alibi', description: 'Confronte une déclaration d’alibi aux faits : exacte, partiellement exacte ou fausse.', target: 'player', maxUses: 1 },
+      { id: 'request_testimony', name: 'Interroger', description: 'Exige d’un joueur une déclaration publique d’alibi pour 21h00–22h00 (il peut garder le silence, publiquement).', target: 'player', maxUses: 4 },
+      { id: 'verify_testimony', name: 'Recouper un alibi', description: 'Confronte une déclaration d’alibi aux souvenirs des témoins présents à ce lieu.', target: 'player', maxUses: 2 },
     ],
   },
   {
@@ -70,7 +70,7 @@ export const ROLES: RoleDef[] = [
     priority: 4,
     affinity: { timeInCrimeRoom: 3 },
     tools: [
-      { id: 'inspect_room', name: 'Inspecter la pièce', description: 'Révèle les traces de la pièce où vous êtes.', target: 'none' },
+      { id: 'inspect_room', name: 'Inspecter la pièce', description: 'Révèle les traces de la pièce où vous êtes et les meubles ouverts récemment.', target: 'none', maxUses: 3 },
       { id: 'examine_shoes', name: 'Examiner les semelles', description: 'Relever le motif des chaussures d’un joueur proche.', target: 'player' },
     ],
   },

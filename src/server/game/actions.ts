@@ -389,7 +389,7 @@ export class ActionSystem {
     g.know(p.id, 'self', `J’ai tué ${t.name} avec ${weapon.name.toLowerCase()} — ${roomName(p.roomId)}, ${formatClock(clock)}.`, { important: true });
     const noise = weapon.def.weaponClass === 'strangle' ? 'Un râle étouffé, puis plus rien' : 'Un bruit sourd et un cri étouffé';
     g.hearFrom(p.roomId, `${noise} — du côté de : ${roomName(p.roomId)} (vers ${formatClock(clock)}).`, p.id, [t.id]);
-    g.caseSystem.onElimination();
+    g.caseSystem.onElimination(t.id);
     g.markAllDirty();
     return `C’est fait. ${t.name} ne se relèvera pas. Maintenant… il faut survivre à la suite.`;
   }

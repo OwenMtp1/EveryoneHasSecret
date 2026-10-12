@@ -27,7 +27,7 @@ export function RelationsTab() {
         </div>
       )}
       <p className="small muted">
-        Amitié, alliance et pacte se proposent en face à face. Alliés et partenaires de pacte partagent un canal privé et leur position ; un pacte partage aussi les poches — le rompre est une trahison.
+        Amitié, alliance et pacte se proposent en face à face. Alliés et partenaires de pacte partagent un canal privé et leur position ; un pacte reste secret — le rompre est une trahison, que le profileur peut repérer.
       </p>
       {others.map((p) => {
         const rels = game.relations.filter((r) => (r.from === p.id || r.to === p.id) && r.status !== 'broken');

@@ -101,6 +101,21 @@ La qualité adaptative baisse d'un niveau si l'image dépasse ~28 ms. **Non mesu
 | 9 | Revenir avec le code après un départ par erreur | même personnage, rôle, dossier et position ; écran de jeu rouvert | test multijoueur réel |
 | 10 | Morts en fantômes | vol libre sans collision (ZQSD, Espace/C, Maj), invisibles des vivants (rien côté serveur), suivi d'un joueur (F / Maj+F) | partie automatisée (vue forcée « mort ») + captures |
 
+## Phase 1 de l’audit — « Réparer et clarifier »
+
+| Code | Changement | Vérifié par |
+|---|---|---|
+| G1 | votes : morts/arrêtés exclus, joueur éliminé retiré du vote (vote annulé si c’était l’accusé·e), pas d’occasion d’élimination pendant un vote, avertissement à ≤ 3 joueurs libres ; une seule question en attente par témoin, refus de répondre annoncé ; résultats d’outils versés au dossier | tests serveur (votes, expertises) |
+| G2/G3 | outils moins « oracles » : inspection de pièce = meubles ouverts récemment, examen des chaussures = boue encore fraîche seulement, « Recouper un alibi » = souvenirs des témoins ; ordinateur sans les secrets eux-mêmes ; fausse absence dans le groupe du meurtrier ; cachettes aléatoires | tests d’équilibre |
+| — | portes à clé (cave, garage) visées et ouvertes avec E ; indices sur les verrous (téléphone, ordinateur, boîtes, meubles) | test serveur + partie automatisée |
+| U8 | interface entièrement en français (salon, serveurs, création, invitations) ; accords (trésorier·ère, lettres) | relecture |
+| U1/U2 | carte de rôle (une fois par partie) ; panneau Pistes déduit des pièces lues | partie automatisée (affichage) ; pertinence des pistes à juger en vraie partie |
+| U5/U6 | onglet Chronique (5) filtrable, minuteur avant la police et accusations restantes dans le bandeau | partie automatisée |
+| O1 | compteur d’images (F3 ou Paramètres) : images/s, appels de dessin, triangles, niveau de qualité | vérification manuelle (catégorie C) |
+| O6 | écran de jeu chargé à part (préchargé dès le salon) ; three, React, réseau dans des fichiers séparés mis en cache | build : 1 fichier de 1 550 ko → index 298 ko + three 683 ko + react 187 ko + net 262 ko + jeu 111 ko |
+| O7 | qualité graphique manuelle (auto / élevée / moyenne / basse) dans Paramètres ; « auto » reste le défaut au premier lancement | vérification manuelle (catégorie C) |
+| O2 | instanciation des meubles répétés : **reportée** (gain incertain sans mesure sur un vrai GPU) | — |
+
 ## D. Bloqué par une autorisation ou une ressource
 
 | Élément | Ce qui manque | Ce qui est prêt |
