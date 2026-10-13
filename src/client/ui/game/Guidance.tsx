@@ -41,7 +41,6 @@ export function RoleCard({ ready }: { ready: boolean }) {
   }, [ready, gameId, hasDossier]);
   useEffect(() => {
     if (!open) return;
-    const t = setTimeout(() => setOpen(false), 20000);
     const key = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'Escape' || e.code === 'Enter') {
         e.preventDefault();
@@ -51,7 +50,6 @@ export function RoleCard({ ready }: { ready: boolean }) {
     };
     window.addEventListener('keydown', key, true);
     return () => {
-      clearTimeout(t);
       window.removeEventListener('keydown', key, true);
     };
   }, [open]);
@@ -59,7 +57,7 @@ export function RoleCard({ ready }: { ready: boolean }) {
   const d = game.dossier;
   const me = game.players.find((p) => p.id === game.you);
   return (
-    <div className="rolecard-backdrop fade-in" onClick={() => setOpen(false)}>
+    <div className="rolecard-backdrop fade-in">
       <div className={`rolecard rolecard-${d.camp}`}>
         {me && <CastPortrait castId={me.character.castId} size={120} className="rolecard-portrait" />}
         <div className="rolecard-body">
@@ -76,7 +74,8 @@ export function RoleCard({ ready }: { ready: boolean }) {
               {game.role.tools.map((t) => t.name).join(' · ')}
             </div>
           )}
-          <div className="rolecard-foot">Tout est dans votre dossier (touche <kbd>1</kbd>) · Espace pour commencer</div>
+          <div className="rolecard-foot">Tout est dans votre dossier (touche <kbd>1</kbd>)</div>
+          <button className="btn btn-primary" onClick={() => setOpen(false)}>J’AI COMPRIS — COMMENCER</button>
         </div>
       </div>
     </div>

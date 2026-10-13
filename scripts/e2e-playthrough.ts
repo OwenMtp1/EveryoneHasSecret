@@ -197,7 +197,7 @@ await page.waitForFunction(() => document.querySelector('.rolecard') || Object.k
     if (camp) {
       log('carte de rôle affichée :', camp);
       await shot(page, '02c-carte-de-role');
-      await page.evaluate(() => (document.querySelector('.rolecard-backdrop') as HTMLElement | null)?.click());
+      await page.evaluate(() => (document.querySelector('.rolecard .btn-primary') as HTMLElement | null)?.click());
     } else log('carte de rôle déjà affichée puis refermée (marque de session présente)');
   },
   () => errors.push('BUG : carte de rôle absente'),
