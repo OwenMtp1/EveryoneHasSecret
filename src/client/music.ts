@@ -146,7 +146,7 @@ class Instruments {
   }
 
   /** Nappe : accord tenu jusqu'à `release`. */
-  pad(midis: number[], t: number, o: { level: number; cutoff: number; attack: number }): PadHandle {
+  pad(midis: number[], t: number, o: { level: number; cutoff: number; attack: number; soft?: boolean }): PadHandle {
     const ctx = this.ctx;
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
@@ -168,7 +168,11 @@ class Instruments {
       const pn = ctx.createStereoPanner();
       pn.pan.value = midis.length > 1 ? -0.45 + (0.9 * i) / (midis.length - 1) : 0;
       pn.connect(lp);
-      for (const [type, cents, a] of [['sawtooth', 6, 0.33], ['sawtooth', -7, 0.33], ['sine', 0, 0.6]] as const) {
+      // nappe douce (partie) : triangles et sinus seulement, sans le grain des dents de scie
+      const voices = o.soft
+        ? ([['triangle', 5, 0.3], ['triangle', -5, 0.3], ['sine', 0, 0.7]] as const)
+        : ([['sawtooth', 6, 0.33], ['sawtooth', -7, 0.33], ['sine', 0, 0.6]] as const);
+      for (const [type, cents, a] of voices) {
         const osc = ctx.createOscillator();
         osc.type = type;
         osc.frequency.value = f * Math.pow(2, cents / 1200);
@@ -249,10 +253,19 @@ const CH = {
   Asus4: [45, 52, 57, 62], // la mi la ré
   Fmaj7: [41, 48, 57, 64], // fa do la mi
   Open5: [50, 57], // quinte à vide
+  // couleurs chaudes de la partie (fa majeur)
+  Fmaj9: [41, 48, 57, 64, 67], // fa do la mi sol
+  CaddE: [40, 48, 55, 62], // mi do sol ré (do/mi add9)
+  Dm9: [38, 45, 53, 57, 64], // ré la fa la mi
+  Bbmaj9: [46, 53, 57, 60], // si♭ fa la do
+  Am7: [45, 52, 55, 60], // la mi sol do
+  Csus2: [48, 55, 60, 62], // do sol do ré
 };
 
 /** Gamme de ré dorien dans le registre du piano (ré4 → la5). */
 const DORIAN = [62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81];
+/** Pentatonique de fa majeur (fa sol la do ré), registre médium-aigu : mélodie douce, sans dissonance. */
+const PENTA_F = [65, 67, 69, 72, 74, 77, 79, 81];
 
 // ───────────── cues ─────────────
 
@@ -293,7 +306,7 @@ abstract class Cue {
     return a + (b - a) * this.r();
   }
 
-  protected setPad(chord: number[] | null, at: number, o: { level: number; cutoff: number; attack: number; release?: number }) {
+  protected setPad(chord: number[] | null, at: number, o: { level: number; cutoff: number; attack: number; release?: number; soft?: boolean }) {
     this.padH?.release(at, o.release ?? 3);
     this.padH = chord && at < this.stopAt ? this.inst.pad(chord, at, o) : null;
   }
@@ -345,6 +358,8 @@ class AmbientCue extends Cue {
   private phrase: { midi: number; at: number; vel: number }[] = [];
   private lastNote = 0;
   private tense = false;
+  private scale = DORIAN;
+  private soft = false;
   private p: { padLevel: number; cutoff: number; chordLen: [number, number]; gap: [number, number]; vel: [number, number]; low: number; firstNote: number };
 
   constructor(name: CueName, ctx: BaseAudioContext, dest: AudioNode, startAt: number, seed: number) {
@@ -353,8 +368,11 @@ class AmbientCue extends Cue {
       this.progression = [CH.Dsus2, CH.Bbmaj7, CH.Dsus2, CH.Gm9];
       this.p = { padLevel: 0.75, cutoff: 650, chordLen: [16, 22], gap: [11, 22], vel: [0.16, 0.26], low: 0, firstNote: 6 };
     } else {
-      this.progression = [CH.Dsus2, CH.Bbmaj7, CH.Gm9, CH.Asus4, CH.Dm7, CH.Fmaj7, CH.Gm9, CH.Asus4];
-      this.p = { padLevel: 0.8, cutoff: 720, chordLen: [13, 19], gap: [7, 16], vel: [0.17, 0.3], low: 0.025, firstNote: 5 };
+      // partie : douce et chaleureuse (fa majeur), nappes feutrées, piano léger et espacé
+      this.progression = [CH.Fmaj9, CH.CaddE, CH.Dm9, CH.Bbmaj9, CH.Fmaj9, CH.Am7, CH.Gm9, CH.Csus2];
+      this.p = { padLevel: 0.72, cutoff: 560, chordLen: [15, 21], gap: [9, 18], vel: [0.12, 0.21], low: 0.018, firstNote: 6 };
+      this.scale = PENTA_F;
+      this.soft = true;
     }
     this.chordAt = startAt;
     this.pianoAt = startAt + this.p.firstNote + this.between(0, 3);
@@ -368,7 +386,7 @@ class AmbientCue extends Cue {
     this.ci++;
     const c = chord ?? this.progression[this.ci % this.progression.length];
     const first = this.ci === 0;
-    this.setPad(c, at, { level: this.p.padLevel, cutoff: this.p.cutoff + this.between(-80, 80), attack: first ? 6 : 4, release: 5 });
+    this.setPad(c, at, { level: this.p.padLevel, cutoff: this.p.cutoff + this.between(-80, 80), attack: first ? 6 : this.soft ? 6 : 4, release: this.soft ? 7 : 5, soft: this.soft });
     if (this.p.low > 0 && (this.ci % 2 === 0 || this.tense)) this.setLow(36 + ((c[0] - 36) % 12), at + 1, this.p.low, 4, 5);
     else this.setLow(null, at, 0, 3, 5);
     this.chordAt = at + this.between(...this.p.chordLen);
@@ -392,14 +410,14 @@ class AmbientCue extends Cue {
   private composePhrase(at: number) {
     const chord = this.progression[Math.max(0, this.ci) % this.progression.length];
     const pcs = new Set(chord.map((m) => m % 12));
-    const tones = DORIAN.filter((m) => pcs.has(m % 12));
+    const tones = this.scale.filter((m) => pcs.has(m % 12));
     const count = this.r() < 0.45 ? 1 : this.r() < 0.75 ? 2 : 3;
     let t = at;
     let prev = this.lastNote || tones[Math.floor(this.r() * tones.length)];
     for (let i = 0; i < count; i++) {
       // pas conjoint ou note de l'accord, jamais deux fois la même
-      const pool = (i === 0 ? tones : DORIAN).filter((m) => m !== prev && Math.abs(m - prev) <= 7);
-      const m = pool.length ? pool[Math.floor(this.r() * pool.length)] : tones[0];
+      const pool = (i === 0 && tones.length ? tones : this.scale).filter((m) => m !== prev && Math.abs(m - prev) <= 7);
+      const m = pool.length ? pool[Math.floor(this.r() * pool.length)] : (tones[0] ?? this.scale[0]);
       this.phrase.push({ midi: m, at: t, vel: this.between(...this.p.vel) * (i === count - 1 ? 0.85 : 1) });
       prev = m;
       t += this.between(0.9, 2.3);
@@ -412,8 +430,14 @@ class AmbientCue extends Cue {
     // inflexion discrète : accord à triton, une note grave isolée
     const at = Math.max(now + 0.1, this.startAt);
     this.tense = true;
-    this.nextChord(at, CH.Bbmaj7s11);
-    this.note(50, at + 0.6, 0.26, 4);
+    if (this.soft) {
+      // partie : simple assombrissement (ré mineur), une note grave pianissimo — rien de brusque
+      this.nextChord(at, CH.Dm9);
+      this.note(50, at + 0.8, 0.16, 4);
+    } else {
+      this.nextChord(at, CH.Bbmaj7s11);
+      this.note(50, at + 0.6, 0.26, 4);
+    }
     this.phrase = [];
     this.pianoAt = at + this.between(6, 9);
   }

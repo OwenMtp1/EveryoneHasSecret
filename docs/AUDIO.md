@@ -51,7 +51,7 @@ audioDebug();  // { state, settings, buses, music, cues: [{ name, role, gain, li
 |---|---|---|
 | `menu` | menus, salon, paramètres | nappe Dsus2 / B♭maj7 / Gm9, une note de piano toutes les 11–22 s |
 | `intro` | cinématique (après le chargement) | sections pilotées par les repères ci-dessous |
-| `investigation` | en partie, une fois la cinématique refermée | 8 accords lents (13–19 s chacun), phrases de 1–3 notes toutes les 7–16 s, note grave un accord sur deux |
+| `investigation` | en partie, une fois la cinématique refermée | douce : fa majeur (Fmaj9, do/mi, Dm9, Si♭maj9, Am7, Gm9, Csus2), nappes feutrées (triangle + sinus, sans dents de scie), 8 accords de 15–21 s, piano léger (pentatonique de fa) toutes les 9–18 s ; la « tension » assombrit seulement vers Dm9 |
 | `silence` | chargement de la cinématique | — |
 
 Harmonie : ré dorien / la mineur, accords suspendus, triton discret (B♭maj7♯11) pour la tension. Aucune

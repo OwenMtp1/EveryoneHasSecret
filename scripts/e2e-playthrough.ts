@@ -282,6 +282,47 @@ for (const p of all) {
   await act(p, { type: 'alibi', place, text: 'J’étais avec les autres.' });
 }
 
+// ── ramasser un objet au sol avec la touche E, comme un joueur (vise l'objet, E, inventaire) ──
+await waitFor('fin de la découverte', () => host.view!.phase === 'INVESTIGATION', 120000);
+{
+  const { localX } = await import('../src/shared/content/villa');
+  const mp0 = me(host).pos!;
+  const floor = host
+    .view!.objects.filter((o) => o.pos && !o.inInventory && !o.name.endsWith('(caché)') && !o.name.includes('sur le corps'))
+    .map((o) => ({ o, path: findPath(mp0, o.pos!, new Set(host.view!.unlockedDoors)) }))
+    .filter((x) => x.path)
+    .sort((a, z) => a.path!.length - z.path!.length)[0]?.o;
+  if (!floor) log('aucun objet au sol accessible : étape « ramasser avec E » sautée');
+  else {
+    await walkTo(host, floor.pos!, floor.name);
+    const mp = me(host).pos!;
+    const yaw = Math.atan2(localX(floor.pos!.x) - localX(mp.x), floor.pos!.y - mp.y);
+    await page.evaluate((y) => {
+      const v = (window as unknown as { __ehas: { view3d: { yaw: number; tpPitch: number } } }).__ehas.view3d;
+      v.yaw = y;
+      v.tpPitch = 1.1;
+    }, yaw);
+    const title = await page
+      .waitForFunction((n) => document.querySelector('.interact-title')?.textContent?.includes(n) && document.querySelector('.interact-title')!.textContent, floor.name, { timeout: 60000 })
+      .then((h) => h.jsonValue())
+      .catch(async () => `(invite : ${await page.evaluate(() => document.querySelector('.interact-title')?.textContent ?? 'aucune')})`);
+    log('invite d’interaction :', title);
+    await page.keyboard.press('KeyE');
+    await waitFor('objet ramassé avec E', () => host.view!.inventory.some((o) => o.id === floor.id), 30000).then(
+      () => log('ramassé avec E :', floor.name),
+      async () => {
+        errors.push(`BUG : impossible de ramasser « ${floor.name} » avec E`);
+        await shot(page, '04b-ramasser-echec');
+      },
+    );
+  }
+}
+
+if (process.env.E2E_ONLY_TAKE) {
+  console.log('\nErreurs navigateur :', errors.length ? errors : 'aucune');
+  process.exit(errors.length ? 1 : 0);
+}
+
 // ── enquête : fouiller le corps (touche E dans le navigateur si l'hôte enquête) ──
 await waitFor('fin de la découverte', () => sleuth.view!.phase === 'INVESTIGATION', 120000);
 const body = sleuth.view!.bodies.find((x) => x.npc)!;
