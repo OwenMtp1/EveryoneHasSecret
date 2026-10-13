@@ -214,3 +214,9 @@ test('RLS : avec la clé publique, chacun ne lit que ses propres données ; un a
   // anonyme : aucun accès
   await assert.rejects(asUser(null, 'select * from public.profiles'), /permission denied/);
 });
+
+test('SUPABASE_URL collée avec /rest/v1, espaces ou guillemets : seule la racine du projet est gardée', async () => {
+  const { authConfigFromEnv } = await import('../src/server/meta/auth');
+  for (const raw of ['https://abcd1234.supabase.co', 'https://abcd1234.supabase.co/', ' https://abcd1234.supabase.co/rest/v1/ ', '"https://abcd1234.supabase.co/rest/v1"', 'https://abcd1234.supabase.co/auth/v1'])
+    assert.deepEqual(authConfigFromEnv({ SUPABASE_URL: raw, SUPABASE_ANON_KEY: ' cle ' }), { mode: 'supabase', supabaseUrl: 'https://abcd1234.supabase.co', supabaseAnonKey: 'cle', supabaseJwtSecret: undefined });
+});

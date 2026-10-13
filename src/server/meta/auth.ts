@@ -273,9 +273,25 @@ export class AuthService {
   }
 }
 
+/**
+ * Adresse racine du projet Supabase. On ne garde que « https://xxxx.supabase.co » : l'adresse copiée depuis le
+ * tableau de bord se termine parfois par « /rest/v1/ », ce qui envoyait toutes les requêtes d'authentification
+ * vers un mauvais chemin (« Invalid path specified in request URL »). Espaces et guillemets collés par erreur ignorés.
+ */
+export function supabaseBaseUrl(raw: string | undefined): string | undefined {
+  const v = raw?.trim().replace(/^["']|["']$/g, '');
+  if (!v) return undefined;
+  try {
+    return new URL(v).origin;
+  } catch {
+    return v.replace(/\/+$/, '');
+  }
+}
+
 /** Configuration d'authentification d'après l'environnement. */
 export function authConfigFromEnv(env = process.env): AuthConfig {
-  const url = env.SUPABASE_URL?.replace(/\/+$/, '');
-  if (url && env.SUPABASE_ANON_KEY) return { mode: 'supabase', supabaseUrl: url, supabaseAnonKey: env.SUPABASE_ANON_KEY, supabaseJwtSecret: env.SUPABASE_JWT_SECRET || undefined };
+  const url = supabaseBaseUrl(env.SUPABASE_URL);
+  const anon = env.SUPABASE_ANON_KEY?.trim();
+  if (url && anon) return { mode: 'supabase', supabaseUrl: url, supabaseAnonKey: anon, supabaseJwtSecret: env.SUPABASE_JWT_SECRET?.trim() || undefined };
   return { mode: 'local' };
 }
