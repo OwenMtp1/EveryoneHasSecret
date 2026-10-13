@@ -1144,9 +1144,32 @@ export class GameView3D {
       const rk = rank(c.key);
       if (!best || rk < best.rank || (rk === best.rank && t < best.t)) best = { key: c.key, t, rank: rk };
     }
+    /**
+     * Viser un meuble où l'on a déjà trouvé quelque chose vise ce qu'on y a trouvé (le plus proche) : l'objet est
+     * minuscule à côté du meuble, le rayon touchait toujours le meuble et E refaisait « Fouiller ».
+     * Une fois le meuble vidé, il redevient la cible.
+     */
+    const contents = (k: string | null): string | null => {
+      if (!k?.startsWith('f:')) return k;
+      const f = allFurniture().find((x) => x.id === k.slice(2));
+      if (!f) return k;
+      let pick: string | null = null;
+      let bd = Infinity;
+      for (const o of v.objects) {
+        const ok = `o:${o.id}`;
+        if (!inside.has(ok) || !o.pos || o.roomId !== f.roomId || !cands.some((c) => c.key === ok)) continue;
+        if (o.pos.x < f.x - 0.5 || o.pos.x > f.x + f.w + 0.5 || o.pos.y < f.y - 0.5 || o.pos.y > f.y + f.h + 0.5) continue;
+        const d = Math.hypot(o.pos.x - meV.pos!.x, o.pos.y - meV.pos!.y);
+        if (d < bd) {
+          bd = d;
+          pick = ok;
+        }
+      }
+      return pick ?? k;
+    };
     if (best) {
       const hit = cands.find((c) => c.key === best!.key)!;
-      if (!occluded(this.camera.position.clone(), hit.c, hit.key)) return best.key;
+      if (!occluded(this.camera.position.clone(), hit.c, hit.key)) return contents(best.key);
     }
     // 2) repli : devant le personnage (cône de 40°), le plus proche, sans mur entre les deux
     const eye = me.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
@@ -1160,7 +1183,7 @@ export class GameView3D {
       const rk = rank(c.key);
       if (!fb || rk < fb.rank || (rk === fb.rank && d < fb.d)) fb = { key: c.key, d, rank: rk };
     }
-    return fb?.key ?? null;
+    return contents(fb?.key ?? null);
   }
 
   // ───────────── qualité adaptative ─────────────

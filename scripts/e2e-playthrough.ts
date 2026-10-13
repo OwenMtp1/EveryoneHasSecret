@@ -335,6 +335,28 @@ await waitFor('fin de la découverte', () => host.view!.phase === 'INVESTIGATION
       () => log('ramassé avec E :', target.name),
       async () => {
         errors.push(`BUG : impossible de ramasser « ${target.name} » avec E`);
+        // relevé : cibles possibles vues par la 3D, position du joueur, de l'objet et de son affichage
+        const dbg = await page.evaluate((id) => {
+          const v = (window as unknown as { __ehas: { view3d: Record<string, unknown> } }).__ehas.view3d as unknown as {
+            candPos: Map<string, { c: { x: number; y: number; z: number }; r: number }>;
+            target: string | null;
+            displayPos: Map<string, { x: number; y: number }>;
+            view: { objects: { id: string; name: string; pos?: { x: number; y: number }; roomId?: string }[]; players: { id: string; pos?: { x: number; y: number }; roomId?: string }[]; you: string };
+            camera: { position: { x: number; y: number; z: number } };
+            pickTarget: () => string | null;
+          };
+          const me = v.view.players.find((p) => p.id === v.view.you);
+          return {
+            target: v.target,
+            pick: v.pickTarget(),
+            cands: [...v.candPos.entries()].map(([k, c]) => `${k} @${c.c.x.toFixed(2)},${c.c.y.toFixed(2)},${c.c.z.toFixed(2)} r${c.r}`),
+            me,
+            obj: v.view.objects.find((o) => o.id === id),
+            display: v.displayPos.get(id),
+            cam: v.camera.position,
+          };
+        }, target.id);
+        log('relevé visée :', JSON.stringify(dbg));
         await shot(page, '04b-ramasser-echec');
       },
     );
