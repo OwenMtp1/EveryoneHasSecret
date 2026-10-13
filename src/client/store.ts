@@ -289,6 +289,9 @@ export const useStore = create<AppState>((set, get) => ({
       else requestAnimationFrame(flush);
     };
     s.on('game:full', (view) => {
+      // rejeu de fin envoyé une seule fois par le serveur : on le conserve d'une vue à l'autre
+      const prevReplay = (pendingFull ?? get().game)?.epilogue?.replay;
+      if (view.epilogue && !view.epilogue.replay && prevReplay) view = { ...view, epilogue: { ...view.epilogue, replay: prevReplay } };
       pendingFull = view;
       pendingSnap = null;
       schedule();

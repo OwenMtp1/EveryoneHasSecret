@@ -139,6 +139,7 @@ export class GameInstance {
   /** trajets de la nuit pour le rejeu de l'épilogue (une image toutes les 3 s, bornée) */
   replayFrames: { clock: number; p: [string, number, number][] }[] = [];
   private replayCountdown = 0;
+  private replaySentTo = new Set<string>();
   private lastSimAt = 0;
   private readonly emitFn: GameInit['emit'];
   private readonly finishedFn?: GameInit['onFinished'];
@@ -613,6 +614,7 @@ export class GameInstance {
     const p = this.players.get(userId);
     if (!p) return;
     p.connected = connected;
+    if (connected) this.replaySentTo.delete(userId); // nouvelle page : le rejeu lui sera renvoyé une fois
     if (!connected) p.input = { x: 0, y: 0 };
     p.dirty = true;
     if (connected) this.emitFn(userId, 'game:full', this.buildSelfView(p));
@@ -901,7 +903,8 @@ export class GameInstance {
       feed: p.feed,
       chat: this.chatFor(p),
       vote: cs.voteView(p),
-      epilogue: cs.epilogue,
+      // le rejeu (trajets de la nuit, volumineux) n'est envoyé qu'une fois à chaque joueur ; le client le garde
+      epilogue: cs.epilogue && this.replaySentTo.has(p.id) ? { ...cs.epilogue, replay: undefined } : (cs.epilogue && this.replaySentTo.add(p.id), cs.epilogue),
       unlockedDoors: [...this.unlockedDoors],
       muddy: p.muddyUntil > this.now(),
       searched: [...p.searched],
