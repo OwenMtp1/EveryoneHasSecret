@@ -455,6 +455,8 @@ export interface GameSelfView {
   epilogue: EpilogueView | null;
   unlockedDoors: string[];
   muddy: boolean;
+  /** meubles que vous avez déjà fouillés */
+  searched?: string[];
   testimonyRequest: { requestId: string; question: string; fromName: string } | null;
   /** joueurs arrêtés (hors jeu, spectateurs) */
   arrested: string[];

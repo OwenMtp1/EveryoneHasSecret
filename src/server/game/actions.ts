@@ -227,6 +227,7 @@ export class ActionSystem {
     if (this.g.caseSystem.furnitureLocked(f.id)) throw new UserError(`${f.name} est verrouillé${f.lock === 'code' ? ' (code à quatre chiffres)' : ' (il faut une clé)'}.`);
     if (!f.hiding) return `${f.name} : rien à fouiller.`;
     const found = [...this.g.objects.values()].filter((o) => o.location.kind === 'hidden' && o.location.furnitureId === f.id);
+    p.searched.add(f.id);
     this.g.log('FURNITURE_SEARCHED', { actorId: p.id, roomId: p.roomId, data: { furnitureId: f.id, found: found.map((o) => o.id) }, text: `${p.name} fouille : ${f.name}` });
     this.g.perceive(p.id, `${p.name} fouille : ${f.name.toLowerCase()}.`);
     if (!found.length) {

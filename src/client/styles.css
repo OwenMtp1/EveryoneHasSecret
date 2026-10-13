@@ -800,3 +800,4 @@ kbd {
 .progression-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .progression-bar > div { height: 100%; background: linear-gradient(90deg, #b8913e, var(--gold-2)); }
 .xp-gain { margin-left: 8px; color: var(--gold-2); font-weight: 600; }
+.room-search { color: var(--muted); font-size: 0.85em; } .room-search.done { color: #8fd18f; }

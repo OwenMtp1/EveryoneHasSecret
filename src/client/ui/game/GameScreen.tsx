@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatClock } from '@shared/config';
-import { roomName } from '@shared/content/villa';
+import { allFurniture, roomName } from '@shared/content/villa';
 import { useStore, liveGame } from '../../store';
 import { getSocket } from '../../net/socket';
 import { drawFrame, createRenderState, camera } from '../../render/villaRenderer';
@@ -249,7 +249,10 @@ export function GameScreen() {
         <div className="game-clock">{formatClock(game.clock)}</div>
         <div className={`phase phase-${game.phase.toLowerCase()}`}>{PHASE_LABEL[game.phase]}</div>
         <HudTimer />
-        <div className="game-room">{room ? roomName(room) : '—'}</div>
+        <div className="game-room">
+          {room ? roomName(room) : '—'}
+          {room && <RoomSearchCount room={room} />}
+        </div>
         {game.blackout && <div className="chip chip-danger">⚡ Coupure de courant</div>}
         {game.muddy && <div className="chip">🥾 Chaussures boueuses</div>}
         {me?.stained && <div className="chip chip-danger">🩸 Vêtements tachés</div>}
@@ -407,6 +410,15 @@ function RevealCaption({ caseInfo }: { caseInfo: NonNullable<ReturnType<typeof u
       <div className="reveal-skip">Espace : passer</div>
     </div>
   );
+}
+
+/** Cachettes de la pièce déjà fouillées par le joueur (« 2/5 fouillées »). */
+function RoomSearchCount({ room }: { room: string }) {
+  const searched = useStore((s) => s.game?.searched);
+  const spots = allFurniture().filter((f) => f.roomId === room && f.hiding);
+  if (!spots.length) return null;
+  const n = spots.filter((f) => searched?.includes(f.id)).length;
+  return <span className={`room-search ${n === spots.length ? 'done' : ''}`} title="Cachettes de cette pièce que vous avez fouillées">{` · 🔍 ${n}/${spots.length}`}</span>;
 }
 
 /** Bandeau : compte à rebours avant la police (ou fin du vote en cours) et accusations restantes. */

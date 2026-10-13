@@ -180,6 +180,7 @@ export class GameInstance {
         knowledge: [],
         feed: [],
         toolUses: {},
+        searched: new Set(),
         sightings: new Map(),
         roomHistory: [],
         roomTime: {},
@@ -899,6 +900,7 @@ export class GameInstance {
       epilogue: cs.epilogue,
       unlockedDoors: [...this.unlockedDoors],
       muddy: p.muddyUntil > this.now(),
+      searched: [...p.searched],
       testimonyRequest: p.pendingTestimony
         ? { requestId: p.pendingTestimony.requestId, question: p.pendingTestimony.question, fromName: p.pendingTestimony.fromName }
         : null,

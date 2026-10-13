@@ -63,6 +63,8 @@ export interface PlayerState {
   feed: FeedMessage[];
   roleId?: string;
   toolUses: Record<string, number>;
+  /** meubles déjà fouillés par ce joueur (repère visuel) */
+  searched: Set<string>;
   /** dernière observation enregistrée d'un autre joueur (clé autreId|pièce → clock) */
   sightings: Map<string, number>;
   /** transitions de pièce : base de la vérification des témoignages */

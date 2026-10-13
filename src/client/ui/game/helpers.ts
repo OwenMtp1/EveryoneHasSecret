@@ -168,12 +168,13 @@ export function targetActions(g: GameSelfView, key: string | null): { title: str
     if (lock?.kind === 'key' && inv.some((o) => o.type === 'crowbar'))
       out.push({ label: 'Forcer au pied-de-biche (bruyant)', run: () => useMinigame.getState().force(f.name, (ok) => act({ type: 'force_furniture', furnitureId: f.id, ok })) });
     if (lock) return { title: `🔒 ${f.name}`, hint: lock.hint, actions: out };
-    if (f.hiding) out.push({ label: 'Fouiller', run: () => act({ type: 'search', furnitureId: f.id }) });
+    const done = g.searched?.includes(f.id);
+    if (f.hiding) out.push({ label: done ? 'Fouiller à nouveau' : 'Fouiller', run: () => act({ type: 'search', furnitureId: f.id }) });
     if (f.kind === 'sink') out.push({ label: 'Se laver les mains', run: () => act({ type: 'wash' }) });
     if (f.kind === 'fireplace' && destructibles(inv).length)
       out.push({ label: 'Jeter au feu…', run: () => picker.ask('Jeter au feu', destructibles(inv).map((o) => ({ id: o.id, label: `${o.icon} ${o.name}` })), (oid) => act({ type: 'destroy', objectId: oid })) });
     if (f.hiding && inv.length) out.push({ label: 'Cacher ici…', run: () => picker.ask(`Cacher dans : ${f.name}`, inv.map((o) => ({ id: o.id, label: `${o.icon} ${o.name}` })), (oid) => act({ type: 'hide', objectId: oid, furnitureId: f.id })) });
-    return out.length ? { title: f.name, actions: out } : null;
+    return out.length ? { title: done ? `${f.name} ✓` : f.name, hint: done ? 'Déjà fouillé — sauf si quelqu’un y a caché quelque chose depuis' : undefined, actions: out } : null;
   }
   if (kind === 't') {
     const t = g.traces.find((x) => x.id === id);
