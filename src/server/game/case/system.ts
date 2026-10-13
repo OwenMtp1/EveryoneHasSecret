@@ -548,7 +548,7 @@ export class CaseSystem {
     const out: string[] = [`${o.name} s’ouvre.`];
     if (o.def.tags.includes('container')) {
       for (const inner of [...g.objects.values()].filter((x) => x.location.kind === 'inside' && x.location.containerId === o.id)) {
-        if (p.inventory.length < GAME_CONFIG.inventorySize) {
+        if (inner.def.tags.includes('key') || g.actions.bagCount(p) < GAME_CONFIG.inventorySize) {
           inner.location = { kind: 'player', playerId: p.id };
           p.inventory.push(inner.id);
           g.actions.touch(p, inner);
@@ -599,7 +599,7 @@ export class CaseSystem {
   eject(p: PlayerState, device: GameObject): string | null {
     const ins = (device.props.inserted as string[]) ?? [];
     const media = ins.map((id) => this.g.objects.get(id)!).find(Boolean);
-    if (!media || p.inventory.length >= GAME_CONFIG.inventorySize) return null;
+    if (!media || this.g.actions.bagCount(p) >= GAME_CONFIG.inventorySize) return null;
     device.props.inserted = ins.filter((id) => id !== media.id);
     media.location = { kind: 'player', playerId: p.id };
     p.inventory.push(media.id);

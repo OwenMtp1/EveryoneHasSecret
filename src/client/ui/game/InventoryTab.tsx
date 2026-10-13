@@ -53,7 +53,7 @@ export function InventoryTab() {
   return (
     <div className="inventory">
       <div className="field-label">
-        Inventaire ({inv.length}/{GAME_CONFIG.inventorySize}) — invisible pour les autres.
+        Inventaire ({inv.filter((o) => o.type !== 'key' && !o.type.startsWith('key_')).length}/{GAME_CONFIG.inventorySize}, clés en plus sur le trousseau) — invisible pour les autres.
       </div>
       {inv.length === 0 && <div className="empty small">Vos poches sont vides. Visez un objet et appuyez sur E pour le ramasser.</div>}
       {inv.map((o) => (

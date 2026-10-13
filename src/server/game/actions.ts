@@ -83,8 +83,13 @@ export class ActionSystem {
     o.history.push({ clock: this.g.clock(), text });
   }
 
+  /** Places occupées : les clés (trousseau) ne comptent pas. */
+  bagCount(p: PlayerState) {
+    return p.inventory.filter((id) => !this.g.objects.get(id)?.def.tags.includes('key')).length;
+  }
+
   private moveToPlayer(o: GameObject, p: PlayerState) {
-    if (p.inventory.length >= GAME_CONFIG.inventorySize) throw new UserError('Inventaire plein.');
+    if (!o.def.tags.includes('key') && this.bagCount(p) >= GAME_CONFIG.inventorySize) throw new UserError('Inventaire plein.');
     if (o.location.kind === 'player') {
       const prev = this.g.players.get(o.location.playerId);
       if (prev) prev.inventory = prev.inventory.filter((id) => id !== o.id);
