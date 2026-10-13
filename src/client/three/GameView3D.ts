@@ -400,11 +400,11 @@ export class GameView3D {
     }
     this.focusMark.visible = true;
     const tall = this.target.startsWith('p:') ? 2.1 : this.target.startsWith('d:') ? 2.3 : 1;
-    const w = Math.max(0.4, c.r * 2.3);
-    const pulse = 1 + Math.sin(t * 5) * 0.04;
+    const w = THREE.MathUtils.clamp(c.r * 1.9, 0.4, 1.3);
+    const pulse = 1 + Math.sin(t * 4) * 0.03;
     this.focusMark.position.copy(c.c);
     this.focusMark.scale.set(w * pulse, (tall > 1 ? tall : w) * pulse, 1);
-    (this.focusMark.material as THREE.SpriteMaterial).opacity = 0.75 + Math.sin(t * 5) * 0.2;
+    (this.focusMark.material as THREE.SpriteMaterial).opacity = 0.42 + Math.sin(t * 4) * 0.12;
   }
 
   /** Dans un groupe, seule l'étiquette de l'objet visé (ou du premier) s'affiche : rien ne se superpose. */
@@ -1119,11 +1119,13 @@ export class GameView3D {
     this.candPos.clear();
     for (const c of cands) this.candPos.set(c.key, c);
     if (!cands.length) return null;
-    const occluded = (from: THREE.Vector3, to: THREE.Vector3) => {
+    // objets trouvés dans un meuble : ils sont DANS le volume du meuble, qui ne doit pas les masquer
+    const inside = new Set(v.objects.filter((o) => o.name.endsWith('(caché)')).map((o) => `o:${o.id}`));
+    const occluded = (from: THREE.Vector3, to: THREE.Vector3, key?: string) => {
       const dir = to.clone().sub(from);
       const d = dir.length();
       this.raycaster.set(from, dir.normalize());
-      this.raycaster.far = Math.max(0.01, d - 0.2);
+      this.raycaster.far = Math.max(0.01, d - (key && inside.has(key) ? 1.0 : 0.2));
       return this.raycaster.intersectObjects(this.villa.colliders, false).length > 0;
     };
     // 1) rayon du centre de l'écran
@@ -1144,7 +1146,7 @@ export class GameView3D {
     }
     if (best) {
       const hit = cands.find((c) => c.key === best!.key)!;
-      if (!occluded(this.camera.position.clone(), hit.c)) return best.key;
+      if (!occluded(this.camera.position.clone(), hit.c, hit.key)) return best.key;
     }
     // 2) repli : devant le personnage (cône de 40°), le plus proche, sans mur entre les deux
     const eye = me.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
@@ -1154,7 +1156,7 @@ export class GameView3D {
       const flat = c.c.clone().sub(me.pos).setY(0);
       const d = flat.length();
       if (d > 0.35 && flat.normalize().dot(fwd) < Math.cos(THREE.MathUtils.degToRad(40))) continue;
-      if (occluded(eye, c.c)) continue;
+      if (occluded(eye, c.c, c.key)) continue;
       const rk = rank(c.key);
       if (!fb || rk < fb.rank || (rk === fb.rank && d < fb.d)) fb = { key: c.key, d, rank: rk };
     }
@@ -1302,7 +1304,7 @@ function focusBrackets(): THREE.Sprite {
   cv.width = cv.height = 128;
   const g = cv.getContext('2d')!;
   g.strokeStyle = '#ffd27a';
-  g.lineWidth = 7;
+  g.lineWidth = 5;
   g.lineCap = 'round';
   g.shadowColor = 'rgba(0,0,0,0.8)';
   g.shadowBlur = 6;
