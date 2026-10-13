@@ -296,6 +296,7 @@ export class IntroSequence {
     const dbg = (window as unknown as { __ehas?: Record<string, unknown> }).__ehas;
     if (dbg) dbg.intro = { scene, vehicle: vehicle.group, cast, ctl };
     const clock = new THREE.Clock();
+    const headPos = new THREE.Vector3();
     let lastE = -1;
     const loop = () => {
       if (this.disposed) return;
@@ -323,6 +324,13 @@ export class IntroSequence {
       cast.update(dt);
       // caméra
       cam.update(state, u, vehicle.group);
+      // passager collé à l'objectif (plans d'habitacle) : masqué, comme au cinéma — vus à quelques centimètres,
+      // les cheveux et le visage se déformaient. Le conducteur reste toujours visible.
+      for (const m of cast.members) {
+        if (m.userId === plan.driverId) continue;
+        m.head.getWorldPosition(headPos);
+        m.ch.root.visible = headPos.distanceTo(this.camera.position) > 0.55;
+      }
       rain.position.set(this.camera.position.x, 0, this.camera.position.z);
       const arr = rg.getAttribute('position').array as Float32Array;
       for (let i = 0; i < arr.length; i += 6) {

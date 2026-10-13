@@ -114,12 +114,13 @@ export function buildIntroVehicle(def: VehicleDefinition): IntroVehicle {
   }
   const dashZ = S.cabinFront - 0.18;
   box(g, [W - 0.14, 0.24, 0.36], interior, [0, S.belt - 0.05, dashZ]);
-  box(g, [0.3, 0.08, 0.02], MAT.glow('#58c8ff', 0.6), [0, S.belt + 0.02, dashZ - 0.17]);
+  // écran de bord : faible lueur (avec le halo, une forte intensité devenait une tache bleue aveuglante)
+  box(g, [0.22, 0.07, 0.02], MAT.glow('#2c6f9c', 0.12), [0, S.belt + 0.02, dashZ - 0.17]);
   const dome = new THREE.PointLight('#ffd7a8', 3, 3.4, 1.6);
   dome.position.set(0, H - 0.1, (S.roofFront + roofBack) / 2);
   g.add(dome);
   // lueur bleutée de l'écran de bord sur les visages
-  const dashGlow = new THREE.PointLight('#7fb8ff', 0.5, 1.6, 2);
+  const dashGlow = new THREE.PointLight('#7fb8ff', 0.22, 1.4, 2);
   dashGlow.position.set(0, S.belt + 0.1, dashZ - 0.3);
   g.add(dashGlow);
 
