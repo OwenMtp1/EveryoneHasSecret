@@ -219,6 +219,7 @@ await page.waitForFunction(() => document.querySelector('.story-panel')?.textCon
   () => log('menu Échap : panneau de l’histoire affiché'),
   () => errors.push('BUG : Échap n’ouvre pas le panneau de l’histoire'),
 );
+await page.waitForFunction(() => document.querySelector('.stance-friend'), undefined, { timeout: 60000 }).catch(() => {});
 await page.evaluate(() => (document.querySelector('.stance-friend') as HTMLButtonElement | null)?.click());
 await page.waitForFunction(() => document.querySelector('.story-panel')?.textContent?.includes('Vous avez choisi l’amitié'), undefined, { timeout: 60000 }).then(
   () => log('premier choix enregistré : amitié'),
@@ -288,13 +289,9 @@ await waitFor('fin de la découverte', () => host.view!.phase === 'INVESTIGATION
   const { localX, allFurniture: furn, buildWorldGrid: bwg, roomAt: rAt } = await import('../src/shared/content/villa');
   const g0 = bwg();
   const mp0 = me(host).pos!;
-  let floor: GameSelfView["objects"][number] | undefined = host
-    .view!.objects.filter((o) => o.pos && !o.inInventory && !o.name.includes('sur le corps'))
-    .map((o) => ({ o, path: findPath(mp0, o.pos!, new Set(host.view!.unlockedDoors)) }))
-    .filter((x) => x.path)
-    .sort((a, z) => a.path!.length - z.path!.length)[0]?.o;
-  // rien en vue : on fouille les meubles proches jusqu'à trouver quelque chose (le cas le plus courant en jeu)
-  for (const f of floor ? [] : furn().filter((x) => x.hiding && x.roomId === me(host).roomId).concat(furn().filter((x) => x.hiding && ['living', 'hall', 'dining', 'kitchen', 'office'].includes(x.roomId)))) {
+  // cas le plus courant en jeu (et le plus délicat à viser) : un objet trouvé DANS un meuble
+  let floor: GameSelfView['objects'][number] | undefined;
+  for (const f of furn().filter((x) => x.hiding && x.roomId === me(host).roomId).concat(furn().filter((x) => x.hiding && ['living', 'hall', 'dining', 'kitchen', 'office'].includes(x.roomId)))) {
     const pt = [
       { x: f.x + f.w / 2, y: f.y + f.h + 0.6 },
       { x: f.x + f.w / 2, y: f.y - 0.6 },
@@ -309,6 +306,13 @@ await waitFor('fin de la découverte', () => host.view!.phase === 'INVESTIGATION
     floor = host.view!.objects.find((o) => o.pos && !o.inInventory && o.name.endsWith('(caché)') && Math.hypot(o.pos.x - (f.x + f.w / 2), o.pos.y - (f.y + f.h / 2)) < Math.max(f.w, f.h) + 1);
     if (floor) break;
   }
+  // sinon, un objet posé au sol
+  floor ??= host
+    .view!.objects.filter((o) => o.pos && !o.inInventory && !o.name.includes('sur le corps'))
+    .map((o) => ({ o, path: findPath(me(host).pos!, o.pos!, new Set(host.view!.unlockedDoors)) }))
+    .filter((x) => x.path)
+    .sort((a, z) => a.path!.length - z.path!.length)[0]?.o;
+  void mp0;
   if (!floor) log('aucun objet trouvé : étape « ramasser avec E » sautée');
   else {
     if (Math.hypot(me(host).pos!.x - floor.pos!.x, me(host).pos!.y - floor.pos!.y) > 1.2) await walkTo(host, floor.pos!, floor.name);
