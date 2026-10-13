@@ -105,6 +105,21 @@ export function computeLeads(game: GameSelfView): Lead[] {
       { text: d.camp === 'murderer' ? 'Un témoin trop curieux ? Restez seul·e avec lui ou elle et attendez l’occasion' : 'Couvrez le meurtrier : un alibi commun, une fausse piste', done: false },
     ];
   }
+  const level = c.hints ?? 'full';
+  if (level === 'off') return [alibi];
+  if (level === 'vague') {
+    // quoi chercher, jamais où : la découverte reste aux joueurs
+    return [
+      alibi,
+      { text: 'Le corps n’a pas encore tout dit', done: refs.has('diary') || refs.has('victim_phone') || inv.some((o) => o.type === 'phone') },
+      { text: 'Une petite clé ouvre forcément quelque chose', done: refs.has('diary') },
+      { text: 'Un code se cache souvent dans un écrit intime', done: refs.has('victim_phone') },
+      { text: 'Les surnoms ont toujours une explication', done: refs.has('group_photo') },
+      { text: 'Un ordinateur garde des secrets', done: refs.has('laptop') },
+      { text: 'Ce qui est sous clé n’est pas là par hasard', done: refs.has('usb') },
+      { text: 'Les photos ne mentent pas sur qui était là', done: refs.has('card') },
+    ];
+  }
   const phone = d.evidence.find((e) => e.ref === 'victim_phone');
   const nick = phone?.lines.map((l) => /Appel entrant de « (.+?) »/.exec(l)?.[1]).find(Boolean);
   const searchedBody = refs.has('diary') || refs.has('victim_phone') || inv.some((o) => o.type === 'phone' || o.name === 'Petite clé dorée');

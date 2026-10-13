@@ -187,6 +187,11 @@ function LobbySettings() {
           </button>
         ))}
       </div>
+      <div className="seg" title="Le panneau « Pistes » en partie">
+        {([['full', 'Pistes complètes'], ['vague', 'Pistes vagues'], ['off', 'Sans pistes']] as const).map(([h, label]) => (
+          <button key={h} className={(lobby.hints ?? 'full') === h ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { hints: h }))}>{label}</button>
+        ))}
+      </div>
       <div className="seg">
         {(['PUBLIC', 'PRIVATE'] as const).map((v) => (
           <button key={v} className={lobby.visibility === v ? 'active' : ''} onClick={() => attempt(call('lobby:settings', { visibility: v }))}>{v === 'PUBLIC' ? 'PUBLIQUE' : 'PRIVÉE'}</button>

@@ -1189,6 +1189,7 @@ export class CaseSystem {
       accuseBlockedReason: block ?? undefined,
       parityWarning: this.parityWarning(),
       accusationsLeft: Math.max(0, CASE_TIMING.accusationsPerPlayer - p.accusationsUsed),
+      hints: g.hints,
     };
   }
 

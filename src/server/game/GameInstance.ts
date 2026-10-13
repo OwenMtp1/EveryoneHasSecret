@@ -64,6 +64,8 @@ import { pick, seededRandom, shortId, shuffle, UserError } from '../util';
 export interface GameInit {
   /** joueurs tenus par l'IA du serveur */
   botIds?: string[];
+  /** niveau des pistes guidées */
+  hints?: 'full' | 'vague' | 'off';
   id: string;
   lobbyId: string;
   title: string;
@@ -131,6 +133,7 @@ export class GameInstance {
   }
   private timers: NodeJS.Timeout[] = [];
   private lastSecondTick = 0;
+  hints: 'full' | 'vague' | 'off' = 'full';
   /** joueurs IA (cerveaux côté serveur) */
   bots = new Map<string, BotBrain>();
   /** trajets de la nuit pour le rejeu de l'épilogue (une image toutes les 3 s, bornée) */
@@ -203,6 +206,7 @@ export class GameInstance {
 
     this.assignIdentities();
     this.spawnAmbientObjects();
+    this.hints = init.hints ?? 'full';
     this.caseSystem.setup({ victimCastId: init.victimCastId, scenarioId: init.scenarioId });
     for (const id of init.botIds ?? []) if (this.players.has(id)) this.bots.set(id, new BotBrain(this, id, seededRandom(Math.floor(this.rnd() * 2 ** 31))));
     if (!init.manual) this.start();

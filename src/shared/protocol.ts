@@ -2,7 +2,7 @@
  * Protocole client ↔ serveur.
  * Le client DEMANDE (événement + ack), le serveur VALIDE, APPLIQUE puis DIFFUSE.
  */
-import type {
+import type { HintLevel,
   AppNotification,
   ChatChannel,
   FriendEntry,
@@ -95,7 +95,7 @@ export interface ClientToServerEvents {
   'lobby:add-bot': (ack: Ack<null>) => void;
   'lobby:remove-bot': (botId: string, ack: Ack<null>) => void;
   'lobby:settings': (
-    p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration },
+    p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration; hints?: HintLevel },
     ack: Ack<null>,
   ) => void;
   'lobby:close': (ack: Ack<null>) => void;

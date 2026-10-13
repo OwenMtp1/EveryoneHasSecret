@@ -108,6 +108,7 @@ export interface LobbyView {
   chat: LobbyChatMessage[];
   minPlayers: number;
   canStart: boolean;
+  hints?: HintLevel;
   duration: NightDuration;
 }
 
@@ -283,6 +284,9 @@ export interface PhotoView {
 }
 
 /** Ce que l'affaire a de public (connu de tous dès le début). */
+/** Pistes guidées : complètes (où chercher), vagues (quoi chercher), désactivées. */
+export type HintLevel = 'full' | 'vague' | 'off';
+
 export interface CaseView {
   scenarioTitle: string;
   brief: string;
@@ -298,6 +302,8 @@ export interface CaseView {
   /** une accusation peut-elle être déposée maintenant */
   canAccuse: boolean;
   accuseBlockedReason?: string;
+  /** niveau des pistes guidées choisi par l'hôte */
+  hints?: HintLevel;
   /** petites tables : une arrestation à tort ferait gagner le meurtrier */
   parityWarning?: string;
   accusationsLeft: number;

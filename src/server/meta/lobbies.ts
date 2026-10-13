@@ -2,7 +2,7 @@
  * Lobbies (salons d'avant-partie) et cycle de vie des parties.
  * Toutes les permissions (hôte, places, statut) sont vérifiées ici, côté serveur.
  */
-import type { LobbyView, LobbyVisibility, ServerFilters, ServerListEntry, EpilogueView } from '@shared/types';
+import type { LobbyView, LobbyVisibility, ServerFilters, ServerListEntry, EpilogueView , HintLevel } from '@shared/types';
 import { GAME_NAME, META_CONFIG, NIGHT_DURATIONS, isNightDuration, type NightDuration } from '@shared/config';
 import { buildIntroPlan, introSchedule, type IntroPlan } from '@shared/content/intro';
 import { CAST_IDS, castById } from '@shared/content/cast';
@@ -44,6 +44,7 @@ interface Lobby {
   /** cinématique en cours : composition figée, états cadencés par le serveur */
   intro?: { plan: IntroPlan; timers: NodeJS.Timeout[]; loading: boolean; ready: Set<string> };
   duration: NightDuration;
+  hints: HintLevel;
 }
 
 
@@ -105,6 +106,7 @@ export class LobbyManager {
       status: l.status,
       minPlayers: META_CONFIG.minPlayersToStart,
       duration: l.duration,
+      hints: l.hints,
       canStart:
         forUser === l.hostId &&
         l.status === 'WAITING' &&
@@ -227,6 +229,7 @@ export class LobbyManager {
       version: 1,
       inGame: new Set(),
       duration: isNightDuration(p.duration) ? p.duration : 'normal',
+      hints: 'full',
     };
     this.system(l, `${username} a ouvert les portes de « ${l.name} ».`);
     this.lobbies.set(l.id, l);
@@ -401,11 +404,12 @@ export class LobbyManager {
     this.notifications.notify(targetId, 'KICKED', 'Expulsé·e', `L’hôte vous a retiré·e de « ${l.name} ».`, {}, { ephemeral: true });
   }
 
-  updateSettings(hostId: string, p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration }) {
+  updateSettings(hostId: string, p: { name?: string; maxPlayers?: number; visibility?: LobbyVisibility; duration?: NightDuration; hints?: HintLevel }) {
     const l = this.requireHost(hostId);
     if (l.status !== 'WAITING') throw new UserError('Impossible maintenant.');
     Object.assign(l, this.validateSettings(p, l));
     if (isNightDuration(p.duration)) l.duration = p.duration;
+    if (p.hints === 'full' || p.hints === 'vague' || p.hints === 'off') l.hints = p.hints;
     this.system(l, 'L’hôte a modifié les paramètres.');
     this.broadcast(l);
   }
@@ -549,6 +553,7 @@ export class LobbyManager {
       voteScale: this.timeScale,
       victimCastId: plan.victimCastId,
       botIds: [...botIds],
+      hints: l.hints,
       emit: (userId, event, payload) => {
         if (l.inGame.has(userId)) this.emitter.toUser(userId, event, payload);
       },
