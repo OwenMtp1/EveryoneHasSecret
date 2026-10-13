@@ -556,13 +556,13 @@ test('outils de l’ombre : réservés au meurtrier, courant coupé depuis le so
   assert.match(feed, new RegExp(`mot non signé[^"]*${inno.name}`));
 });
 
-test('événements de la soirée : deux, annoncés à tous, sans nommer le meurtrier', () => {
+test('événements de la soirée : trois, annoncés à tous, sans nommer le meurtrier', () => {
   for (const seed of [3, 8, 21]) {
     const { g, startInvestigation, advance, murderer } = makeGame(4, seed, 'mensonges');
     startInvestigation();
-    advance(Math.ceil(900 * 1000 * 0.05 * 0.72), 200);
+    advance(Math.ceil(900 * 1000 * 0.05 * 0.82), 200);
     const evs = g.truth.filter((e) => e.type === 'EVENING_EVENT');
-    assert.ok(evs.length >= 1 && evs.length <= 2, `seed ${seed} : ${evs.length} événements`);
+    assert.ok(evs.length >= 2 && evs.length <= 3, `seed ${seed} : ${evs.length} événements`);
     for (const e of evs) assert.ok(!String(e.text).includes(murderer().name), 'un événement ne désigne jamais le meurtrier');
   }
 });

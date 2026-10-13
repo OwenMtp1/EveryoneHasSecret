@@ -225,9 +225,9 @@ export class CaseSystem {
     const scale = g.timeScale;
     this.investigationEndsAt = g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec) * 1000 * scale;
     this.blackoutAt = g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec * CASE_TIMING.blackoutAtFraction) * 1000 * scale;
-    this.eveningEvents = shuffle(['dog', 'phone', 'window', 'neighbor'], g.rnd)
-      .slice(0, 2)
-      .map((id, i) => ({ id, at: g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec * (i === 0 ? 0.24 : 0.68)) * 1000 * scale }));
+    this.eveningEvents = shuffle(['dog', 'phone', 'window', 'neighbor', 'letter', 'clock'], g.rnd)
+      .slice(0, 3)
+      .map((id, i) => ({ id, at: g.now() + (CASE_TIMING.arrivalSec + CASE_TIMING.investigationSec * [0.2, 0.56, 0.78][i]) * 1000 * scale }));
     g.log('CASE_OPENED', { text: `Affaire : ${t.scenarioTitle}. Victime : ${t.victim.name}. Meurtrier : ${m.name}.`, data: { scenario: t.scenarioId } });
   }
 
@@ -445,6 +445,11 @@ export class CaseSystem {
     } else if (id === 'window') {
       const r = this.roomOfRef('camera');
       if (r) text = `Une fenêtre claque dans : ${roomName(r)}. En allant la fermer, on entend un appareil photo tomber d’un meuble… Quelqu’un y a rangé ses souvenirs de la soirée.`;
+    } else if (id === 'letter') {
+      const m = t.players.get(t.murdererId);
+      if (m) text = `Une enveloppe glissée sous la porte de la chambre de la victime : « Je viendrai ce soir, après le dîner. On réglera ça. » Elle avait noté au dos : « quelqu’un du groupe parti ${atPlace(PLACES[m.place].name)} ».`;
+    } else if (id === 'clock') {
+      text = `La vieille pendule du salon s’est arrêtée, sa vitre fendue : ses aiguilles indiquent ${formatClock(t.murderAt)}. Quelqu’un l’a heurtée dans sa fuite ?`;
     } else if (id === 'neighbor') {
       text = `Le voisin frappe à la porte, trempé. Vers ${formatClock(t.murderAt - 2)}, il a vu une silhouette traverser le jardin vers la villa, sans lampe. « Pas le visage, mais elle connaissait le chemin. »`;
     }

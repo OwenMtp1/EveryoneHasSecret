@@ -116,7 +116,7 @@ chiffres se composent sur un pavé.
 Outils de l’ombre (invisibles des autres) : le meurtrier peut couper le courant au sous-sol (une fois) et faire circuler
 un mot anonyme (une fois) ; un protecteur encore lié au meurtrier dispose du mot anonyme.
 
-Événements de la soirée : deux par partie, tirés au sort (chien, appel de la station-service, fenêtre, voisin), chacun
+Événements de la soirée : trois par partie, tirés au sort (chien, appel de la station-service, fenêtre, voisin, lettre glissée sous la porte, pendule arrêtée), chacun
 apporte une information vraie mais partielle — jamais un nom.
 
 Inventaire détaillé (fonction, interactions, conditions, conséquences) : `docs/VALIDATION.md`, section « Inventaire des objets ».
