@@ -74,6 +74,14 @@ export class IntroCamera {
     const d = seats.find((s) => s.type === 'driver')!.position;
     const over = new THREE.Vector3(-0.12, d[1] + 0.6, d[2] - 0.32);
     this.pointShot = { from: over, to: over.clone().add(new THREE.Vector3(0.02, 0.01, 0.1)), lookFrom: new THREE.Vector3(d[0] + 0.45, d[1] + 0.5, d[2] + 1.0), lookTo: new THREE.Vector3(d[0] + 0.3, d[1] + 0.58, d[2] + 1.5) };
+    // 4. Raccord sans coupure : la caméra glisse de l'arrière de l'habitacle jusqu'au-dessus de l'épaule du conducteur
+    //    et arrive EXACTEMENT là où commence le plan du doigt (position et visée) — plus de saut d'axe.
+    this.carShots.push({
+      from: over.clone().add(new THREE.Vector3(0.06, 0.04, -0.22)),
+      to: over.clone(),
+      lookFrom: this.pointShot.lookFrom.clone().add(new THREE.Vector3(-0.3, -0.05, 0.4)),
+      lookTo: this.pointShot.lookFrom.clone(),
+    });
 
     // Révélation : depuis l'arrière des sièges avant → à travers le pare-brise → reculé, à droite, en hauteur
     const L = vehicle.assets.body.length;

@@ -1129,14 +1129,18 @@ export class GameView3D {
     // 1) rayon du centre de l'écran
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     const ray = this.raycaster.ray.clone();
-    let best: { key: string; t: number } | null = null;
+    // priorité : objets, corps et joueurs passent avant les meubles, portes et traces (un objet trouvé dans un
+    // meuble est DANS le volume du meuble : sans cette priorité, E refaisait « Fouiller » au lieu de « Ramasser »)
+    const rank = (k: string) => (k.startsWith('o:') || k.startsWith('b:') || k.startsWith('p:') ? 0 : 1);
+    let best: { key: string; t: number; rank: number } | null = null;
     for (const c of cands) {
       const toC = c.c.clone().sub(ray.origin);
       const t = toC.dot(ray.direction);
       if (t < 0) continue;
       const dist2 = toC.lengthSq() - t * t;
       if (dist2 > c.r * c.r) continue;
-      if (!best || t < best.t) best = { key: c.key, t };
+      const rk = rank(c.key);
+      if (!best || rk < best.rank || (rk === best.rank && t < best.t)) best = { key: c.key, t, rank: rk };
     }
     if (best) {
       const hit = cands.find((c) => c.key === best!.key)!;
@@ -1145,13 +1149,14 @@ export class GameView3D {
     // 2) repli : devant le personnage (cône de 40°), le plus proche, sans mur entre les deux
     const eye = me.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
     const fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-    let fb: { key: string; d: number } | null = null;
+    let fb: { key: string; d: number; rank: number } | null = null;
     for (const c of cands) {
       const flat = c.c.clone().sub(me.pos).setY(0);
       const d = flat.length();
       if (d > 0.35 && flat.normalize().dot(fwd) < Math.cos(THREE.MathUtils.degToRad(40))) continue;
       if (occluded(eye, c.c)) continue;
-      if (!fb || d < fb.d) fb = { key: c.key, d };
+      const rk = rank(c.key);
+      if (!fb || rk < fb.rank || (rk === fb.rank && d < fb.d)) fb = { key: c.key, d, rank: rk };
     }
     return fb?.key ?? null;
   }

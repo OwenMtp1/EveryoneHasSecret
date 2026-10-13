@@ -285,33 +285,52 @@ for (const p of all) {
 // ── ramasser un objet au sol avec la touche E, comme un joueur (vise l'objet, E, inventaire) ──
 await waitFor('fin de la découverte', () => host.view!.phase === 'INVESTIGATION', 120000);
 {
-  const { localX } = await import('../src/shared/content/villa');
+  const { localX, allFurniture: furn, buildWorldGrid: bwg, roomAt: rAt } = await import('../src/shared/content/villa');
+  const g0 = bwg();
   const mp0 = me(host).pos!;
-  const floor = host
-    .view!.objects.filter((o) => o.pos && !o.inInventory && !o.name.endsWith('(caché)') && !o.name.includes('sur le corps'))
+  let floor: GameSelfView["objects"][number] | undefined = host
+    .view!.objects.filter((o) => o.pos && !o.inInventory && !o.name.includes('sur le corps'))
     .map((o) => ({ o, path: findPath(mp0, o.pos!, new Set(host.view!.unlockedDoors)) }))
     .filter((x) => x.path)
     .sort((a, z) => a.path!.length - z.path!.length)[0]?.o;
-  if (!floor) log('aucun objet au sol accessible : étape « ramasser avec E » sautée');
+  // rien en vue : on fouille les meubles proches jusqu'à trouver quelque chose (le cas le plus courant en jeu)
+  for (const f of floor ? [] : furn().filter((x) => x.hiding && x.roomId === me(host).roomId).concat(furn().filter((x) => x.hiding && ['living', 'hall', 'dining', 'kitchen', 'office'].includes(x.roomId)))) {
+    const pt = [
+      { x: f.x + f.w / 2, y: f.y + f.h + 0.6 },
+      { x: f.x + f.w / 2, y: f.y - 0.6 },
+      { x: f.x - 0.6, y: f.y + f.h / 2 },
+      { x: f.x + f.w + 0.6, y: f.y + f.h / 2 },
+    ].find((q) => rAt(g0, q.x, q.y)?.id === f.roomId && findPath(me(host).pos!, q, new Set(host.view!.unlockedDoors)));
+    if (!pt) continue;
+    await walkTo(host, pt, f.name);
+    const r = await act(host, { type: 'search', furnitureId: f.id }).catch((e) => String(e.message));
+    log('fouille', f.name, '→', r);
+    await sleep(500);
+    floor = host.view!.objects.find((o) => o.pos && !o.inInventory && o.name.endsWith('(caché)') && Math.hypot(o.pos.x - (f.x + f.w / 2), o.pos.y - (f.y + f.h / 2)) < Math.max(f.w, f.h) + 1);
+    if (floor) break;
+  }
+  if (!floor) log('aucun objet trouvé : étape « ramasser avec E » sautée');
   else {
-    await walkTo(host, floor.pos!, floor.name);
+    if (Math.hypot(me(host).pos!.x - floor.pos!.x, me(host).pos!.y - floor.pos!.y) > 1.2) await walkTo(host, floor.pos!, floor.name);
     const mp = me(host).pos!;
     const yaw = Math.atan2(localX(floor.pos!.x) - localX(mp.x), floor.pos!.y - mp.y);
+    log('visée de', floor.name, 'depuis', mp.x.toFixed(1), mp.y.toFixed(1));
     await page.evaluate((y) => {
       const v = (window as unknown as { __ehas: { view3d: { yaw: number; tpPitch: number } } }).__ehas.view3d;
       v.yaw = y;
       v.tpPitch = 1.1;
     }, yaw);
     const title = await page
-      .waitForFunction((n) => document.querySelector('.interact-title')?.textContent?.includes(n) && document.querySelector('.interact-title')!.textContent, floor.name, { timeout: 60000 })
+      .waitForFunction((n) => document.querySelector('.interact-title')?.textContent?.includes(n) && document.querySelector('.interact-title')!.textContent, floor.name.replace(' (caché)', ''), { timeout: 60000 })
       .then((h) => h.jsonValue())
       .catch(async () => `(invite : ${await page.evaluate(() => document.querySelector('.interact-title')?.textContent ?? 'aucune')})`);
     log('invite d’interaction :', title);
     await page.keyboard.press('KeyE');
-    await waitFor('objet ramassé avec E', () => host.view!.inventory.some((o) => o.id === floor.id), 30000).then(
-      () => log('ramassé avec E :', floor.name),
+    const target = floor;
+    await waitFor('objet ramassé avec E', () => host.view!.inventory.some((o) => o.id === target.id), 30000).then(
+      () => log('ramassé avec E :', target.name),
       async () => {
-        errors.push(`BUG : impossible de ramasser « ${floor.name} » avec E`);
+        errors.push(`BUG : impossible de ramasser « ${target.name} » avec E`);
         await shot(page, '04b-ramasser-echec');
       },
     );

@@ -120,18 +120,22 @@ const HAND_TARGETS: [RegExp, THREE.Quaternion][] = [
   [/^R_Finger[234][12]$/, q(0, 0, 1.5)],
   [/^R_Finger0[12]$/, q(0, 0, 0.7)],
 ];
-const handCache = new WeakMap<THREE.Object3D, [THREE.Object3D, THREE.Quaternion][]>();
+const handCache = new WeakMap<THREE.Object3D, [THREE.Object3D, THREE.Quaternion, THREE.Quaternion][]>();
+/**
+ * Index tendu, autres doigts repliés : pose = repos → cible selon `w` (0…1), recalculée à chaque image depuis
+ * la pose de repos (avant : on se rapprochait de la cible image après image et la main ne revenait jamais).
+ */
 function pointHand(root: THREE.Object3D, w: number) {
   let list = handCache.get(root);
   if (!list) {
     list = [];
     root.traverse((o) => {
       const t = HAND_TARGETS.find(([re]) => re.test(o.name));
-      if (t) list!.push([o, t[1]]);
+      if (t) list!.push([o, o.quaternion.clone(), t[1]]);
     });
     handCache.set(root, list);
   }
-  for (const [b, t] of list) b.quaternion.slerp(t, w);
+  for (const [b, rest, t] of list) b.quaternion.copy(rest).slerp(t, w);
 }
 
 export interface IntroCast {
@@ -184,7 +188,7 @@ export function buildIntroCast(plan: IntroPlan, vehicle: VehicleDefinition, ctl:
       for (const m of members) m.ch.update(dt, 0);
       // index pointé (le modèle du catalogue peut avoir remplacé le repli : racine relue à chaque image)
       const driver = members.find((m) => m.userId === plan.driverId);
-      if (driver && ctl.point > 0.01) driver.ch.root.traverse((o) => o.name.startsWith('cast:') && pointHand(o, ctl.point));
+      if (driver) driver.ch.root.traverse((o) => o.name.startsWith('cast:') && pointHand(o, ctl.point));
     },
     dispose() {
       for (const m of members) m.ch.dispose();
