@@ -9,7 +9,7 @@
  * Aucun mot de passe n'est jamais stocké en clair ni journalisé.
  */
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createRemoteJWKSet, decodeJwt, decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose';
 import { META_CONFIG } from '@shared/config';
 import { DuplicateUsernameError, type MetaStore, type UserRecord } from './store';
 import { newId, UserError } from '../util';
@@ -23,6 +23,11 @@ export interface AuthConfig {
   supabaseAnonKey?: string;
   /** secret HS256 (anciens projets Supabase) ; sinon vérification par JWKS (clés asymétriques) */
   supabaseJwtSecret?: string;
+  /**
+   * Si la vérification locale du jeton échoue (clé de signature inconnue, secret absent…), demander à Supabase
+   * Auth lui-même (GET /auth/v1/user) : fonctionne quel que soit le mode de signature du projet.
+   */
+  remoteVerify?: boolean;
 }
 
 /** Résultat de la vérification d'un jeton : utilisateur, ou compte Supabase sans profil de jeu. */
@@ -251,9 +256,61 @@ export class AuthService {
         : await jwtVerify(token, this.jwks!, opts);
       if (payload.role && payload.role !== 'authenticated') return null;
       return payload;
-    } catch {
+    } catch (e) {
+      if (this.config.remoteVerify) {
+        const remote = await this.verifyRemote(token);
+        if (remote) return remote;
+      }
+      this.explainRejection(token, e);
       return null;
     }
+  }
+
+  private rejected = new Map<string, number>();
+  /** Vérification par Supabase Auth (le jeton est envoyé à Supabase seulement, jamais journalisé). */
+  private async verifyRemote(token: string): Promise<JWTPayload | null> {
+    const now = Date.now();
+    if ((this.rejected.get(token) ?? 0) > now) return null;
+    try {
+      const res = await fetch(`${this.config.supabaseUrl}/auth/v1/user`, {
+        headers: { apikey: this.config.supabaseAnonKey!, Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const u = (await res.json()) as { id?: string; email?: string; user_metadata?: Record<string, unknown>; role?: string };
+      if (!u.id || (u.role && u.role !== 'authenticated')) throw new Error('utilisateur invalide');
+      return { sub: u.id, email: u.email, user_metadata: u.user_metadata, exp: Math.floor(now / 1000) + 60 } as JWTPayload;
+    } catch {
+      this.rejected.set(token, now + 60_000);
+      if (this.rejected.size > 2000) for (const [k, v] of this.rejected) if (v < now) this.rejected.delete(k);
+      return null;
+    }
+  }
+
+  private lastRejectionLog = 0;
+  /**
+   * Jeton Supabase refusé : la raison va dans les journaux du serveur (au plus une fois par minute), sans jamais
+   * écrire le jeton. Cas le plus fréquent : projet signé en HS256 (« Legacy JWT secret ») sans SUPABASE_JWT_SECRET.
+   */
+  private explainRejection(token: string, e: unknown) {
+    const now = Date.now();
+    if (now - this.lastRejectionLog < 60_000) return;
+    this.lastRejectionLog = now;
+    let alg = '?';
+    let iss = '?';
+    try {
+      alg = String(decodeProtectedHeader(token).alg ?? '?');
+      iss = String(decodeJwt(token).iss ?? '?');
+    } catch {
+      /* jeton illisible */
+    }
+    const expected = `${this.config.supabaseUrl}/auth/v1`;
+    const code = (e as { code?: string })?.code ?? (e as Error)?.message ?? String(e);
+    let hint = '';
+    if (alg === 'HS256' && !this.config.supabaseJwtSecret) hint = ' → ce projet signe ses jetons avec le « Legacy JWT secret » : copiez-le (Supabase → Project Settings → JWT Keys) dans la variable SUPABASE_JWT_SECRET.';
+    else if (alg !== 'HS256' && this.config.supabaseJwtSecret) hint = ' → ce projet utilise des clés asymétriques : retirez SUPABASE_JWT_SECRET.';
+    else if (iss !== '?' && iss !== expected) hint = ` → émetteur inattendu : vérifiez SUPABASE_URL (attendu ${expected}).`;
+    console.warn(`[auth] jeton Supabase refusé (${code}, alg ${alg}, émetteur ${iss})${hint}`);
   }
 
   // ───────────── lectures ─────────────
@@ -292,6 +349,6 @@ export function supabaseBaseUrl(raw: string | undefined): string | undefined {
 export function authConfigFromEnv(env = process.env): AuthConfig {
   const url = supabaseBaseUrl(env.SUPABASE_URL);
   const anon = env.SUPABASE_ANON_KEY?.trim();
-  if (url && anon) return { mode: 'supabase', supabaseUrl: url, supabaseAnonKey: anon, supabaseJwtSecret: env.SUPABASE_JWT_SECRET?.trim() || undefined };
+  if (url && anon) return { mode: 'supabase', supabaseUrl: url, supabaseAnonKey: anon, supabaseJwtSecret: env.SUPABASE_JWT_SECRET?.trim() || undefined, remoteVerify: env.EHAS_SUPABASE_REMOTE_VERIFY !== 'false' };
   return { mode: 'local' };
 }

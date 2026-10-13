@@ -218,5 +218,27 @@ test('RLS : avec la clé publique, chacun ne lit que ses propres données ; un a
 test('SUPABASE_URL collée avec /rest/v1, espaces ou guillemets : seule la racine du projet est gardée', async () => {
   const { authConfigFromEnv } = await import('../src/server/meta/auth');
   for (const raw of ['https://abcd1234.supabase.co', 'https://abcd1234.supabase.co/', ' https://abcd1234.supabase.co/rest/v1/ ', '"https://abcd1234.supabase.co/rest/v1"', 'https://abcd1234.supabase.co/auth/v1'])
-    assert.deepEqual(authConfigFromEnv({ SUPABASE_URL: raw, SUPABASE_ANON_KEY: ' cle ' }), { mode: 'supabase', supabaseUrl: 'https://abcd1234.supabase.co', supabaseAnonKey: 'cle', supabaseJwtSecret: undefined });
+    assert.deepEqual(authConfigFromEnv({ SUPABASE_URL: raw, SUPABASE_ANON_KEY: ' cle ' }), { mode: 'supabase', supabaseUrl: 'https://abcd1234.supabase.co', supabaseAnonKey: 'cle', supabaseJwtSecret: undefined, remoteVerify: true });
+});
+
+test('vérification par Supabase Auth quand la clé de signature est inconnue : badge valide accepté, autre refusé', async () => {
+  const { createServer } = await import('node:http');
+  const { AuthService } = await import('../src/server/meta/auth');
+  const id = randomUUID();
+  const srv = createServer((req, res) => {
+    if (req.url === '/auth/v1/.well-known/jwks.json') return res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"keys":[]}');
+    if (req.url === '/auth/v1/user' && req.headers.authorization === 'Bearer jeton-de-test-valide-1234' && req.headers.apikey === 'cle-anon')
+      return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ id, role: 'authenticated', is_anonymous: true, user_metadata: {} }));
+    res.writeHead(401).end('{}');
+  });
+  await new Promise<void>((r) => srv.listen(0, r));
+  try {
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+    const auth = new AuthService(ctx.store, { mode: 'supabase', supabaseUrl: url, supabaseAnonKey: 'cle-anon', remoteVerify: true });
+    const ok = await auth.resolve('jeton-de-test-valide-1234');
+    assert.ok(ok && 'pending' in ok && ok.pending.id === id, 'invité Supabase reconnu : il choisit ensuite son pseudo');
+    assert.equal(await auth.resolve('jeton-de-test-invalide-99'), null);
+  } finally {
+    srv.close();
+  }
 });

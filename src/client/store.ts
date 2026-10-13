@@ -169,7 +169,8 @@ export const useStore = create<AppState>((set, get) => ({
         if (status === 401) {
           tokenStore.set(null);
           await supabaseAuth.signOut();
-          return set({ screen: 'auth', user: null });
+          // connexion Supabase réussie mais refusée par le serveur du jeu : on le dit, au lieu de revenir en silence
+          return set({ screen: 'auth', user: null, authNotice: authMode() === 'supabase' ? 'Connexion refusée par le serveur du jeu (configuration Supabase à vérifier). Réessayez dans un instant.' : null });
         }
         if (status >= 400 && status < 500) return set({ screen: 'auth', user: null, authNotice: (e as Error).message });
         set({ screen: 'boot', bootMessage: 'Le serveur se réveille… (jusqu’à une minute)' });

@@ -47,8 +47,11 @@ Je n'ai pas accès à votre compte Supabase : ces étapes ne peuvent pas être f
 4. **Récupérer les valeurs** :
    - *Project Settings → API* (ou *Data API*) : **Project URL** → `SUPABASE_URL` ; clé **anon public** (ou *publishable*) → `SUPABASE_ANON_KEY`.
    - *Project Settings → JWT Keys* : si le projet utilise encore le **Legacy JWT secret** (HS256), le copier dans
-     `SUPABASE_JWT_SECRET`. Si le projet utilise les nouvelles clés de signature asymétriques, **ne rien mettre** :
-     le serveur vérifie les jetons via `SUPABASE_URL/auth/v1/.well-known/jwks.json`.
+     `SUPABASE_JWT_SECRET` (facultatif). Si le projet utilise les nouvelles clés de signature asymétriques, **ne rien mettre** :
+     le serveur vérifie les jetons via `SUPABASE_URL/auth/v1/.well-known/jwks.json`. Dans tous les cas, si la vérification
+     locale échoue, le serveur demande à Supabase Auth (`GET /auth/v1/user`) : la connexion marche même sans ce secret
+     (`EHAS_SUPABASE_REMOTE_VERIFY=false` pour désactiver). Un refus est expliqué dans les journaux (`[auth] jeton Supabase refusé…`).
+   - **Invités** : *Authentication → Sign In / Providers → Allow anonymous sign-ins* (bouton « Jouer en invité »).
    - *Connect* (en haut) → *Connection string* → **Transaction pooler** (port 6543, compatible IPv4, adapté à Render)
      → `DATABASE_URL` (remplacer `[YOUR-PASSWORD]`).
 
