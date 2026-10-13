@@ -52,12 +52,12 @@ export const usePicker = create<PickerState>((set) => ({
 
 /** Mini-jeu en cours (forcer une serrure) : le résultat part au serveur, qui décide des conséquences. */
 export const useMinigame = create<{
-  open: { kind: 'force'; title: string; onDone: (ok: boolean) => void } | null;
-  force: (title: string, onDone: (ok: boolean) => void) => void;
+  open: { kind: 'force'; title: string; seed: number; onDone: (strikes: number[]) => void } | null;
+  force: (title: string, seed: number, onDone: (strikes: number[]) => void) => void;
   close: () => void;
 }>((set) => ({
   open: null,
-  force: (title, onDone) => set({ open: { kind: 'force', title, onDone } }),
+  force: (title, seed, onDone) => set({ open: { kind: 'force', title, seed, onDone } }),
   close: () => set({ open: null }),
 }));
 
@@ -166,7 +166,7 @@ export function targetActions(g: GameSelfView, key: string | null): { title: str
     if (lock?.kind === 'code') out.push({ label: 'Saisir le code', run: () => picker.askText(f.name, lock.hint ?? 'Code à quatre chiffres', (code) => act({ type: 'unlock_furniture', furnitureId: f.id, code })) });
     if (lock?.kind === 'key') out.push({ label: 'Ouvrir avec une clé', run: () => act({ type: 'unlock_furniture', furnitureId: f.id }) });
     if (lock?.kind === 'key' && inv.some((o) => o.type === 'crowbar'))
-      out.push({ label: 'Forcer au pied-de-biche (bruyant)', run: () => useMinigame.getState().force(f.name, (ok) => act({ type: 'force_furniture', furnitureId: f.id, ok })) });
+      out.push({ label: 'Forcer au pied-de-biche (bruyant)', run: () => useMinigame.getState().force(f.name, g.forceSeed ?? 1, (strikes) => act({ type: 'force_furniture', furnitureId: f.id, strikes })) });
     if (lock) return { title: `🔒 ${f.name}`, hint: lock.hint, actions: out };
     const done = g.searched?.includes(f.id);
     if (f.hiding) out.push({ label: done ? 'Fouiller à nouveau' : 'Fouiller', run: () => act({ type: 'search', furnitureId: f.id }) });

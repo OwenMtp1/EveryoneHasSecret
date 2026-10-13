@@ -44,6 +44,7 @@ import type { GameInstance } from '../GameInstance';
 import type { GameObject, PlayerState } from '../state';
 import { buildCase, murdererBriefing, PLACES } from './director';
 import { atPlace } from './scenarios';
+import { forceSucceeds } from '@shared/content/forceLock';
 import type { CaseItemSpec, CaseTruth, EvidenceContent, Fact, Lock, PlaceId } from './model';
 import { pick, shortId, shuffle, UserError } from '../../util';
 
@@ -289,7 +290,7 @@ export class CaseSystem {
    * pièces voisines), qu'il réussisse ou non ; réussi, il laisse une serrure forcée que les enquêteurs remarquent.
    * `ok` vient du mini-jeu du client ; un essai toutes les 15 s au plus.
    */
-  forceFurniture(p: PlayerState, furnitureId: string, ok: boolean): string {
+  forceFurniture(p: PlayerState, furnitureId: string, strikes: unknown): string {
     this.requireActive(p);
     const g = this.g;
     const lock = this.furnitureLocks.get(furnitureId);
@@ -306,6 +307,10 @@ export class CaseSystem {
     if ((this.forceCooldown.get(p.id) ?? 0) > now) throw new UserError(`Vos mains tremblent encore : réessayez dans ${Math.ceil(((this.forceCooldown.get(p.id) ?? 0) - now) / 1000)} s.`);
     this.forceCooldown.set(p.id, now + 15_000);
     g.actions.touch(p, bar);
+    // réussite décidée ici, d'après les instants des frappes ; nouvelle graine pour le prochain essai
+    const ok = forceSucceeds(p.forceSeed, strikes);
+    p.forceSeed = Math.floor(g.rnd() * 2 ** 31);
+    p.dirty = true;
     if (!ok) {
       g.hearFrom(p.roomId, `Un grincement de métal sur du bois — du côté de : ${roomName(p.roomId)}.`, p.id);
       g.perceive(p.id, `${p.name} s’acharne sur ${f.name.toLowerCase()} avec un pied-de-biche.`);

@@ -2,6 +2,7 @@
  * Moteur de jeu et règles de l'affaire (sans réseau) : horloge injectée, simulation manuelle.
  * Simulations de parties pour les trois scénarios et 3 à 8 joueurs.
  */
+import { forceZones } from '../src/shared/content/forceLock';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameInstance } from '../src/server/game/GameInstance';
@@ -494,6 +495,21 @@ test('meubles verrouillés : fouille impossible sans la clé ou le bon code ; le
   assert.ok(p.inventory.includes(ref('laptop').id));
 });
 
+/** Frappes parfaites pour une graine (le curseur passe exactement au centre de chaque zone). */
+function perfectStrikes(seed: number) {
+  const zones = forceZones(seed);
+  let t = 0;
+  return zones.map((z, i) => {
+    const speed = 0.9 + i * 0.35;
+    const base = (Math.acos(1 - 2 * z.at) / (speed * Math.PI)) * 1000;
+    const period = (2 / speed) * 1000;
+    let k = 0;
+    while (base + k * period < t + 100) k++;
+    t = base + k * period;
+    return Math.round(t);
+  });
+}
+
 test('pied-de-biche : forcer un meuble fermé à clé est bruyant, laisse une trace ; pas le coffre-fort', () => {
   const { g, act, fetch, innocents, startInvestigation, goTo, advance } = makeGame(4, 31, 'pacte');
   startInvestigation();
@@ -503,19 +519,22 @@ test('pied-de-biche : forcer un meuble fermé à clé est bruyant, laisse une tr
   const desk = allFurniture().find((f) => f.id === 'f_office_desk')!;
   const safe = allFurniture().find((f) => f.id === 'f_office_safe')!;
   goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
-  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: desk.id, ok: true }), /outil/);
+  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: desk.id, strikes: [] }), /outil/);
   fetch(p, bar);
   goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
-  assert.match(act(p, { type: 'force_furniture', furnitureId: desk.id, ok: false })!, /ripe/);
+  assert.match(act(p, { type: 'force_furniture', furnitureId: desk.id, strikes: perfectStrikes(p.forceSeed + 1).slice(0, 1) })!, /ripe/);
   assert.ok(g.caseSystem.furnitureLocked(desk.id));
-  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: desk.id, ok: true }), /réessayez/);
+  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: desk.id, strikes: perfectStrikes(p.forceSeed) }), /réessayez/);
   advance(16_000, 500);
   goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
-  assert.match(act(p, { type: 'force_furniture', furnitureId: desk.id, ok: true })!, /cède/);
+  assert.match(act(p, { type: 'force_furniture', furnitureId: desk.id, strikes: [10, 20, 30] })!, /ripe/, 'frappes au hasard : échec décidé par le serveur');
+  advance(16_000, 500);
+  goTo(p, { x: desk.x + 0.5, y: desk.y + 0.5 }, desk.roomId);
+  assert.match(act(p, { type: 'force_furniture', furnitureId: desk.id, strikes: perfectStrikes(p.forceSeed) })!, /cède/);
   assert.ok(!g.caseSystem.furnitureLocked(desk.id));
   assert.ok(g.evidence.some((e) => e.kind === 'forced_lock' && e.data.furnitureId === desk.id));
   goTo(p, { x: safe.x + 0.5, y: safe.y + 0.5 }, safe.roomId);
-  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: safe.id, ok: true }), /code/);
+  assert.throws(() => act(p, { type: 'force_furniture', furnitureId: safe.id, strikes: [] }), /code/);
 });
 
 test('outils de l’ombre : réservés au meurtrier, courant coupé depuis le sous-sol, mot anonyme public', () => {

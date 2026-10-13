@@ -463,6 +463,8 @@ export interface GameSelfView {
   muddy: boolean;
   /** meubles que vous avez déjà fouillés */
   searched?: string[];
+  /** graine du mini-jeu « forcer une serrure » */
+  forceSeed?: number;
   testimonyRequest: { requestId: string; question: string; fromName: string } | null;
   /** joueurs arrêtés (hors jeu, spectateurs) */
   arrested: string[];

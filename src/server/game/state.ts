@@ -65,6 +65,8 @@ export interface PlayerState {
   toolUses: Record<string, number>;
   /** meubles déjà fouillés par ce joueur (repère visuel) */
   searched: Set<string>;
+  /** graine du prochain mini-jeu « forcer une serrure » (renouvelée à chaque essai) */
+  forceSeed: number;
   /** dernière observation enregistrée d'un autre joueur (clé autreId|pièce → clock) */
   sightings: Map<string, number>;
   /** transitions de pièce : base de la vérification des témoignages */

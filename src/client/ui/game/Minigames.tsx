@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMinigame } from './helpers';
+import { FORCE_PINS, forceCursor, forceZones } from '@shared/content/forceLock';
 
 /** Capture le clavier tant que le mini-jeu est ouvert (rien n'atteint la vue 3D ni les raccourcis). */
 function useKeys(on: boolean, handler: (e: KeyboardEvent) => void) {
@@ -18,7 +19,7 @@ function useKeys(on: boolean, handler: (e: KeyboardEvent) => void) {
   }, [on]);
 }
 
-const PINS = 3;
+const PINS = FORCE_PINS;
 
 /**
  * Forcer une serrure : un curseur va et vient, il faut frapper (E, Espace ou clic) quand il est dans la zone.
@@ -32,17 +33,22 @@ export function ForceLockGame() {
   const [result, setResult] = useState<null | boolean>(null);
   const cursor = useRef(0);
   const barRef = useRef<HTMLDivElement>(null);
+  const zones = useRef<{ at: number; w: number }[]>([]);
+  const t0 = useRef(0);
+  const strikes = useRef<number[]>([]);
   useEffect(() => {
     if (!open) return;
     setPin(0);
     setResult(null);
-    setZone({ at: 0.25 + Math.random() * 0.5, w: 0.22 });
+    // zones et vitesse fixées par la graine du serveur : il rejoue les frappes et décide seul de la réussite
+    zones.current = forceZones(open.seed);
+    setZone(zones.current[0]);
+    strikes.current = [];
     let raf = 0;
-    const t0 = performance.now();
+    t0.current = performance.now();
     const loop = (now: number) => {
-      // vitesse croissante à chaque goupille (lue dans le DOM pour ne pas relancer la boucle)
-      const speed = 0.9 + Number(barRef.current?.dataset.pin ?? 0) * 0.35;
-      cursor.current = 0.5 - 0.5 * Math.cos(((now - t0) / 1000) * speed * Math.PI);
+      const p = Number(barRef.current?.dataset.pin ?? 0);
+      cursor.current = forceCursor(Math.max(0, now - t0.current), p);
       if (barRef.current) barRef.current.style.setProperty('--cursor', String(cursor.current));
       raf = requestAnimationFrame(loop);
     };
@@ -53,20 +59,23 @@ export function ForceLockGame() {
   const finish = (ok: boolean) => {
     setResult(ok);
     const cb = open?.onDone;
+    const sent = [...strikes.current];
     setTimeout(() => {
       close();
-      cb?.(ok);
+      cb?.(sent);
     }, 700);
   };
   const strike = () => {
     if (!open || result !== null) return;
-    const c = cursor.current;
-    if (Math.abs(c - zone.at) <= zone.w / 2) {
+    const t = performance.now() - t0.current;
+    const c = forceCursor(t, pin);
+    const z = zones.current[pin];
+    strikes.current.push(Math.round(t));
+    if (z && Math.abs(c - z.at) <= z.w / 2) {
       const next = pin + 1;
       setPin(next);
       if (next >= PINS) return finish(true);
-      const w = Math.max(0.1, zone.w - 0.05);
-      setZone({ at: w / 2 + Math.random() * (1 - w), w });
+      setZone(zones.current[next]);
     } else finish(false);
   };
   useKeys(!!open, (e) => {

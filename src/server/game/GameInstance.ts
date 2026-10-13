@@ -185,6 +185,7 @@ export class GameInstance {
         feed: [],
         toolUses: {},
         searched: new Set(),
+        forceSeed: Math.floor(Math.random() * 2 ** 31),
         sightings: new Map(),
         roomHistory: [],
         roomTime: {},
@@ -657,7 +658,7 @@ export class GameInstance {
         msg = this.caseSystem.unlockFurniture(p, String(a.furnitureId), a.code === undefined ? undefined : String(a.code));
         break;
       case 'force_furniture':
-        msg = this.caseSystem.forceFurniture(p, String(a.furnitureId), a.ok === true);
+        msg = this.caseSystem.forceFurniture(p, String(a.furnitureId), a.strikes);
         break;
       case 'insert':
         msg = this.caseSystem.insert(p, String(a.mediaId), String(a.deviceId));
@@ -908,6 +909,7 @@ export class GameInstance {
       unlockedDoors: [...this.unlockedDoors],
       muddy: p.muddyUntil > this.now(),
       searched: [...p.searched],
+      forceSeed: p.forceSeed,
       testimonyRequest: p.pendingTestimony
         ? { requestId: p.pendingTestimony.requestId, question: p.pendingTestimony.question, fromName: p.pendingTestimony.fromName }
         : null,
